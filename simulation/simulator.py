@@ -161,6 +161,7 @@ def run_simulation(
     config: SimulationConfig | None = None,
     robot_params: RobotParams | None = None,
     add_noise: bool = False,
+    visualizer=None,
 ) -> SimulationResult:
     """
     Run a full simulation with MPC controller.
@@ -172,6 +173,7 @@ def run_simulation(
         config: Simulation configuration
         robot_params: Robot parameters
         add_noise: Whether to add noise
+        visualizer: Optional LiveVisualizer instance for real-time visualization
 
     Returns:
         SimulationResult containing all logged data
@@ -217,6 +219,17 @@ def run_simulation(
         references.append(ref_traj[0].copy())
         predictions.append(info["predicted_trajectory"].copy())
         errors.append(sim.compute_tracking_error(current_state, ref_traj[0]))
+
+        # Update live visualization if provided
+        if visualizer is not None:
+            visualizer.update(
+                state=current_state,
+                control=control,
+                reference=ref_traj[0],
+                prediction=info["predicted_trajectory"],
+                info=info,
+                time=t,
+            )
         
         # Check if reached end of trajectory
         _, dist = trajectory_interpolator.find_closest_point(current_state[:2])

@@ -25,6 +25,7 @@ from simulation import (
     SimulationConfig,
     run_simulation,
     plot_trajectory,
+    LiveVisualizer,
 )
 
 
@@ -47,6 +48,11 @@ def main():
         type=str,
         default=None,
         help="Path to save result figure",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable real-time visualization during simulation",
     )
     args = parser.parse_args()
 
@@ -112,10 +118,20 @@ def main():
     # Create controller
     controller = MPCController(robot_params, mpc_params)
 
+    # Setup live visualization if requested
+    visualizer = None
+    if args.live:
+        visualizer = LiveVisualizer(
+            reference_trajectory=trajectory,
+            title=title + " (Live)",
+            update_interval=2,  # Update every 2 steps for smoother display
+        )
+
     # Run simulation
     print(f"Running simulation: {args.trajectory} trajectory")
     print(f"  - Noise: {'enabled' if args.noise else 'disabled'}")
-    
+    print(f"  - Live visualization: {'enabled' if args.live else 'disabled'}")
+
     result = run_simulation(
         controller=controller,
         trajectory_interpolator=interpolator,
@@ -123,7 +139,12 @@ def main():
         config=sim_config,
         robot_params=robot_params,
         add_noise=args.noise,
+        visualizer=visualizer,
     )
+
+    # Close live visualizer if used
+    if visualizer is not None:
+        visualizer.close()
 
     # Print results
     print("\nResults:")
