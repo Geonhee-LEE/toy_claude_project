@@ -10,6 +10,7 @@ from simulation.visualizer import (
     plot_trajectory,
     create_animation,
     plot_comparison,
+    LiveVisualizer,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "plot_trajectory",
     "create_animation",
     "plot_comparison",
+    "LiveVisualizer",
 ]

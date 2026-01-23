@@ -1,6 +1,6 @@
 """Visualization utilities for simulation results."""
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -8,6 +8,214 @@ from matplotlib.animation import FuncAnimation
 import numpy as np
 
 from simulation.simulator import SimulationResult
+
+
+class LiveVisualizer:
+    """Real-time visualization for MPC simulation."""
+
+    def __init__(
+        self,
+        reference_trajectory: np.ndarray,
+        title: str = "MPC Path Tracking (Live)",
+        robot_length: float = 0.3,
+        robot_width: float = 0.2,
+        update_interval: int = 1,
+    ):
+        """
+        Initialize live visualizer.
+
+        Args:
+            reference_trajectory: Reference trajectory points (N, 3)
+            title: Plot title
+            robot_length: Robot body length for visualization
+            robot_width: Robot body width for visualization
+            update_interval: Update display every N steps
+        """
+        self.reference_trajectory = reference_trajectory
+        self.robot_length = robot_length
+        self.robot_width = robot_width
+        self.update_interval = update_interval
+        self.step_count = 0
+
+        # Enable interactive mode
+        plt.ion()
+
+        # Create figure with subplots
+        self.fig, self.axes = plt.subplots(1, 2, figsize=(14, 6))
+
+        # --- Main trajectory plot ---
+        self.ax_traj = self.axes[0]
+        self.ax_traj.set_title(title)
+        self.ax_traj.set_xlabel("X [m]")
+        self.ax_traj.set_ylabel("Y [m]")
+        self.ax_traj.grid(True, alpha=0.3)
+        self.ax_traj.axis("equal")
+
+        # Reference trajectory
+        self.ax_traj.plot(
+            reference_trajectory[:, 0],
+            reference_trajectory[:, 1],
+            "b--",
+            linewidth=2,
+            label="Reference",
+            alpha=0.7,
+        )
+
+        # Actual trajectory trace
+        (self.trace_line,) = self.ax_traj.plot(
+            [], [], "r-", linewidth=2, label="Actual"
+        )
+
+        # MPC prediction line
+        (self.prediction_line,) = self.ax_traj.plot(
+            [], [], "g-", alpha=0.6, linewidth=1.5, label="MPC Prediction"
+        )
+
+        # Robot patch
+        self.robot_patch = patches.Rectangle(
+            (0, 0),
+            robot_length,
+            robot_width,
+            angle=0,
+            fill=True,
+            facecolor="red",
+            edgecolor="black",
+            linewidth=2,
+            alpha=0.8,
+        )
+        self.ax_traj.add_patch(self.robot_patch)
+
+        # Direction indicator
+        (self.direction_line,) = self.ax_traj.plot([], [], "k-", linewidth=2)
+
+        # Set axis limits
+        x_margin = 1.0
+        y_margin = 1.0
+        self.ax_traj.set_xlim(
+            reference_trajectory[:, 0].min() - x_margin,
+            reference_trajectory[:, 0].max() + x_margin,
+        )
+        self.ax_traj.set_ylim(
+            reference_trajectory[:, 1].min() - y_margin,
+            reference_trajectory[:, 1].max() + y_margin,
+        )
+        self.ax_traj.legend(loc="upper right")
+
+        # --- Info panel ---
+        self.ax_info = self.axes[1]
+        self.ax_info.axis("off")
+        self.ax_info.set_title("Simulation Status")
+
+        self.info_text = self.ax_info.text(
+            0.1, 0.9, "", transform=self.ax_info.transAxes,
+            fontsize=12, verticalalignment="top", fontfamily="monospace"
+        )
+
+        # Data storage for trace
+        self.trace_x = []
+        self.trace_y = []
+
+        plt.tight_layout()
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    def update(
+        self,
+        state: np.ndarray,
+        control: np.ndarray,
+        reference: np.ndarray,
+        prediction: Optional[np.ndarray] = None,
+        info: Optional[dict] = None,
+        time: float = 0.0,
+    ) -> None:
+        """
+        Update visualization with current state.
+
+        Args:
+            state: Current robot state [x, y, theta]
+            control: Current control input [v, omega]
+            reference: Current reference state [x, y, theta]
+            prediction: MPC predicted trajectory (N+1, 3)
+            info: Additional info dict from controller
+            time: Current simulation time
+        """
+        self.step_count += 1
+
+        # Store trace
+        self.trace_x.append(state[0])
+        self.trace_y.append(state[1])
+
+        # Only update display at specified interval
+        if self.step_count % self.update_interval != 0:
+            return
+
+        # Update trace
+        self.trace_line.set_data(self.trace_x, self.trace_y)
+
+        # Update MPC prediction
+        if prediction is not None:
+            self.prediction_line.set_data(prediction[:, 0], prediction[:, 1])
+
+        # Update robot position
+        x, y, theta = state
+        cos_t, sin_t = np.cos(theta), np.sin(theta)
+        corner_x = x - (self.robot_length / 2 * cos_t - self.robot_width / 2 * sin_t)
+        corner_y = y - (self.robot_length / 2 * sin_t + self.robot_width / 2 * cos_t)
+
+        self.robot_patch.set_xy((corner_x, corner_y))
+        self.robot_patch.angle = np.degrees(theta)
+
+        # Direction indicator
+        dir_len = self.robot_length * 0.8
+        self.direction_line.set_data(
+            [x, x + dir_len * cos_t],
+            [y, y + dir_len * sin_t],
+        )
+
+        # Update info text
+        pos_error = np.sqrt((state[0] - reference[0])**2 + (state[1] - reference[1])**2)
+        heading_error = np.arctan2(np.sin(state[2] - reference[2]), np.cos(state[2] - reference[2]))
+
+        info_str = (
+            f"Time: {time:.2f} s\n"
+            f"\n"
+            f"State:\n"
+            f"  x: {state[0]:+.3f} m\n"
+            f"  y: {state[1]:+.3f} m\n"
+            f"  θ: {np.degrees(state[2]):+.1f}°\n"
+            f"\n"
+            f"Control:\n"
+            f"  v: {control[0]:+.3f} m/s\n"
+            f"  ω: {control[1]:+.3f} rad/s\n"
+            f"\n"
+            f"Tracking Error:\n"
+            f"  position: {pos_error:.4f} m\n"
+            f"  heading: {np.degrees(heading_error):+.1f}°\n"
+        )
+
+        if info is not None:
+            info_str += (
+                f"\n"
+                f"MPC Info:\n"
+                f"  cost: {info.get('cost', 0):.4f}\n"
+                f"  solve_time: {info.get('solve_time', 0)*1000:.2f} ms\n"
+                f"  status: {info.get('solver_status', 'N/A')}\n"
+            )
+
+        self.info_text.set_text(info_str)
+
+        # Refresh display
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    def close(self) -> None:
+        """Close the visualization window."""
+        plt.ioff()
+
+    def wait_for_close(self) -> None:
+        """Keep window open until user closes it."""
+        plt.ioff()
+        plt.show()
 
 
 def plot_trajectory(
