@@ -1,12 +1,18 @@
 """Model Predictive Controller for path tracking."""
 
+import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple
 
 import casadi as ca
 import numpy as np
 
 from mpc_controller.models.differential_drive import DifferentialDriveModel, RobotParams
+
+# Module-level logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,10 +57,33 @@ class MPCController:
         self,
         robot_params: RobotParams | None = None,
         mpc_params: MPCParams | None = None,
+        log_file: str | Path | None = None,
     ):
         self.robot = DifferentialDriveModel(robot_params or RobotParams())
         self.params = mpc_params or MPCParams()
+        self._iteration_count = 0
+        self._setup_logging(log_file)
         self._setup_optimizer()
+
+    def _setup_logging(self, log_file: str | Path | None = None) -> None:
+        """Setup logging configuration."""
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+
+        if log_file is not None:
+            file_handler = logging.FileHandler(log_file)
+            file_formatter = logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s"
+            )
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+            logger.info(f"MPC logging to file: {log_file}")
 
     def _setup_optimizer(self) -> None:
         """Setup the NLP optimization problem."""
@@ -198,6 +227,7 @@ class MPCController:
                 x0[k * self.nx : (k + 1) * self.nx] = current_state
 
         # Solve NLP
+        solve_start = time.perf_counter()
         solution = self.solver(
             x0=x0,
             lbx=self.lbx,
@@ -206,6 +236,7 @@ class MPCController:
             ubg=self.ubg,
             p=p,
         )
+        solve_time = time.perf_counter() - solve_start
 
         # Extract solution
         opt_vars = np.array(solution["x"]).flatten()
@@ -217,16 +248,30 @@ class MPCController:
 
         # Return first control input
         u_opt = U_opt[0]
+        cost = float(solution["f"])
+        solver_status = self.solver.stats()["return_status"]
+
+        # Log MPC iteration metrics
+        self._iteration_count += 1
+        logger.info(
+            f"MPC iteration {self._iteration_count}: "
+            f"solve_time={solve_time*1000:.2f}ms, "
+            f"cost={cost:.4f}, "
+            f"status={solver_status}"
+        )
 
         info = {
             "predicted_trajectory": X_opt,
             "predicted_controls": U_opt,
-            "cost": float(solution["f"]),
-            "solver_status": self.solver.stats()["return_status"],
+            "cost": cost,
+            "solve_time": solve_time,
+            "solver_status": solver_status,
         }
 
         return u_opt, info
 
     def reset(self) -> None:
-        """Reset warm start."""
+        """Reset warm start and iteration count."""
         self.prev_solution = None
+        self._iteration_count = 0
+        logger.debug("MPC controller reset")
