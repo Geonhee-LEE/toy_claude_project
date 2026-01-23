@@ -1,0 +1,42 @@
+name: Notion Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      notion_page_id:
+        description: 'Notion page ID with task'
+        required: true
+        type: string
+  schedule:
+    # Check every 30 minutes for new tasks
+    - cron: '*/30 * * * *'
+
+jobs:
+  sync-notion-tasks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install anthropic notion-client PyGithub
+
+      - name: Sync Notion Tasks
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_TASK_DATABASE_ID }}
+          MANUAL_PAGE_ID: ${{ github.event.inputs.notion_page_id }}
+        run: |
+          python .github/scripts/notion_sync.py
