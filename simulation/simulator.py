@@ -7,6 +7,10 @@ import numpy as np
 
 from mpc_controller.models.differential_drive import DifferentialDriveModel, RobotParams
 from mpc_controller.models.swerve_drive import SwerveDriveModel, SwerveParams
+from mpc_controller.models.non_coaxial_swerve import (
+    NonCoaxialSwerveDriveModel,
+    NonCoaxialSwerveParams,
+)
 
 
 @dataclass
@@ -62,7 +66,7 @@ class Simulator:
 
     def __init__(
         self,
-        robot_params: Union[RobotParams, SwerveParams, None] = None,
+        robot_params: Union[RobotParams, SwerveParams, NonCoaxialSwerveParams, None] = None,
         config: SimulationConfig | None = None,
         model_type: str = "differential",
     ):
@@ -70,13 +74,15 @@ class Simulator:
         Initialize simulator.
 
         Args:
-            robot_params: Robot parameters (RobotParams for differential, SwerveParams for swerve)
+            robot_params: Robot parameters
             config: Simulation configuration
-            model_type: "differential" or "swerve"
+            model_type: "differential", "swerve", or "non_coaxial_swerve"
         """
         self.model_type = model_type
         if model_type == "swerve":
             self.robot = SwerveDriveModel(robot_params or SwerveParams())
+        elif model_type == "non_coaxial_swerve":
+            self.robot = NonCoaxialSwerveDriveModel(robot_params or NonCoaxialSwerveParams())
         else:
             self.robot = DifferentialDriveModel(robot_params or RobotParams())
         self.config = config or SimulationConfig()
@@ -176,7 +182,7 @@ def run_simulation(
     trajectory_interpolator,
     initial_state: np.ndarray,
     config: SimulationConfig | None = None,
-    robot_params: Union[RobotParams, SwerveParams, None] = None,
+    robot_params: Union[RobotParams, SwerveParams, NonCoaxialSwerveParams, None] = None,
     add_noise: bool = False,
     visualizer=None,
     model_type: str = "differential",
@@ -193,7 +199,7 @@ def run_simulation(
         robot_params: Robot parameters
         add_noise: Whether to add noise
         visualizer: Optional LiveVisualizer instance for real-time visualization
-        model_type: "differential" or "swerve"
+        model_type: "differential", "swerve", or "non_coaxial_swerve"
         environment: Optional environment for collision checking
 
     Returns:
