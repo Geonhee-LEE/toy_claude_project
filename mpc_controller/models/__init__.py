@@ -16,14 +16,29 @@ from mpc_controller.models.cost_functions import (
     TerminalCost,
     CompositeCost,
 )
+from mpc_controller.models.soft_constraints import (
+    ConstraintType,
+    PenaltyType,
+    SoftConstraintParams,
+    SoftConstraint,
+    VelocitySoftConstraint,
+    AccelerationSoftConstraint,
+    ObstacleSoftConstraint,
+    PositionSoftConstraint,
+    SoftConstraintManager,
+    ConstraintViolation,
+    SoftConstraintResult,
+)
 
 __all__ = [
+    # Kinematic models
     "DifferentialDriveModel",
     "RobotParams",
     "SwerveDriveModel",
     "SwerveParams",
     "NonCoaxialSwerveDriveModel",
     "NonCoaxialSwerveParams",
+    # Cost functions
     "CostFunction",
     "PositionCost",
     "OrientationCost",
@@ -32,4 +47,16 @@ __all__ = [
     "ObstacleAvoidanceCost",
     "TerminalCost",
     "CompositeCost",
+    # Soft constraints
+    "ConstraintType",
+    "PenaltyType",
+    "SoftConstraintParams",
+    "SoftConstraint",
+    "VelocitySoftConstraint",
+    "AccelerationSoftConstraint",
+    "ObstacleSoftConstraint",
+    "PositionSoftConstraint",
+    "SoftConstraintManager",
+    "ConstraintViolation",
+    "SoftConstraintResult",
 ]
