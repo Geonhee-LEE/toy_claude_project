@@ -273,8 +273,21 @@ class NonCoaxialSwerveMPCController:
         if reference_trajectory.shape[1] == 4:
             reference_trajectory = reference_trajectory[:, :3]
 
+        state_for_mpc = current_state.copy()
+
+        # Adjust reference trajectory theta to be continuous with current state
+        # This prevents issues when crossing the ±π boundary
+        ref_adjusted = reference_trajectory.copy()
+        current_theta = state_for_mpc[2]  # theta is at index 2
+
+        for i in range(len(ref_adjusted)):
+            ref_theta = ref_adjusted[i, 2]
+            diff = np.arctan2(np.sin(ref_theta - current_theta), np.cos(ref_theta - current_theta))
+            ref_adjusted[i, 2] = current_theta + diff
+            current_theta = ref_adjusted[i, 2]
+
         # Build parameter vector
-        p = np.concatenate([current_state, reference_trajectory.flatten()])
+        p = np.concatenate([state_for_mpc, ref_adjusted.flatten()])
 
         # Initial guess (warm start)
         if self.prev_solution is not None:

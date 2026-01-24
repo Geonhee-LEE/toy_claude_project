@@ -106,8 +106,8 @@ class SwerveDriveModel:
 
         state_next = self.state + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
-        # Normalize theta to [-pi, pi]
-        state_next[2] = ca.atan2(ca.sin(state_next[2]), ca.cos(state_next[2]))
+        # NOTE: theta is NOT normalized here to allow continuous angle tracking
+        # across the ±π boundary. The MPC cost function handles angle wrapping.
 
         return ca.Function(
             "discrete_dynamics",

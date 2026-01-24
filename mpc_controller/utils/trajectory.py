@@ -5,6 +5,53 @@ from typing import Callable
 import numpy as np
 
 
+def normalize_angle(angle: float | np.ndarray) -> float | np.ndarray:
+    """
+    Normalize angle to [-pi, pi].
+
+    Args:
+        angle: Angle(s) in radians
+
+    Returns:
+        Normalized angle(s) in [-pi, pi]
+    """
+    return np.arctan2(np.sin(angle), np.cos(angle))
+
+
+def unwrap_angles(angles: np.ndarray) -> np.ndarray:
+    """
+    Unwrap angles to ensure continuity (no jumps > pi).
+
+    연속적인 경로에서 각도가 -π ↔ π 경계를 넘을 때
+    급격한 점프 없이 연속적으로 변하도록 함.
+
+    Args:
+        angles: Array of angles in radians
+
+    Returns:
+        Unwrapped angles (may exceed [-pi, pi] but continuous)
+    """
+    return np.unwrap(angles)
+
+
+def angle_difference(angle1: float, angle2: float) -> float:
+    """
+    Compute the shortest angular difference from angle2 to angle1.
+
+    Returns a value in [-pi, pi] representing the shortest rotation
+    from angle2 to angle1.
+
+    Args:
+        angle1: Target angle
+        angle2: Source angle
+
+    Returns:
+        Shortest angular difference (angle1 - angle2) in [-pi, pi]
+    """
+    diff = angle1 - angle2
+    return np.arctan2(np.sin(diff), np.cos(diff))
+
+
 def generate_line_trajectory(
     start: np.ndarray,
     end: np.ndarray,
@@ -55,6 +102,7 @@ def generate_circle_trajectory(
 
     Returns:
         Trajectory array, shape (num_points, 3) with [x, y, theta]
+        Note: theta is kept continuous (unwrapped) to avoid jumps at ±π boundary
     """
     trajectory = np.zeros((num_points, 3))
     angles = np.linspace(start_angle, end_angle, num_points)
@@ -63,10 +111,11 @@ def generate_circle_trajectory(
     trajectory[:, 1] = center[1] + radius * np.sin(angles)
 
     # Heading tangent to circle (90 degrees ahead of radial)
+    # Keep angles continuous (unwrapped) to avoid discontinuity at ±π
     trajectory[:, 2] = angles + np.pi / 2
 
-    # Normalize angles to [-pi, pi]
-    trajectory[:, 2] = np.arctan2(np.sin(trajectory[:, 2]), np.cos(trajectory[:, 2]))
+    # Do NOT normalize here - keep continuous for smooth interpolation
+    # The MPC cost function will handle the angle difference properly
 
     return trajectory
 
@@ -86,6 +135,7 @@ def generate_figure_eight_trajectory(
 
     Returns:
         Trajectory array, shape (num_points, 3) with [x, y, theta]
+        Note: theta is unwrapped for continuity
     """
     trajectory = np.zeros((num_points, 3))
     t = np.linspace(0, 2 * np.pi, num_points)
@@ -98,6 +148,9 @@ def generate_figure_eight_trajectory(
     dx = scale * np.cos(t)
     dy = scale * (np.cos(t) ** 2 - np.sin(t) ** 2)
     trajectory[:, 2] = np.arctan2(dy, dx)
+
+    # Unwrap angles to ensure continuity
+    trajectory[:, 2] = unwrap_angles(trajectory[:, 2])
 
     return trajectory
 
@@ -158,6 +211,7 @@ class TrajectoryInterpolator:
         current_time: float,
         horizon: int,
         mpc_dt: float,
+        current_theta: float | None = None,
     ) -> np.ndarray:
         """
         Get reference trajectory for MPC horizon.
@@ -166,9 +220,11 @@ class TrajectoryInterpolator:
             current_time: Current time [s]
             horizon: MPC prediction horizon N
             mpc_dt: MPC time step
+            current_theta: Current robot heading (optional, for angle continuity)
 
         Returns:
             Reference trajectory, shape (horizon+1, 3)
+            Note: theta values are adjusted to be continuous with current_theta
         """
         reference = np.zeros((horizon + 1, 3))
 
@@ -177,7 +233,7 @@ class TrajectoryInterpolator:
 
             # Clamp to trajectory bounds
             if t >= self.total_time:
-                reference[k] = self.trajectory[-1]
+                reference[k] = self.trajectory[-1].copy()
             else:
                 # Linear interpolation
                 idx = t / self.dt
@@ -188,11 +244,33 @@ class TrajectoryInterpolator:
                 # Interpolate position
                 reference[k, :2] = (1 - alpha) * self.trajectory[idx_low, :2] + alpha * self.trajectory[idx_high, :2]
 
-                # Interpolate angle (handle wrapping)
+                # Interpolate angle - trajectory angles are already unwrapped/continuous
                 theta_low = self.trajectory[idx_low, 2]
                 theta_high = self.trajectory[idx_high, 2]
-                dtheta = np.arctan2(np.sin(theta_high - theta_low), np.cos(theta_high - theta_low))
-                reference[k, 2] = theta_low + alpha * dtheta
+                reference[k, 2] = (1 - alpha) * theta_low + alpha * theta_high
+
+        # Adjust reference angles to be continuous with current robot heading
+        # This prevents the MPC from trying to take the "long way around"
+        if current_theta is not None:
+            # The reference trajectory angles may be outside [-π, π] (unwrapped).
+            # We need to shift the entire reference to be in the same "wrapping"
+            # as current_theta to minimize the error seen by MPC.
+            ref_theta_0 = reference[0, 2]
+
+            # Normalize both to [-π, π] to compute the minimal difference
+            ref_theta_0_norm = normalize_angle(ref_theta_0)
+            current_theta_norm = normalize_angle(current_theta)
+
+            # Compute shortest angular difference
+            diff = angle_difference(ref_theta_0_norm, current_theta_norm)
+
+            # The target first reference angle should be current_theta + diff
+            # This gives us the reference angle that's closest to current_theta
+            target_ref_theta_0 = current_theta_norm + diff
+
+            # Shift all reference angles to align
+            offset = target_ref_theta_0 - ref_theta_0
+            reference[:, 2] += offset
 
         return reference
 
