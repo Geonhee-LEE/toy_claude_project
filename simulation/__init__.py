@@ -11,6 +11,20 @@ from simulation.visualizer import (
     create_animation,
     plot_comparison,
     LiveVisualizer,
+    draw_environment,
+)
+from simulation.environments import (
+    Obstacle,
+    CircleObstacle,
+    RectangleObstacle,
+    WallObstacle,
+    Environment,
+    EmptyEnvironment,
+    ObstacleFieldEnvironment,
+    CorridorEnvironment,
+    ParkingLotEnvironment,
+    MazeEnvironment,
+    get_environment,
 )
 
 __all__ = [
@@ -22,4 +36,17 @@ __all__ = [
     "create_animation",
     "plot_comparison",
     "LiveVisualizer",
+    "draw_environment",
+    # Environments
+    "Obstacle",
+    "CircleObstacle",
+    "RectangleObstacle",
+    "WallObstacle",
+    "Environment",
+    "EmptyEnvironment",
+    "ObstacleFieldEnvironment",
+    "CorridorEnvironment",
+    "ParkingLotEnvironment",
+    "MazeEnvironment",
+    "get_environment",
 ]

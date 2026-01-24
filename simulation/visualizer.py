@@ -1,6 +1,6 @@
 """Visualization utilities for simulation results."""
 
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -8,6 +8,55 @@ from matplotlib.animation import FuncAnimation
 import numpy as np
 
 from simulation.simulator import SimulationResult
+
+if TYPE_CHECKING:
+    from simulation.environments import Environment
+
+
+def draw_environment(ax: plt.Axes, environment: "Environment") -> None:
+    """
+    Draw environment obstacles on the given axes.
+
+    Args:
+        ax: Matplotlib axes
+        environment: Environment instance with obstacles
+    """
+    from simulation.environments import CircleObstacle, RectangleObstacle, WallObstacle
+
+    for obs in environment.obstacles:
+        if isinstance(obs, CircleObstacle):
+            circle = patches.Circle(
+                obs.center,
+                obs.radius,
+                fill=True,
+                facecolor="gray",
+                edgecolor="black",
+                linewidth=1,
+                alpha=0.7,
+            )
+            ax.add_patch(circle)
+
+        elif isinstance(obs, RectangleObstacle):
+            rect = patches.Rectangle(
+                (obs.center[0] - obs.width / 2, obs.center[1] - obs.height / 2),
+                obs.width,
+                obs.height,
+                fill=True,
+                facecolor="gray",
+                edgecolor="black",
+                linewidth=1,
+                alpha=0.7,
+            )
+            ax.add_patch(rect)
+
+        elif isinstance(obs, WallObstacle):
+            ax.plot(
+                [obs.start[0], obs.end[0]],
+                [obs.start[1], obs.end[1]],
+                "k-",
+                linewidth=max(2, obs.thickness * 20),
+                solid_capstyle="round",
+            )
 
 
 class LiveVisualizer:
@@ -20,6 +69,7 @@ class LiveVisualizer:
         robot_length: float = 0.3,
         robot_width: float = 0.2,
         update_interval: int = 1,
+        environment: Optional["Environment"] = None,
     ):
         """
         Initialize live visualizer.
@@ -30,12 +80,14 @@ class LiveVisualizer:
             robot_length: Robot body length for visualization
             robot_width: Robot body width for visualization
             update_interval: Update display every N steps
+            environment: Optional environment to display obstacles
         """
         self.reference_trajectory = reference_trajectory
         self.robot_length = robot_length
         self.robot_width = robot_width
         self.update_interval = update_interval
         self.step_count = 0
+        self.environment = environment
 
         # Enable interactive mode
         plt.ion()
@@ -50,6 +102,10 @@ class LiveVisualizer:
         self.ax_traj.set_ylabel("Y [m]")
         self.ax_traj.grid(True, alpha=0.3)
         self.ax_traj.axis("equal")
+
+        # Draw environment obstacles
+        if environment is not None:
+            draw_environment(self.ax_traj, environment)
 
         # Reference trajectory
         self.ax_traj.plot(
@@ -224,6 +280,7 @@ def plot_trajectory(
     show_predictions: bool = False,
     prediction_interval: int = 10,
     save_path: Optional[str] = None,
+    environment: Optional["Environment"] = None,
 ) -> plt.Figure:
     """
     Plot the simulation trajectory result.
@@ -234,15 +291,20 @@ def plot_trajectory(
         show_predictions: Whether to show MPC predictions
         prediction_interval: Show prediction every N steps
         save_path: Path to save figure
+        environment: Optional environment to display obstacles
 
     Returns:
         Matplotlib figure
     """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
+
     # --- Trajectory plot ---
     ax = axes[0, 0]
-    
+
+    # Draw environment obstacles first (background)
+    if environment is not None:
+        draw_environment(ax, environment)
+
     # Reference trajectory
     ax.plot(
         result.references[:, 0],
@@ -346,6 +408,7 @@ def create_animation(
     robot_length: float = 0.3,
     robot_width: float = 0.2,
     save_path: Optional[str] = None,
+    environment: Optional["Environment"] = None,
 ) -> FuncAnimation:
     """
     Create animation of the simulation.
@@ -357,12 +420,17 @@ def create_animation(
         robot_length: Robot body length for visualization
         robot_width: Robot body width for visualization
         save_path: Path to save animation (mp4)
+        environment: Optional environment to display obstacles
 
     Returns:
         Matplotlib animation
     """
     fig, ax = plt.subplots(figsize=(10, 8))
-    
+
+    # Draw environment obstacles first (background)
+    if environment is not None:
+        draw_environment(ax, environment)
+
     # Reference trajectory
     ax.plot(
         result.references[:, 0],
