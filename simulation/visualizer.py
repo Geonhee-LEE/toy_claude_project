@@ -258,6 +258,25 @@ class LiveVisualizer:
                 f"  status: {info.get('solver_status', 'N/A')}\n"
             )
 
+            # Soft constraint visualization
+            soft_info = info.get("soft_constraints", {})
+            if soft_info:
+                has_violations = soft_info.get("has_violations", False)
+                info_str += (
+                    f"\n"
+                    f"Soft Constraints:\n"
+                    f"  violations: {'YES' if has_violations else 'NO'}\n"
+                )
+                if has_violations:
+                    info_str += (
+                        f"  max_vel_viol: {soft_info.get('max_velocity_violation', 0):.4f}\n"
+                        f"  max_acc_viol: {soft_info.get('max_acceleration_violation', 0):.4f}\n"
+                    )
+                    # Change robot color to indicate violation
+                    self.robot_patch.set_facecolor("orange")
+                else:
+                    self.robot_patch.set_facecolor("red")
+
         self.info_text.set_text(info_str)
 
         # Refresh display
