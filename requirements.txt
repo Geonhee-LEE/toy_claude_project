@@ -1,0 +1,33 @@
+# Robot MPC Simulation Dependencies
+# 로봇 MPC 시뮬레이션 의존성
+
+# Core dependencies
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+
+# MPC optimization
+casadi>=3.6.0
+
+# Configuration
+pyyaml>=6.0
+
+# Development tools
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# GitHub automation
+anthropic>=0.18.0
+PyGithub>=2.1.0
+
+# Optional: Visualization
+# pygame>=2.5.0
+
+# Optional: ROS2 integration
+# rclpy
+# geometry_msgs
+# nav_msgs
+# visualization_msgs

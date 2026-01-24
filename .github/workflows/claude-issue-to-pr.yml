@@ -1,0 +1,55 @@
+# Claude Issue to PR Automation
+# 이슈가 생성되면 Claude가 자동으로 분석하고 PR을 생성합니다
+
+name: Claude Issue to PR
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  analyze-and-create-pr:
+    if: contains(github.event.issue.labels.*.name, 'claude-autofix') || contains(github.event.issue.labels.*.name, 'bug') || contains(github.event.issue.labels.*.name, 'enhancement')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install anthropic PyGithub
+
+      - name: Analyze issue and create PR
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python .github/scripts/claude_agent.py \
+            --action issue-to-pr \
+            --issue-number "$ISSUE_NUMBER" \
+            --issue-title "$ISSUE_TITLE" \
+            --issue-body "$ISSUE_BODY"
+
+      - name: Comment on issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🤖 Claude가 이 이슈를 분석하고 있습니다. PR이 곧 생성됩니다.'
+            })

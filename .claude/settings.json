@@ -1,0 +1,36 @@
+{
+  "projectName": "robot_mpc_simulation",
+  "description": "Mobile Robot MPC Simulation Project",
+  "language": "ko",
+  "codeStyle": {
+    "python": {
+      "formatter": "black",
+      "linter": "ruff",
+      "typeChecker": "mypy"
+    }
+  },
+  "conventions": {
+    "commitMessageFormat": "conventional",
+    "branchNaming": "feature|fix|docs|refactor/description",
+    "testNaming": "test_*.py"
+  },
+  "automation": {
+    "autoFormat": true,
+    "autoLint": true,
+    "autoTest": false
+  },
+  "context": {
+    "keyFiles": [
+      "CLAUDE.md",
+      "mpc_controller/controllers/mpc.py",
+      "mpc_controller/models/differential_drive.py",
+      "simulation/simulator.py"
+    ],
+    "excludePatterns": [
+      ".venv/**",
+      "*.egg-info/**",
+      "__pycache__/**",
+      ".pytest_cache/**"
+    ]
+  }
+}

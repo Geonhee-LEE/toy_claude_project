@@ -1,0 +1,142 @@
+# Robot MPC Simulation Parameters
+# 로봇 MPC 시뮬레이션 파라미터 설정
+
+# ============================================
+# 로봇 물리 파라미터
+# ============================================
+robot:
+  # 기본 물리 파라미터
+  wheel_base: 0.5          # 휠베이스 [m]
+  wheel_radius: 0.1        # 바퀴 반경 [m]
+  track_width: 0.4         # 트랙 폭 [m]
+
+  # 속도 제한
+  max_linear_velocity: 2.0     # 최대 선속도 [m/s]
+  max_angular_velocity: 2.0    # 최대 각속도 [rad/s]
+  max_linear_acceleration: 1.0 # 최대 선가속도 [m/s²]
+  max_angular_acceleration: 2.0 # 최대 각가속도 [rad/s²]
+
+  # 로봇 크기 (충돌 검사용)
+  footprint:
+    type: "rectangle"  # rectangle, circle
+    length: 0.6        # 길이 [m]
+    width: 0.4         # 너비 [m]
+    radius: 0.3        # 원형일 경우 반경 [m]
+
+# ============================================
+# MPC 컨트롤러 파라미터
+# ============================================
+mpc:
+  # 예측 horizon
+  prediction_horizon: 20     # 예측 스텝 수 (N)
+  control_horizon: 10        # 제어 스텝 수
+  dt: 0.1                    # 샘플링 시간 [s]
+
+  # 비용 함수 가중치
+  weights:
+    position: 10.0           # 위치 오차 가중치
+    orientation: 5.0         # 방향 오차 가중치
+    velocity: 1.0            # 속도 가중치
+    control_effort: 0.1      # 제어 입력 가중치
+    terminal: 100.0          # 터미널 비용 가중치
+
+  # 제약 조건
+  constraints:
+    soft_constraints: true    # 소프트 제약 사용 여부
+    slack_penalty: 1000.0     # 슬랙 변수 패널티
+
+  # 솔버 설정
+  solver:
+    type: "ipopt"            # ipopt, qpoases
+    max_iterations: 100
+    tolerance: 1.0e-6
+    verbose: false
+
+# ============================================
+# 경로 추적 파라미터
+# ============================================
+path_tracking:
+  lookahead_distance: 1.0    # 전방 주시 거리 [m]
+  goal_tolerance:
+    position: 0.1            # 위치 허용 오차 [m]
+    orientation: 0.1         # 방향 허용 오차 [rad]
+
+  # Pure Pursuit 파라미터 (비교용)
+  pure_pursuit:
+    min_lookahead: 0.5
+    max_lookahead: 2.0
+    lookahead_ratio: 2.0     # 속도 비례 상수
+
+# ============================================
+# 시뮬레이션 설정
+# ============================================
+simulation:
+  # 시간 설정
+  dt: 0.01                   # 시뮬레이션 스텝 [s]
+  max_time: 60.0             # 최대 시뮬레이션 시간 [s]
+
+  # 초기 상태
+  initial_state:
+    x: 0.0
+    y: 0.0
+    theta: 0.0
+    v: 0.0
+    omega: 0.0
+
+  # 노이즈 설정
+  noise:
+    enabled: false
+    position_std: 0.01       # 위치 노이즈 표준편차 [m]
+    orientation_std: 0.01    # 방향 노이즈 표준편차 [rad]
+    velocity_std: 0.05       # 속도 노이즈 표준편차 [m/s]
+
+# ============================================
+# 시각화 설정
+# ============================================
+visualization:
+  # 플롯 설정
+  plot:
+    figure_size: [12, 8]
+    dpi: 100
+    update_rate: 10          # 업데이트 주기 [Hz]
+
+  # 표시 요소
+  show:
+    trajectory: true
+    prediction: true
+    robot_footprint: true
+    velocity_vectors: true
+    obstacles: true
+
+  # 색상 설정
+  colors:
+    robot: "#2196F3"
+    trajectory: "#4CAF50"
+    prediction: "#FFC107"
+    obstacles: "#F44336"
+    goal: "#9C27B0"
+
+# ============================================
+# 장애물 회피 설정
+# ============================================
+obstacle_avoidance:
+  enabled: true
+  safety_margin: 0.3         # 안전 마진 [m]
+  detection_range: 5.0       # 감지 범위 [m]
+
+  # 장애물 타입별 설정
+  static_obstacles:
+    enabled: true
+  dynamic_obstacles:
+    enabled: true
+    prediction_horizon: 2.0  # 동적 장애물 예측 시간 [s]
+
+# ============================================
+# 로깅 설정
+# ============================================
+logging:
+  enabled: true
+  level: "INFO"              # DEBUG, INFO, WARNING, ERROR
+  output_dir: "logs"
+  save_trajectory: true
+  save_control_inputs: true

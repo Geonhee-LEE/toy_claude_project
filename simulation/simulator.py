@@ -91,10 +91,12 @@ class Simulator:
     def reset(self, initial_state: np.ndarray | None = None) -> None:
         """Reset simulator state."""
         if initial_state is None:
-            self.state = np.zeros(3)
+            # Use appropriate state dimension for model type
+            state_dim = self.robot.STATE_DIM
+            self.state = np.zeros(state_dim)
         else:
             self.state = initial_state.copy()
-        
+
         self.time = 0.0
         self.control_buffer = []  # For control delay
 
@@ -131,7 +133,12 @@ class Simulator:
 
         # Add process noise
         if add_noise:
-            noise = np.random.normal(0, self.config.process_noise_std)
+            state_dim = len(self.state)
+            noise_std = self.config.process_noise_std
+            # Extend noise std if state dim > 3 (e.g., non_coaxial_swerve)
+            if state_dim > len(noise_std):
+                noise_std = np.concatenate([noise_std, np.array([0.005] * (state_dim - len(noise_std)))])
+            noise = np.random.normal(0, noise_std[:state_dim])
             self.state += noise
             self.state[2] = np.arctan2(np.sin(self.state[2]), np.cos(self.state[2]))
 
@@ -151,7 +158,12 @@ class Simulator:
         measurement = self.state.copy()
         
         if add_noise:
-            noise = np.random.normal(0, self.config.measurement_noise_std)
+            state_dim = len(measurement)
+            noise_std = self.config.measurement_noise_std
+            # Extend noise std if state dim > 3 (e.g., non_coaxial_swerve)
+            if state_dim > len(noise_std):
+                noise_std = np.concatenate([noise_std, np.array([0.01] * (state_dim - len(noise_std)))])
+            noise = np.random.normal(0, noise_std[:state_dim])
             measurement += noise
             measurement[2] = np.arctan2(np.sin(measurement[2]), np.cos(measurement[2]))
         
@@ -166,13 +178,18 @@ class Simulator:
         Compute tracking error with proper angle wrapping.
 
         Args:
-            state: Current state [x, y, theta]
+            state: Current state [x, y, theta] or [x, y, theta, delta]
             reference: Reference state [x, y, theta]
 
         Returns:
             Error [ex, ey, etheta]
         """
-        error = state - reference
+        # Use only first 3 elements for tracking error (x, y, theta)
+        # This handles non_coaxial_swerve which has 4D state [x, y, theta, delta]
+        state_3d = state[:3]
+        ref_3d = reference[:3]
+
+        error = state_3d - ref_3d
         error[2] = np.arctan2(np.sin(error[2]), np.cos(error[2]))
         return error
 
