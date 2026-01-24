@@ -180,6 +180,7 @@ def run_simulation(
     add_noise: bool = False,
     visualizer=None,
     model_type: str = "differential",
+    environment=None,
 ) -> SimulationResult:
     """
     Run a full simulation with MPC controller.
@@ -193,6 +194,7 @@ def run_simulation(
         add_noise: Whether to add noise
         visualizer: Optional LiveVisualizer instance for real-time visualization
         model_type: "differential" or "swerve"
+        environment: Optional environment for collision checking
 
     Returns:
         SimulationResult containing all logged data
