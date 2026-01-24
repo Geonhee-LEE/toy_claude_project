@@ -53,22 +53,19 @@ jobs:
           fetch-depth: 0
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           # OAuth 토큰 (구독자용)
-          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           # 모델 설정 (선택사항)
           model: "claude-sonnet-4-20250514"
 
-          # 최대 토큰 (선택사항)
-          max_tokens: 16000
-
           # 타임아웃 (분)
           timeout_minutes: 10
 
-          # 자동 커밋 (PR 생성 시)
-          auto_commit: true
+          # 진행 상황 추적 활성화
+          track_progress: true
 
           # 한국어 응답
           custom_instructions: |
@@ -110,13 +107,13 @@ jobs:
           fetch-depth: 0
 
       - name: Claude Code Review
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           model: "claude-sonnet-4-20250514"
 
-          # 리뷰 모드
-          mode: "review"
+          # 진행 상황 추적 활성화
+          track_progress: true
 
           custom_instructions: |
             ## 코드 리뷰 가이드라인
@@ -164,22 +161,14 @@ jobs:
           fetch-depth: 0
 
       - name: Claude Implement Feature
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           model: "claude-sonnet-4-20250514"
-          max_tokens: 32000
           timeout_minutes: 15
 
-          # 구현 모드
-          mode: "implement"
-
-          # 자동으로 브랜치 생성 및 PR 생성
-          auto_commit: true
-          create_pr: true
-
-          # 이슈 정보 전달
-          issue_number: ${{ github.event.issue.number }}
+          # 진행 상황 추적 활성화
+          track_progress: true
 
           custom_instructions: |
             ## 구현 가이드라인
