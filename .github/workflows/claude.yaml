@@ -1,0 +1,224 @@
+# Claude Code GitHub Action (OAuth Token 사용)
+# 구독자용 (Max/Pro Plan)
+#
+# 설정 방법:
+# 1. https://console.anthropic.com 에서 OAuth 토큰 생성
+# 2. GitHub Repo > Settings > Secrets and variables > Actions
+# 3. "CLAUDE_CODE_OAUTH_TOKEN" 시크릿 추가
+#
+# 사용법:
+# - 이슈에 @claude 멘션하여 코드 작성 요청
+# - PR에 @claude 멘션하여 코드 리뷰 요청
+# - 라벨 "claude" 추가하여 자동 분석
+
+name: Claude Code
+
+on:
+  # 이슈 이벤트
+  issues:
+    types: [opened, labeled]
+
+  # 이슈 댓글 (@claude 멘션)
+  issue_comment:
+    types: [created]
+
+  # PR 이벤트
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  # PR 리뷰 댓글
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude-code:
+    # 조건: @claude 멘션 또는 claude 라벨
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'claude')) ||
+      (github.event_name == 'pull_request')
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@beta
+        with:
+          # OAuth 토큰 (구독자용)
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # 모델 설정 (선택사항)
+          model: "claude-sonnet-4-20250514"
+
+          # 최대 토큰 (선택사항)
+          max_tokens: 16000
+
+          # 타임아웃 (분)
+          timeout_minutes: 10
+
+          # 자동 커밋 (PR 생성 시)
+          auto_commit: true
+
+          # 한국어 응답
+          custom_instructions: |
+            - 한국어로 응답해주세요
+            - 코드 변경 시 RVIZ 마커 시각화를 고려해주세요
+            - Conventional Commits 형식을 사용해주세요
+            - 로봇 MPC 제어 프로젝트입니다
+
+      - name: Comment on issue/PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const eventName = context.eventName;
+
+            if (eventName === 'issue_comment' || eventName === 'issues') {
+              // 이슈에 반응 추가
+              await github.rest.reactions.createForIssue({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                content: 'eyes'
+              });
+            }
+
+  # PR 자동 코드 리뷰
+  claude-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: "claude-sonnet-4-20250514"
+
+          # 리뷰 모드
+          mode: "review"
+
+          custom_instructions: |
+            ## 코드 리뷰 가이드라인
+
+            한국어로 리뷰해주세요. 다음 항목을 검토해주세요:
+
+            ### 검토 항목
+            1. 코드 품질 및 가독성
+            2. 버그 가능성
+            3. 성능 문제
+            4. 보안 취약점
+            5. 테스트 커버리지
+
+            ### 출력 형식
+            ## 코드 리뷰 요약
+            [전체 평가]
+
+            ## 좋은 점 ✅
+            - [긍정적인 부분]
+
+            ## 개선 제안 💡
+            - [개선 사항]
+
+            ## 잠재적 이슈 ⚠️
+            - [주의 필요 사항]
+
+  # 이슈에서 PR 자동 생성
+  claude-implement:
+    if: |
+      github.event_name == 'issues' &&
+      (contains(github.event.issue.labels.*.name, 'claude-autofix') ||
+       contains(github.event.issue.labels.*.name, 'claude-implement'))
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude Implement Feature
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: "claude-sonnet-4-20250514"
+          max_tokens: 32000
+          timeout_minutes: 15
+
+          # 구현 모드
+          mode: "implement"
+
+          # 자동으로 브랜치 생성 및 PR 생성
+          auto_commit: true
+          create_pr: true
+
+          # 이슈 정보 전달
+          issue_number: ${{ github.event.issue.number }}
+
+          custom_instructions: |
+            ## 구현 가이드라인
+
+            이 프로젝트는 로봇 MPC 시뮬레이션 프로젝트입니다.
+
+            ### 코드 스타일
+            - Python 타입 힌트 사용
+            - Black 포맷터 준수
+            - 한국어 주석/독스트링 가능
+
+            ### 브랜치 명명
+            - feature/기능명
+            - fix/버그명
+
+            ### 커밋 메시지
+            - feat: 새 기능
+            - fix: 버그 수정
+            - docs: 문서
+            - refactor: 리팩토링
+
+            ### 필수 사항
+            - 단위 테스트 추가
+            - RVIZ 마커 시각화 고려
+
+      - name: Comment implementation status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+            const message = status === 'success'
+              ? `${emoji} Claude가 구현을 완료했습니다. PR을 확인해주세요.`
+              : `${emoji} Claude 구현 중 오류가 발생했습니다.`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
