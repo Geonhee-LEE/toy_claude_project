@@ -15,4 +15,4 @@
 - 가능하면 “~에 근거하면”“일반적으로~로 알려져 있다” 식으로 근거를 같이 언급해줘. 구체적인 연도, 수치, 인명, 지명을 말할때는 “정확도:높음/중간/>낮음”을 같이 표시해줘
 - 만약 질문이 이상하거나 부정확하면, 변경하지 말고 초안만 작성하고 구체>적인 질문을 요청해줘
 - 항상 비판적으로 검토하고, 정확도를 높여줘.
-
+- 필요시 [https://code.claude.com/docs/ko/skills](https://code.claude.com/docs/ko/skills), [https://code.claude.com/docs/ko/sub-agents](https://code.claude.com/docs/ko/sub-agents) 이건 agent, skill에 대한 가이드 문서를 참고해줘
