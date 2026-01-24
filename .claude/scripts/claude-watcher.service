@@ -1,0 +1,21 @@
+[Unit]
+Description=Claude Issue Watcher - GitHub 이슈 자동 처리
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/geonhee/toy_claude_project/.claude/scripts/issue-watcher.sh
+Restart=always
+RestartSec=30
+Environment=PATH=/home/geonhee/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/geonhee
+WorkingDirectory=/home/geonhee/toy_claude_project
+
+# 로그
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-watcher
+
+[Install]
+WantedBy=default.target
