@@ -1,11 +1,12 @@
 """2D mobile robot simulator."""
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 
 from mpc_controller.models.differential_drive import DifferentialDriveModel, RobotParams
+from mpc_controller.models.swerve_drive import SwerveDriveModel, SwerveParams
 
 
 @dataclass
@@ -55,14 +56,29 @@ class SimulationResult:
 class Simulator:
     """
     2D mobile robot simulator.
+
+    Supports both differential drive and swerve drive models.
     """
 
     def __init__(
         self,
-        robot_params: RobotParams | None = None,
+        robot_params: Union[RobotParams, SwerveParams, None] = None,
         config: SimulationConfig | None = None,
+        model_type: str = "differential",
     ):
-        self.robot = DifferentialDriveModel(robot_params or RobotParams())
+        """
+        Initialize simulator.
+
+        Args:
+            robot_params: Robot parameters (RobotParams for differential, SwerveParams for swerve)
+            config: Simulation configuration
+            model_type: "differential" or "swerve"
+        """
+        self.model_type = model_type
+        if model_type == "swerve":
+            self.robot = SwerveDriveModel(robot_params or SwerveParams())
+        else:
+            self.robot = DifferentialDriveModel(robot_params or RobotParams())
         self.config = config or SimulationConfig()
         self.reset()
 
@@ -92,12 +108,13 @@ class Simulator:
             New state [x, y, theta]
         """
         # Apply control delay
+        control_dim = self.robot.CONTROL_DIM
         if self.config.control_delay > 0:
             self.control_buffer.append(control.copy())
             if len(self.control_buffer) > self.config.control_delay:
                 control = self.control_buffer.pop(0)
             else:
-                control = np.zeros(2)
+                control = np.zeros(control_dim)
 
         # Apply control limits
         u_lb, u_ub = self.robot.get_control_bounds()
@@ -159,9 +176,10 @@ def run_simulation(
     trajectory_interpolator,
     initial_state: np.ndarray,
     config: SimulationConfig | None = None,
-    robot_params: RobotParams | None = None,
+    robot_params: Union[RobotParams, SwerveParams, None] = None,
     add_noise: bool = False,
     visualizer=None,
+    model_type: str = "differential",
 ) -> SimulationResult:
     """
     Run a full simulation with MPC controller.
@@ -174,12 +192,13 @@ def run_simulation(
         robot_params: Robot parameters
         add_noise: Whether to add noise
         visualizer: Optional LiveVisualizer instance for real-time visualization
+        model_type: "differential" or "swerve"
 
     Returns:
         SimulationResult containing all logged data
     """
     config = config or SimulationConfig()
-    sim = Simulator(robot_params, config)
+    sim = Simulator(robot_params, config, model_type=model_type)
     sim.reset(initial_state)
 
     # Pre-allocate arrays
