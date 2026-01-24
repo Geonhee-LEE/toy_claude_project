@@ -1,0 +1,59 @@
+name: Weekly Maintenance
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # 매주 일요일 자정
+  workflow_dispatch:
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          
+          prompt: |
+            주간 유지보수 작업 수행:
+            
+            1. **의존성 검사**
+               - 오래된 패키지 확인
+               - 보안 취약점 스캔
+            
+            2. **코드 품질 분석**
+               - 미사용 코드 탐지
+               - 복잡도 높은 함수 식별
+               - Type hint 누락 확인
+            
+            3. **테스트 커버리지 분석**
+               - 커버리지 80% 미만 모듈 식별
+               - 테스트 추가 권장사항
+            
+            4. **문서화 검토**
+               - Docstring 누락 확인
+               - README 업데이트 필요 여부
+            
+            결과를 GitHub Issue로 생성하세요.
+            긴급한 보안 이슈가 있으면 별도 라벨링하세요.
+          
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Bash(pip:*),Bash(pytest:*),Bash(gh issue:*)"
