@@ -33,6 +33,16 @@ from mpc_controller.utils.config import (
     get_config,
     load_config,
 )
+from mpc_controller.utils.logger import (
+    setup_logger,
+    get_logger,
+    ColoredFormatter,
+    debug,
+    info,
+    warning,
+    error,
+    critical,
+)
 
 __all__ = [
     # Trajectory
@@ -65,4 +75,13 @@ __all__ = [
     "ObstacleConfig",
     "get_config",
     "load_config",
+    # Logger
+    "setup_logger",
+    "get_logger",
+    "ColoredFormatter",
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "critical",
 ]
