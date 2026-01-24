@@ -57,3 +57,7 @@ Thumbs.db
 *.gif
 results/
 logs/
+
+# Claude hooks
+.claude/command-history.log
+.claude/settings.local.json
