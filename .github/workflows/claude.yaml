@@ -45,6 +45,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -55,41 +56,8 @@ jobs:
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
-          # OAuth 토큰 (구독자용)
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-
-          # 모델 설정 (선택사항)
-          model: "claude-sonnet-4-20250514"
-
-          # 타임아웃 (분)
-          timeout_minutes: 10
-
-          # 진행 상황 추적 활성화
           track_progress: true
-
-          # 한국어 응답
-          custom_instructions: |
-            - 한국어로 응답해주세요
-            - 코드 변경 시 RVIZ 마커 시각화를 고려해주세요
-            - Conventional Commits 형식을 사용해주세요
-            - 로봇 MPC 제어 프로젝트입니다
-
-      - name: Comment on issue/PR
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const eventName = context.eventName;
-
-            if (eventName === 'issue_comment' || eventName === 'issues') {
-              // 이슈에 반응 추가
-              await github.rest.reactions.createForIssue({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                content: 'eyes'
-              });
-            }
 
   # PR 자동 코드 리뷰
   claude-review:
@@ -99,6 +67,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -110,35 +79,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          model: "claude-sonnet-4-20250514"
-
-          # 진행 상황 추적 활성화
           track_progress: true
-
-          custom_instructions: |
-            ## 코드 리뷰 가이드라인
-
-            한국어로 리뷰해주세요. 다음 항목을 검토해주세요:
-
-            ### 검토 항목
-            1. 코드 품질 및 가독성
-            2. 버그 가능성
-            3. 성능 문제
-            4. 보안 취약점
-            5. 테스트 커버리지
-
-            ### 출력 형식
-            ## 코드 리뷰 요약
-            [전체 평가]
-
-            ## 좋은 점 ✅
-            - [긍정적인 부분]
-
-            ## 개선 제안 💡
-            - [개선 사항]
-
-            ## 잠재적 이슈 ⚠️
-            - [주의 필요 사항]
 
   # 이슈에서 PR 자동 생성
   claude-implement:
@@ -153,6 +94,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -164,50 +106,4 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          model: "claude-sonnet-4-20250514"
-          timeout_minutes: 15
-
-          # 진행 상황 추적 활성화
           track_progress: true
-
-          custom_instructions: |
-            ## 구현 가이드라인
-
-            이 프로젝트는 로봇 MPC 시뮬레이션 프로젝트입니다.
-
-            ### 코드 스타일
-            - Python 타입 힌트 사용
-            - Black 포맷터 준수
-            - 한국어 주석/독스트링 가능
-
-            ### 브랜치 명명
-            - feature/기능명
-            - fix/버그명
-
-            ### 커밋 메시지
-            - feat: 새 기능
-            - fix: 버그 수정
-            - docs: 문서
-            - refactor: 리팩토링
-
-            ### 필수 사항
-            - 단위 테스트 추가
-            - RVIZ 마커 시각화 고려
-
-      - name: Comment implementation status
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ job.status }}';
-            const emoji = status === 'success' ? '✅' : '❌';
-            const message = status === 'success'
-              ? `${emoji} Claude가 구현을 완료했습니다. PR을 확인해주세요.`
-              : `${emoji} Claude 구현 중 오류가 발생했습니다.`;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: message
-            });
