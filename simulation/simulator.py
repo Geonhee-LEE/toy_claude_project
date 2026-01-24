@@ -222,15 +222,21 @@ def run_simulation(
     
     for step in range(num_steps):
         t = step * config.dt
-        
+
         # Get current measurement
         current_state = sim.get_measurement(add_noise)
-        
+
+        # Get current theta for angle continuity
+        # For non-coaxial swerve, state is [x, y, theta, delta], otherwise [x, y, theta]
+        current_theta = current_state[2]
+
         # Get reference trajectory for MPC horizon
+        # Pass current_theta to ensure angle continuity
         ref_traj = trajectory_interpolator.get_reference(
             t,
             controller.params.N,
             controller.params.dt,
+            current_theta=current_theta,
         )
         
         # Compute control

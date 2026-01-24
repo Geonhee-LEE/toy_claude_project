@@ -84,8 +84,11 @@ class DifferentialDriveModel:
 
         state_next = self.state + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
-        # Normalize theta to [-pi, pi]
-        state_next[2] = ca.atan2(ca.sin(state_next[2]), ca.cos(state_next[2]))
+        # NOTE: theta is NOT normalized here to allow continuous angle tracking
+        # across the ±π boundary. The MPC cost function handles angle wrapping
+        # in the error computation using atan2(sin(err), cos(err)).
+        # This allows the optimizer to find smooth trajectories even when
+        # the reference trajectory crosses the ±π boundary.
 
         return ca.Function(
             "discrete_dynamics",

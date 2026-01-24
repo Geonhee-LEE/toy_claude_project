@@ -214,8 +214,23 @@ class MPCController:
                 - Optimal control [v, omega]
                 - Info dict with predicted trajectory, solve time, etc.
         """
+        state_for_mpc = current_state.copy()
+
+        # Adjust reference trajectory theta to be continuous with current state
+        # This prevents issues when crossing the ±π boundary
+        ref_adjusted = reference_trajectory.copy()
+        current_theta = state_for_mpc[2]
+
+        for i in range(len(ref_adjusted)):
+            # Compute shortest angular difference from current theta to reference
+            ref_theta = ref_adjusted[i, 2]
+            diff = np.arctan2(np.sin(ref_theta - current_theta), np.cos(ref_theta - current_theta))
+            ref_adjusted[i, 2] = current_theta + diff
+            # Use this adjusted theta as the new "current" for continuity
+            current_theta = ref_adjusted[i, 2]
+
         # Build parameter vector
-        p = np.concatenate([current_state, reference_trajectory.flatten()])
+        p = np.concatenate([state_for_mpc, ref_adjusted.flatten()])
 
         # Initial guess (warm start)
         if self.prev_solution is not None:

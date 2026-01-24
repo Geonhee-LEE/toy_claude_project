@@ -20,6 +20,11 @@ from mpc_controller import (
     generate_line_trajectory,
     generate_circle_trajectory,
 )
+from mpc_controller.utils.trajectory import (
+    normalize_angle,
+    unwrap_angles,
+    angle_difference,
+)
 
 
 class TestDifferentialDriveModel:
@@ -666,6 +671,177 @@ class TestNonCoaxialSwerveIntegration:
             assert -robot_params.max_speed <= control[0] <= robot_params.max_speed
             assert -robot_params.max_omega <= control[1] <= robot_params.max_omega
             assert -robot_params.max_steering_rate <= control[2] <= robot_params.max_steering_rate
+
+
+class TestAngleNormalization:
+    """Tests for angle normalization utilities."""
+
+    def test_normalize_angle_basic(self):
+        """Test basic angle normalization."""
+        assert abs(normalize_angle(0.0)) < 1e-10
+        assert abs(normalize_angle(np.pi) - np.pi) < 1e-10 or abs(normalize_angle(np.pi) + np.pi) < 1e-10
+        assert abs(normalize_angle(-np.pi) - (-np.pi)) < 1e-10 or abs(normalize_angle(-np.pi) - np.pi) < 1e-10
+
+    def test_normalize_angle_wrap(self):
+        """Test angle wrapping from outside [-pi, pi]."""
+        # 3π should wrap to π
+        assert abs(normalize_angle(3 * np.pi) - np.pi) < 1e-10 or abs(normalize_angle(3 * np.pi) + np.pi) < 1e-10
+        # -3π should wrap to -π or π
+        assert abs(normalize_angle(-3 * np.pi) - np.pi) < 1e-10 or abs(normalize_angle(-3 * np.pi) + np.pi) < 1e-10
+        # 2π should wrap to 0
+        assert abs(normalize_angle(2 * np.pi)) < 1e-10
+
+    def test_normalize_angle_array(self):
+        """Test angle normalization on arrays."""
+        angles = np.array([0, np.pi, 2 * np.pi, 3 * np.pi])
+        normalized = normalize_angle(angles)
+        assert normalized.shape == angles.shape
+        assert abs(normalized[0]) < 1e-10  # 0 stays 0
+        assert abs(normalized[2]) < 1e-10  # 2π wraps to 0
+
+    def test_unwrap_angles_continuity(self):
+        """Test that unwrap_angles makes angles continuous."""
+        # Angles that jump from near π to near -π
+        angles = np.array([3.0, 3.1, 3.14, -3.14, -3.1, -3.0])
+        unwrapped = unwrap_angles(angles)
+
+        # Check continuity - no jump > π
+        diffs = np.diff(unwrapped)
+        assert np.all(np.abs(diffs) < np.pi)
+
+    def test_unwrap_angles_circle_trajectory(self):
+        """Test unwrap on a full circle's worth of headings."""
+        # Headings for a circle trajectory (tangent to circle)
+        t = np.linspace(0, 2 * np.pi, 100)
+        headings = t + np.pi / 2  # Tangent direction
+        headings_normalized = normalize_angle(headings)
+
+        # Normalized headings will have a discontinuity
+        # Unwrapped should be continuous
+        unwrapped = unwrap_angles(headings_normalized)
+        diffs = np.diff(unwrapped)
+        assert np.all(np.abs(diffs) < np.pi)
+
+    def test_angle_difference_basic(self):
+        """Test basic angle difference."""
+        assert abs(angle_difference(0.0, 0.0)) < 1e-10
+        assert abs(angle_difference(np.pi / 2, 0.0) - np.pi / 2) < 1e-10
+        assert abs(angle_difference(0.0, np.pi / 2) - (-np.pi / 2)) < 1e-10
+
+    def test_angle_difference_wrap_around(self):
+        """Test angle difference across ±π boundary."""
+        # From -170° to 170° should be -20° (short way), not 340°
+        angle1 = np.deg2rad(170)
+        angle2 = np.deg2rad(-170)
+        diff = angle_difference(angle1, angle2)
+        assert abs(diff - np.deg2rad(-20)) < 1e-10
+
+        # From 170° to -170° should be 20°
+        diff2 = angle_difference(angle2, angle1)
+        assert abs(diff2 - np.deg2rad(20)) < 1e-10
+
+
+class TestAngleBoundaryTracking:
+    """Tests for MPC tracking across angle boundaries."""
+
+    def test_circle_trajectory_angle_continuity(self):
+        """Test that circle trajectory has continuous angles."""
+        center = np.array([0.0, 0.0])
+        traj = generate_circle_trajectory(center, radius=2.0, num_points=100)
+
+        # Check that heading is continuous (no jumps > π)
+        heading_diffs = np.diff(traj[:, 2])
+        assert np.all(np.abs(heading_diffs) < np.pi), \
+            f"Discontinuity detected: max diff = {np.max(np.abs(heading_diffs))}"
+
+    def test_interpolator_angle_continuity(self):
+        """Test trajectory interpolator maintains angle continuity within horizon."""
+        center = np.array([0.0, 0.0])
+        traj = generate_circle_trajectory(center, radius=2.0, num_points=100)
+        interpolator = TrajectoryInterpolator(traj, dt=0.1)
+
+        # Get reference starting from the beginning
+        # Robot at t=0 should have heading close to trajectory's heading
+        current_theta = traj[0, 2]  # Use trajectory's heading at t=0
+        ref = interpolator.get_reference(0.0, horizon=10, mpc_dt=0.1, current_theta=current_theta)
+
+        # Reference angles within horizon should be continuous
+        # (no jumps > π between consecutive points)
+        heading_diffs = np.diff(ref[:, 2])
+        max_diff = np.max(np.abs(heading_diffs))
+        assert max_diff < np.pi, \
+            f"Discontinuity in reference horizon: max diff = {np.rad2deg(max_diff)}°"
+
+        # Test that even at ±π boundary, consecutive references are continuous
+        # Find a time when trajectory is near π
+        t_near_pi = 2.4  # Around where heading crosses π
+        current_theta_near_pi = np.deg2rad(177)
+        ref_near_pi = interpolator.get_reference(t_near_pi, horizon=10, mpc_dt=0.1,
+                                                  current_theta=current_theta_near_pi)
+        heading_diffs_near_pi = np.diff(ref_near_pi[:, 2])
+        assert np.all(np.abs(heading_diffs_near_pi) < np.pi), \
+            "Reference has discontinuity near ±π boundary"
+
+    def test_mpc_tracking_near_pi_boundary(self):
+        """Test MPC doesn't produce erratic control near ±π heading."""
+        robot_params = RobotParams()
+        mpc_params = MPCParams(N=10, dt=0.1)
+        controller = MPCController(robot_params, mpc_params)
+
+        # Robot at heading just below π
+        state = np.array([0.0, 0.0, np.pi - 0.1])
+
+        # Reference at heading continuing past π
+        # This simulates crossing the boundary
+        reference = np.zeros((11, 3))
+        for i in range(11):
+            reference[i, 2] = np.pi - 0.1 + 0.05 * i  # Small positive rotation past π
+
+        control, info = controller.compute_control(state, reference)
+
+        # Control should be reasonable (small positive angular velocity)
+        # Not trying to rotate the long way around
+        assert control[1] > -0.5, f"Angular velocity should be positive or small negative: {control[1]}"
+        assert abs(control[1]) < 2.0, f"Angular velocity too large: {control[1]}"
+
+    def test_full_circle_tracking_stability(self):
+        """Test that tracking a full circle doesn't cause heading jumps."""
+        robot_params = RobotParams()
+        mpc_params = MPCParams(N=10, dt=0.1)
+        controller = MPCController(robot_params, mpc_params)
+
+        # Create circle trajectory
+        traj = generate_circle_trajectory(
+            center=np.array([0.0, 0.0]),
+            radius=2.0,
+            num_points=200,
+        )
+        interpolator = TrajectoryInterpolator(traj, dt=0.1)
+
+        # Simulate tracking
+        state = np.array([2.0, 0.0, np.pi / 2])  # Start on circle
+        controls = []
+        dt_sim = 0.05
+
+        for i in range(100):  # 5 seconds of simulation
+            t = i * dt_sim
+            ref = interpolator.get_reference(t, mpc_params.N, mpc_params.dt, current_theta=state[2])
+            control, _ = controller.compute_control(state, ref)
+            controls.append(control.copy())
+
+            # Simple Euler integration for state update
+            state[0] += control[0] * np.cos(state[2]) * dt_sim
+            state[1] += control[0] * np.sin(state[2]) * dt_sim
+            state[2] += control[1] * dt_sim
+            state[2] = normalize_angle(state[2])
+
+        controls = np.array(controls)
+
+        # Check that angular velocity doesn't have sudden large changes
+        omega_diffs = np.abs(np.diff(controls[:, 1]))
+        max_omega_change = np.max(omega_diffs)
+        assert max_omega_change < 0.5, \
+            f"Sudden angular velocity change detected: {max_omega_change} rad/s"
 
 
 if __name__ == "__main__":
