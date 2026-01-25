@@ -6,7 +6,6 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] #102 RVIZ 시각화 마커 구현 - 예측 궤적, 제약조건, 장애물 표시
 - [ ] #103 동적 장애물 회피 기능 - 움직이는 장애물 대응
 
 ## 🟠 Medium Priority (P1)
@@ -42,6 +41,7 @@
 ## ✅ Completed
 
 ### 2026-01-25
+- [x] #102 RVIZ 시각화 마커 구현 - 예측 궤적, 제약조건, 장애물 표시
 - [x] #101 ROS2 노드 기본 구조 구현 - MPC Controller ROS2 wrapper
 - [x] #010 Claude Code 상세 로깅 개선 - watcher 실시간 출력
 - [x] #009 GitHub Issue Watcher 자동화 - 이슈 자동 처리
