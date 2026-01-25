@@ -6,8 +6,6 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] #103 동적 장애물 회피 기능 - 움직이는 장애물 대응
-
 ## 🟠 Medium Priority (P1)
 
 - [ ] #104 실시간 경로 재계획 기능 - 환경 변화 대응
@@ -41,6 +39,11 @@
 ## ✅ Completed
 
 ### 2026-01-25
+- [x] #103 동적 장애물 회피 기능 - 움직이는 장애물 대응
+  * DynamicObstaclePredictor 예측 알고리즘 구현
+  * 충돌 시간 계산 및 위험 평가
+  * 동적 장애물 회피 데모 예제
+  * 단위 테스트 (5개 케이스 통과)
 - [x] #102 RVIZ 시각화 마커 구현 - 예측 궤적, 제약조건, 장애물 표시
 - [x] #101 ROS2 노드 기본 구조 구현 - MPC Controller ROS2 wrapper
 - [x] #010 Claude Code 상세 로깅 개선 - watcher 실시간 출력
