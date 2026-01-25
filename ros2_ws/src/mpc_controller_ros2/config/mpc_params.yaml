@@ -1,0 +1,21 @@
+# MPC Controller ROS2 Parameters
+# MPC 컨트롤러 ROS2 파라미터 설정
+
+mpc_controller_node:
+  ros__parameters:
+    # MPC 파라미터
+    mpc:
+      N: 20                           # 예측 구간 (Prediction horizon)
+      dt: 0.1                         # 시간 간격 [s]
+      Q: [10.0, 10.0, 1.0]           # 상태 가중치 [x, y, theta]
+      R: [0.1, 0.1]                  # 제어 가중치 [v, omega]
+      Qf: [100.0, 100.0, 10.0]       # 종료 상태 가중치 [x, y, theta]
+      Rd: [0.5, 0.5]                 # 제어 변화율 가중치 [v, omega]
+
+    # 로봇 파라미터
+    robot:
+      max_velocity: 1.0              # 최대 선속도 [m/s]
+      max_omega: 1.5                 # 최대 각속도 [rad/s]
+      wheel_base: 0.5                # 휠베이스 [m]
+      max_acceleration: 0.5          # 최대 선가속도 [m/s^2]
+      max_alpha: 1.0                 # 최대 각가속도 [rad/s^2]
