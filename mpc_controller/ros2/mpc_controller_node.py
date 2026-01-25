@@ -12,12 +12,15 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PoseStamped, Point as GeomPoint
 from nav_msgs.msg import Odometry, Path
 from visualization_msgs.msg import Marker, MarkerArray
+from std_msgs.msg import Float32MultiArray
 
 from mpc_controller.controllers.mpc import MPCController, MPCParams
 from mpc_controller.models.differential_drive import RobotParams
+from mpc_controller.ros2.rviz_visualizer import MPCRVizVisualizer
+from mpc_controller.planners.obstacle_avoidance import Obstacle, ObstacleAvoidance
 
 
 class MPCControllerNode(Node):
@@ -27,11 +30,17 @@ class MPCControllerNode(Node):
     구독:
         - /odom (nav_msgs/Odometry): 현재 로봇 위치
         - /reference_path (nav_msgs/Path): 참조 경로
+        - /obstacles (visualization_msgs/MarkerArray): 장애물 정보
 
     발행:
         - /cmd_vel (geometry_msgs/Twist): 제어 명령
         - /predicted_trajectory (nav_msgs/Path): 예측 궤적
         - /mpc_markers (visualization_msgs/MarkerArray): RVIZ 시각화 마커
+          * 예측 궤적 (라인 + 포인트 그라데이션)
+          * 속도/가속도 제약 경계
+          * 제약조건 위반 표시
+          * 장애물 및 안전 영역
+          * 동적 장애물 예측 경로
 
     파라미터:
         MPC 관련:
@@ -63,10 +72,23 @@ class MPCControllerNode(Node):
             enable_soft_constraints=True
         )
 
+        # RVIZ 시각화 초기화
+        self.visualizer = MPCRVizVisualizer(
+            node=self,
+            frame_id='odom'
+        )
+
+        # 장애물 회피 초기화
+        self.obstacle_avoidance = ObstacleAvoidance(
+            safety_margin=0.3,
+            detection_range=5.0,
+        )
+
         # 상태 변수
         self.current_odom: Optional[Odometry] = None
         self.reference_path: Optional[Path] = None
         self.last_control_time = self.get_clock().now()
+        self.robot_params = robot_params
 
         # QoS 설정
         qos_profile = QoSProfile(
@@ -87,6 +109,13 @@ class MPCControllerNode(Node):
             Path,
             '/reference_path',
             self.path_callback,
+            qos_profile
+        )
+
+        self.obstacles_sub = self.create_subscription(
+            MarkerArray,
+            '/obstacles',
+            self.obstacles_callback,
             qos_profile
         )
 
@@ -169,6 +198,45 @@ class MPCControllerNode(Node):
         """참조 경로 메시지 콜백."""
         self.reference_path = msg
         self.get_logger().info(f'참조 경로 수신: {len(msg.poses)}개 포인트')
+
+    def obstacles_callback(self, msg: MarkerArray):
+        """
+        장애물 마커 메시지 콜백.
+
+        MarkerArray의 CYLINDER 마커를 Obstacle 객체로 변환합니다.
+
+        Args:
+            msg: MarkerArray 메시지 (CYLINDER 타입 장애물)
+        """
+        self.obstacle_avoidance.clear_obstacles()
+
+        for marker in msg.markers:
+            # CYLINDER 타입 마커만 처리
+            if marker.type != Marker.CYLINDER:
+                continue
+
+            # 마커에서 장애물 정보 추출
+            x = marker.pose.position.x
+            y = marker.pose.position.y
+            radius = marker.scale.x / 2.0  # 직경의 절반
+
+            # 네임스페이스로 장애물 타입 구분 (간단한 예시)
+            obstacle_type = "dynamic" if "dynamic" in marker.ns else "static"
+
+            # Obstacle 객체 생성
+            obstacle = Obstacle(
+                x=x,
+                y=y,
+                radius=radius,
+                obstacle_type=obstacle_type,
+            )
+
+            self.obstacle_avoidance.add_obstacle(obstacle)
+
+        self.get_logger().info(
+            f'장애물 수신: {len(self.obstacle_avoidance.obstacles)}개',
+            throttle_duration_sec=2.0
+        )
 
     def control_loop(self):
         """
@@ -329,64 +397,34 @@ class MPCControllerNode(Node):
         """
         RVIZ 시각화 마커 발행.
 
+        새로운 MPCRVizVisualizer를 사용하여 풍부한 시각화를 제공합니다:
+        - 예측 궤적 (라인 + 포인트)
+        - 제약조건 위반
+        - 속도/가속도 제약 경계
+        - 장애물 및 안전 영역
+
         Args:
             info: MPC 정보 딕셔너리
         """
-        marker_array = MarkerArray()
+        # 현재 상태 추출
+        current_state = self._odom_to_state(self.current_odom)
 
-        # 예측 궤적 라인 마커
-        traj_marker = Marker()
-        traj_marker.header.stamp = self.get_clock().now().to_msg()
-        traj_marker.header.frame_id = 'odom'
-        traj_marker.ns = 'predicted_trajectory'
-        traj_marker.id = 0
-        traj_marker.type = Marker.LINE_STRIP
-        traj_marker.action = Marker.ADD
+        # 로봇 파라미터 딕셔너리 생성
+        robot_params_dict = {
+            'v_max': self.robot_params.max_velocity,
+            'omega_max': self.robot_params.max_omega,
+        }
 
-        traj_marker.scale.x = 0.05  # 선 두께
-        traj_marker.color.r = 0.0
-        traj_marker.color.g = 1.0
-        traj_marker.color.b = 0.0
-        traj_marker.color.a = 0.8
+        # 장애물 리스트 가져오기
+        obstacles = self.obstacle_avoidance.obstacles if hasattr(self, 'obstacle_avoidance') else []
 
-        for state in info['predicted_trajectory']:
-            from geometry_msgs.msg import Point
-            point = Point()
-            point.x = float(state[0])
-            point.y = float(state[1])
-            point.z = 0.0
-            traj_marker.points.append(point)
-
-        marker_array.markers.append(traj_marker)
-
-        # Soft constraint violation 시각화
-        soft_info = info.get('soft_constraints', {})
-        if soft_info.get('has_violations', False):
-            violation_marker = Marker()
-            violation_marker.header.stamp = self.get_clock().now().to_msg()
-            violation_marker.header.frame_id = 'odom'
-            violation_marker.ns = 'constraint_violations'
-            violation_marker.id = 1
-            violation_marker.type = Marker.TEXT_VIEW_FACING
-            violation_marker.action = Marker.ADD
-
-            # 현재 위치에 표시
-            if self.current_odom:
-                violation_marker.pose.position.x = self.current_odom.pose.pose.position.x
-                violation_marker.pose.position.y = self.current_odom.pose.pose.position.y
-                violation_marker.pose.position.z = 1.0  # 위쪽에 표시
-
-            violation_marker.scale.z = 0.2  # 텍스트 크기
-            violation_marker.color.r = 1.0
-            violation_marker.color.g = 0.0
-            violation_marker.color.b = 0.0
-            violation_marker.color.a = 1.0
-
-            max_vel_viol = soft_info.get('max_velocity_violation', 0.0)
-            max_acc_viol = soft_info.get('max_acceleration_violation', 0.0)
-            violation_marker.text = f'제약 위반\nVel:{max_vel_viol:.3f}\nAcc:{max_acc_viol:.3f}'
-
-            marker_array.markers.append(violation_marker)
+        # 통합 마커 배열 생성
+        marker_array = self.visualizer.create_marker_array(
+            current_state=current_state,
+            mpc_info=info,
+            obstacles=obstacles,
+            robot_params=robot_params_dict,
+        )
 
         self.markers_pub.publish(marker_array)
 
