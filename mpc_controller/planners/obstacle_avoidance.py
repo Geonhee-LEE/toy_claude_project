@@ -5,8 +5,14 @@ MPC 기반 장애물 회피 알고리즘을 제공합니다.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 import numpy as np
+
+from mpc_controller.planners.dynamic_obstacle_predictor import (
+    DynamicObstaclePredictor,
+    DynamicObstacleState,
+    PredictionModel,
+)
 
 
 @dataclass
@@ -48,6 +54,7 @@ class ObstacleAvoidance:
         safety_margin: float = 0.3,
         detection_range: float = 5.0,
         prediction_horizon: float = 2.0,
+        prediction_model: PredictionModel = PredictionModel.CONSTANT_VELOCITY,
     ):
         """
         Initialize obstacle avoidance.
@@ -56,11 +63,19 @@ class ObstacleAvoidance:
             safety_margin: Minimum safe distance from obstacles
             detection_range: Maximum detection range
             prediction_horizon: Time horizon for dynamic obstacle prediction
+            prediction_model: 동적 장애물 예측 모델
         """
         self.safety_margin = safety_margin
         self.detection_range = detection_range
         self.prediction_horizon = prediction_horizon
         self.obstacles: list[Obstacle] = []
+
+        # 동적 장애물 예측기 초기화
+        self.predictor = DynamicObstaclePredictor(
+            model=prediction_model,
+            max_prediction_time=prediction_horizon,
+            uncertainty_growth_rate=0.1,
+        )
 
     def update_obstacles(self, obstacles: list[Obstacle]) -> None:
         """
@@ -275,26 +290,38 @@ class ObstacleAvoidance:
         self,
         dt: float,
         steps: int,
-    ) -> list[list[tuple[float, float]]]:
+    ) -> list[list[tuple[float, float, float]]]:
         """
         동적 장애물의 미래 위치를 예측합니다.
+
+        개선된 예측기를 사용하여 불확실성을 고려합니다.
 
         Args:
             dt: Time step
             steps: Number of prediction steps
 
         Returns:
-            List of predicted positions for each dynamic obstacle
+            List of predicted positions (x, y, radius) for each dynamic obstacle
         """
         predictions = []
 
         for obs in self.obstacles:
             if obs.obstacle_type == "dynamic":
-                obs_predictions = []
-                for i in range(steps):
-                    t = (i + 1) * dt
-                    pred_x, pred_y = obs.predict_position(t)
-                    obs_predictions.append((pred_x, pred_y))
+                # DynamicObstacleState로 변환
+                obs_state = DynamicObstacleState(
+                    x=obs.x,
+                    y=obs.y,
+                    vx=obs.velocity_x,
+                    vy=obs.velocity_y,
+                    ax=0.0,  # TODO: 가속도 추정 기능 추가
+                    ay=0.0,
+                    radius=obs.radius,
+                )
+
+                # 예측기로 궤적 예측
+                obs_predictions = self.predictor.predict_trajectory(
+                    obs_state, dt, steps
+                )
                 predictions.append(obs_predictions)
 
         return predictions
@@ -309,6 +336,8 @@ class ObstacleAvoidance:
         """
         MPC 최적화를 위한 장애물 회피 제약조건을 생성합니다.
 
+        동적 장애물의 경우 불확실성을 고려한 예측을 사용합니다.
+
         Args:
             x, y: Current position
             horizon: MPC prediction horizon
@@ -321,10 +350,9 @@ class ObstacleAvoidance:
         nearby = self.get_nearby_obstacles(x, y)
 
         for obs in nearby:
-            min_dist = obs.radius + self.safety_margin
-
             if obs.obstacle_type == "static":
                 # 정적 장애물: 위치 고정
+                min_dist = obs.radius + self.safety_margin
                 constraints.append({
                     "type": "circle",
                     "center": (obs.x, obs.y),
@@ -332,10 +360,23 @@ class ObstacleAvoidance:
                     "horizon": list(range(horizon)),
                 })
             else:
-                # 동적 장애물: 각 스텝별 위치 예측
-                for i in range(horizon):
-                    t = (i + 1) * dt
-                    pred_x, pred_y = obs.predict_position(t)
+                # 동적 장애물: 개선된 예측기 사용
+                obs_state = DynamicObstacleState(
+                    x=obs.x,
+                    y=obs.y,
+                    vx=obs.velocity_x,
+                    vy=obs.velocity_y,
+                    radius=obs.radius,
+                )
+
+                # 예측 궤적 생성 (불확실성 포함)
+                predictions = self.predictor.predict_trajectory(
+                    obs_state, dt, horizon
+                )
+
+                # 각 스텝별 제약조건 생성
+                for i, (pred_x, pred_y, pred_radius) in enumerate(predictions):
+                    min_dist = pred_radius + self.safety_margin
                     constraints.append({
                         "type": "circle",
                         "center": (pred_x, pred_y),
@@ -344,3 +385,51 @@ class ObstacleAvoidance:
                     })
 
         return constraints
+
+    def check_dynamic_collision_risk(
+        self,
+        robot_x: float,
+        robot_y: float,
+        robot_radius: float = 0.3,
+    ) -> List[tuple[Obstacle, Optional[float]]]:
+        """
+        동적 장애물과의 충돌 위험을 평가합니다.
+
+        Args:
+            robot_x, robot_y: 로봇 위치
+            robot_radius: 로봇 반경
+
+        Returns:
+            List of (obstacle, collision_time) tuples for dynamic obstacles
+        """
+        collision_risks = []
+
+        for obs in self.obstacles:
+            if obs.obstacle_type != "dynamic":
+                continue
+
+            obs_state = DynamicObstacleState(
+                x=obs.x,
+                y=obs.y,
+                vx=obs.velocity_x,
+                vy=obs.velocity_y,
+                radius=obs.radius,
+            )
+
+            collision_time = self.predictor.predict_collision_time(
+                obs_state,
+                robot_x,
+                robot_y,
+                robot_radius,
+                self.safety_margin,
+            )
+
+            collision_risks.append((obs, collision_time))
+
+        # 충돌 시간이 있는 것만 필터링하고 시간순 정렬
+        collision_risks = [
+            (obs, t) for obs, t in collision_risks if t is not None
+        ]
+        collision_risks.sort(key=lambda x: x[1])
+
+        return collision_risks
