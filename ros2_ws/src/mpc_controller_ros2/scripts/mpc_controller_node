@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""MPC Controller Node launcher script."""
+
+import sys
+import os
+
+# MPC 컨트롤러 경로를 Python path에 추가
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../'))
+sys.path.insert(0, project_root)
+
+from mpc_controller.ros2.mpc_controller_node import main
+
+if __name__ == '__main__':
+    main()
