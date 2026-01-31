@@ -8,15 +8,17 @@
     python examples/mpc_vs_mppi_demo.py
     python examples/mpc_vs_mppi_demo.py --trajectory circle
     python examples/mpc_vs_mppi_demo.py --trajectory sine --save comparison.png
+    python examples/mpc_vs_mppi_demo.py --live  # dual-panel 실시간 리플레이
 """
 
 import argparse
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 from mpc_controller import (
     DifferentialDriveModel,
@@ -51,6 +53,7 @@ class ComparisonResult:
     time_array: np.ndarray       # (T,)
     total_wall_time: float
     ess_history: Optional[np.ndarray] = None  # MPPI 전용
+    info_history: Optional[List[dict]] = None  # --live 리플레이용
 
     @property
     def position_rmse(self) -> float:
@@ -88,8 +91,14 @@ def simulate_controller(
     initial_state: np.ndarray,
     sim_config: SimulationConfig,
     robot_params: RobotParams,
+    store_info: bool = False,
 ) -> ComparisonResult:
-    """수동 시뮬레이션 루프로 컨트롤러 실행 + 메트릭 수집."""
+    """수동 시뮬레이션 루프로 컨트롤러 실행 + 메트릭 수집.
+
+    Args:
+        store_info: True이면 per-step info dict를 저장 (--live 리플레이용).
+                    MPPI 샘플 궤적은 메모리가 크므로 예측 궤적만 저장.
+    """
 
     sim = Simulator(robot_params, sim_config)
     sim.reset(initial_state)
@@ -105,6 +114,7 @@ def simulate_controller(
     costs_list = []
     time_list = []
     ess_list = []
+    info_list = [] if store_info else None
 
     wall_start = time.perf_counter()
 
@@ -134,6 +144,20 @@ def simulate_controller(
         if "ess" in info:
             ess_list.append(info["ess"])
 
+        if store_info:
+            # 리플레이에 필요한 키만 경량 복사
+            compact = {
+                "predicted_trajectory": info["predicted_trajectory"].copy(),
+                "cost": info["cost"],
+                "solve_time": info["solve_time"],
+            }
+            if "ess" in info:
+                compact["ess"] = info["ess"]
+                compact["temperature"] = info.get("temperature", 0)
+            if "solver_status" in info:
+                compact["solver_status"] = info["solver_status"]
+            info_list.append(compact)
+
         # 궤적 끝 도달 검사
         idx, dist = interpolator.find_closest_point(state[:2])
         if idx >= interpolator.num_points - 1 and dist < 0.1:
@@ -152,6 +176,7 @@ def simulate_controller(
         time_array=np.array(time_list),
         total_wall_time=wall_time,
         ess_history=np.array(ess_list) if ess_list else None,
+        info_history=info_list,
     )
 
 
@@ -358,6 +383,170 @@ def plot_figure2(mpc: ComparisonResult, mppi: ComparisonResult,
 
 
 # ─────────────────────────────────────────────────────────────
+# Live 비교 리플레이
+# ─────────────────────────────────────────────────────────────
+
+def live_comparison_replay(
+    mpc: ComparisonResult,
+    mppi: ComparisonResult,
+    reference: np.ndarray,
+    dt: float = 0.05,
+    update_interval: int = 2,
+) -> None:
+    """시뮬레이션 완료 후 MPC/MPPI를 나란히 실시간 리플레이.
+
+    ┌─────────────────┬─────────────────┐
+    │  MPC 궤적       │  MPPI 궤적      │
+    │  + 예측 라인    │  + 예측 라인    │
+    │  + 로봇 패치    │  + 로봇 패치    │
+    ├─────────────────┴─────────────────┤
+    │  실시간 비교 메트릭 패널          │
+    └───────────────────────────────────┘
+    """
+    if mpc.info_history is None or mppi.info_history is None:
+        print("  [WARN] info_history 없음 — store_info=True로 시뮬레이션 필요")
+        return
+
+    plt.ion()
+
+    fig = plt.figure(figsize=(18, 9), layout="constrained")
+    gs = fig.add_gridspec(2, 2, height_ratios=[3, 1])
+
+    ax_mpc = fig.add_subplot(gs[0, 0])
+    ax_mppi = fig.add_subplot(gs[0, 1])
+    ax_info = fig.add_subplot(gs[1, :])
+    ax_info.axis("off")
+
+    robot_length, robot_width = 0.3, 0.2
+
+    # ── 축 공통 설정 ──
+    x_margin, y_margin = 1.0, 1.0
+    x_min = reference[:, 0].min() - x_margin
+    x_max = reference[:, 0].max() + x_margin
+    y_min = reference[:, 1].min() - y_margin
+    y_max = reference[:, 1].max() + y_margin
+
+    panels = {}
+    for ax, label, color in [(ax_mpc, "MPC", "tab:blue"), (ax_mppi, "MPPI", "tab:orange")]:
+        ax.set_title(label, fontsize=13, fontweight="bold")
+        ax.set_xlabel("X [m]")
+        ax.set_ylabel("Y [m]")
+        ax.grid(True, alpha=0.3)
+        ax.axis("equal")
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+
+        # 참조 궤적
+        ax.plot(reference[:, 0], reference[:, 1],
+                "k--", linewidth=1.5, alpha=0.4, label="Reference")
+
+        # 실제 궤적 (점진적)
+        (trace_line,) = ax.plot([], [], "-", color=color, linewidth=2, label="Actual")
+
+        # 예측 궤적
+        (pred_line,) = ax.plot([], [], "g-", alpha=0.6, linewidth=1.5, label="Prediction")
+
+        # 로봇 패치
+        robot_patch = patches.Rectangle(
+            (0, 0), robot_length, robot_width,
+            angle=0, fill=True, facecolor=color,
+            edgecolor="black", linewidth=2, alpha=0.8,
+        )
+        ax.add_patch(robot_patch)
+
+        # 방향 표시
+        (dir_line,) = ax.plot([], [], "k-", linewidth=2)
+
+        ax.legend(loc="upper right", fontsize=8)
+
+        panels[label] = {
+            "ax": ax, "trace_line": trace_line, "pred_line": pred_line,
+            "robot_patch": robot_patch, "dir_line": dir_line,
+        }
+
+    # 정보 텍스트
+    info_text = ax_info.text(
+        0.5, 0.9, "", transform=ax_info.transAxes,
+        fontsize=12, fontfamily="monospace",
+        verticalalignment="top", horizontalalignment="center",
+    )
+
+    fig.suptitle("MPC vs MPPI — Live Comparison Replay",
+                 fontsize=14, fontweight="bold")
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+    # ── 리플레이 루프 ──
+    num_steps = min(len(mpc.time_array), len(mppi.time_array))
+
+    trace_data = {"MPC": ([], []), "MPPI": ([], [])}
+
+    for step in range(num_steps):
+        for label, result in [("MPC", mpc), ("MPPI", mppi)]:
+            if step >= len(result.time_array):
+                continue
+
+            p = panels[label]
+            state = result.states[step]
+            tx, ty = trace_data[label]
+            tx.append(state[0])
+            ty.append(state[1])
+
+            if step % update_interval != 0:
+                continue
+
+            # 궤적 트레이스
+            p["trace_line"].set_data(tx, ty)
+
+            # 예측 궤적
+            if result.info_history and step < len(result.info_history):
+                pred = result.info_history[step].get("predicted_trajectory")
+                if pred is not None:
+                    p["pred_line"].set_data(pred[:, 0], pred[:, 1])
+
+            # 로봇 위치
+            x, y, theta = state
+            cos_t, sin_t = np.cos(theta), np.sin(theta)
+            cx = x - (robot_length / 2 * cos_t - robot_width / 2 * sin_t)
+            cy = y - (robot_length / 2 * sin_t + robot_width / 2 * cos_t)
+            p["robot_patch"].set_xy((cx, cy))
+            p["robot_patch"].angle = np.degrees(theta)
+
+            dir_len = robot_length * 0.8
+            p["dir_line"].set_data([x, x + dir_len * cos_t],
+                                   [y, y + dir_len * sin_t])
+
+        if step % update_interval != 0:
+            continue
+
+        # 정보 패널
+        t = step * dt
+        mpc_err = np.linalg.norm(mpc.tracking_errors[min(step, len(mpc.tracking_errors) - 1), :2])
+        mppi_err = np.linalg.norm(mppi.tracking_errors[min(step, len(mppi.tracking_errors) - 1), :2])
+        mpc_st = mpc.solve_times[min(step, len(mpc.solve_times) - 1)] * 1000
+        mppi_st = mppi.solve_times[min(step, len(mppi.solve_times) - 1)] * 1000
+
+        ess_str = ""
+        if mppi.ess_history is not None and step < len(mppi.ess_history):
+            ess_str = f"   MPPI ESS: {mppi.ess_history[step]:.0f}/512"
+
+        info_str = (
+            f"Time: {t:.2f}s  |  "
+            f"Pos Error — MPC: {mpc_err:.4f}m  MPPI: {mppi_err:.4f}m  |  "
+            f"Solve — MPC: {mpc_st:.2f}ms  MPPI: {mppi_st:.2f}ms"
+            f"{ess_str}"
+        )
+        info_text.set_text(info_str)
+
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+
+    # 리플레이 완료 — 최종 상태 유지
+    plt.ioff()
+    plt.show()
+
+
+# ─────────────────────────────────────────────────────────────
 # 궤적 생성
 # ─────────────────────────────────────────────────────────────
 
@@ -404,6 +593,10 @@ def main():
         "--no-plot", action="store_true",
         help="시각화 건너뛰기 (콘솔 요약만 출력)",
     )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="시뮬레이션 후 dual-panel 실시간 리플레이 (MPC/MPPI 나란히 비교)",
+    )
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
@@ -442,11 +635,14 @@ def main():
     )
     mppi_interpolator = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
 
+    need_info = args.live
+
     # ── MPC 시뮬레이션 ──
     print("\n  Running MPC (CasADi/IPOPT) ...")
     mpc_result = simulate_controller(
         mpc_controller, "MPC", mpc_interpolator,
         initial_state.copy(), sim_config, robot_params,
+        store_info=need_info,
     )
     print(f"    -> {len(mpc_result.time_array)} steps, "
           f"wall {mpc_result.total_wall_time:.2f}s")
@@ -456,6 +652,7 @@ def main():
     mppi_result = simulate_controller(
         mppi_controller, "MPPI", mppi_interpolator,
         initial_state.copy(), sim_config, robot_params,
+        store_info=need_info,
     )
     print(f"    -> {len(mppi_result.time_array)} steps, "
           f"wall {mppi_result.total_wall_time:.2f}s")
@@ -464,7 +661,13 @@ def main():
     print_summary(mpc_result, mppi_result)
 
     # ── 시각화 ──
-    if not args.no_plot:
+    if args.live:
+        print("  Starting live comparison replay ...")
+        live_comparison_replay(
+            mpc_result, mppi_result, trajectory,
+            dt=sim_config.dt, update_interval=2,
+        )
+    elif not args.no_plot:
         print("  Generating figures ...")
         plot_figure1(mpc_result, mppi_result, save_path=args.save)
         plot_figure2(mpc_result, mppi_result, save_path=args.save)
