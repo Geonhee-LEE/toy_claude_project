@@ -1,384 +1,214 @@
-#!/usr/bin/env python3
-"""MPPI Basic Demo.
+"""Vanilla MPPI 기본 데모 - 원형 궤적 추적.
 
-Demonstrates basic MPPI (Model Predictive Path Integral) control.
+MPPI 컨트롤러로 원형 궤적을 추적하며,
+샘플 궤적과 가중 궤적을 시각화합니다.
+
+실행:
+    python examples/mppi_basic_demo.py
+    python examples/mppi_basic_demo.py --live
 """
 
 import argparse
-import logging
-import time
-from pathlib import Path
 
 import numpy as np
+import matplotlib.pyplot as plt
 
-from mpc_controller.controllers.mppi.base_mppi import MPPIController
-from mpc_controller.controllers.mppi.mppi_params import MPPIParams
-from mpc_controller.models.differential_drive import RobotParams
-from mpc_controller.utils.trajectory import (
-    TrajectoryInterpolator,
+from mpc_controller import (
+    DifferentialDriveModel,
+    RobotParams,
+    MPPIController,
+    MPPIParams,
     generate_circle_trajectory,
+    TrajectoryInterpolator,
 )
-from simulation.simulator import SimulationConfig, Simulator
-from simulation.visualizer import LiveVisualizer
 
 
-class MPPILiveVisualizer(LiveVisualizer):
-    """
-    Live visualizer specialized for MPPI controller.
-    
-    Visualizes MPPI-specific elements:
-    - Sample trajectories with weight-based transparency
-    - Weighted average trajectory
-    - Best sample trajectory
-    - MPPI status information (ESS, temperature, cost)
-    """
-    
-    def __init__(self, trajectory=None, update_interval=0.1):
-        super().__init__(trajectory, update_interval)
-        self.mppi_info_text = None
-        
-    def setup_plot(self):
-        """Setup MPPI-specific plot elements."""
-        super().setup_plot()
-        
-        # Add text area for MPPI info
-        self.mppi_info_text = self.ax.text(
-            0.02, 0.98, "", 
-            transform=self.ax.transAxes,
-            verticalalignment='top',
-            fontsize=10,
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8)
-        )
-    
-    def update_visualization(self, state, control, reference, prediction, info, time_val):
-        """Update MPPI-specific visualization elements."""
-        # Clear previous MPPI-specific elements
-        for line in self.ax.lines[:]:
-            if hasattr(line, '_mppi_element'):
-                line.remove()
-        
-        # Update basic elements (robot, prediction, etc.)
-        super().update_visualization(state, control, reference, prediction, info, time_val)
-        
-        # Extract MPPI-specific information
-        sample_trajectories = info.get('sample_trajectories', None)
-        weights = info.get('weights', None)
-        weighted_avg_trajectory = info.get('weighted_avg_trajectory', None)
-        best_sample_idx = info.get('best_sample_idx', None)
-        ess = info.get('effective_sample_size', 0)
-        temperature = info.get('temperature', 0)
-        cost = info.get('cost', 0)
-        
-        # Visualize sample trajectories with weight-based transparency
-        if sample_trajectories is not None and weights is not None:
-            # Normalize weights for transparency
-            max_weight = np.max(weights)
-            normalized_weights = weights / max_weight if max_weight > 0 else weights
-            
-            # Plot top samples (e.g., top 20% by weight)
-            num_samples = len(sample_trajectories)
-            top_indices = np.argsort(weights)[-max(1, num_samples // 5):]
-            
-            for idx in top_indices:
-                traj = sample_trajectories[idx]
-                weight = normalized_weights[idx]
-                alpha = 0.2 + 0.6 * weight  # Alpha between 0.2 and 0.8
-                
-                line, = self.ax.plot(
-                    traj[:, 0], traj[:, 1],
-                    color='gray', alpha=alpha, linewidth=1,
-                    zorder=1
-                )
-                line._mppi_element = True
-        
-        # Visualize weighted average trajectory (cyan)
-        if weighted_avg_trajectory is not None:
-            line, = self.ax.plot(
-                weighted_avg_trajectory[:, 0], weighted_avg_trajectory[:, 1],
-                color='cyan', linewidth=2, alpha=0.8,
-                label='Weighted Average', zorder=3
-            )
-            line._mppi_element = True
-        
-        # Visualize best sample trajectory (magenta)
-        if sample_trajectories is not None and best_sample_idx is not None:
-            best_traj = sample_trajectories[best_sample_idx]
-            line, = self.ax.plot(
-                best_traj[:, 0], best_traj[:, 1],
-                color='magenta', linewidth=2, alpha=0.9,
-                label='Best Sample', zorder=4
-            )
-            line._mppi_element = True
-        
-        # Update MPPI status info
-        if self.mppi_info_text is not None:
-            info_str = f"MPPI Status:\n"
-            info_str += f"ESS: {ess:.1f}\n"
-            info_str += f"Temperature: {temperature:.3f}\n"
-            info_str += f"Cost: {cost:.2f}\n"
-            info_str += f"Time: {time_val:.1f}s"
-            self.mppi_info_text.set_text(info_str)
-        
-        # Update legend if we have MPPI elements
-        if sample_trajectories is not None:
-            handles, labels = self.ax.get_legend_handles_labels()
-            # Filter out duplicate labels
-            by_label = dict(zip(labels, handles))
-            self.ax.legend(by_label.values(), by_label.keys(), loc='upper right')
-
-
-def setup_logging() -> None:
-    """Setup logging configuration."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-
-
-def run_mppi_demo(live_visualization: bool = False) -> None:
-    """Run MPPI demonstration."""
-    # Robot parameters
+def run_mppi_demo(live: bool = False):
+    """MPPI 원형 궤적 추적 데모."""
+    # ─── 파라미터 설정 ───
     robot_params = RobotParams(
-        wheel_base=0.5,
         max_velocity=1.0,
-        max_omega=1.5
+        max_omega=1.5,
     )
-    
-    # MPPI parameters
     mppi_params = MPPIParams(
-        num_samples=200,
-        horizon=20,
-        dt=0.1,
-        lambda_=1.0,
-        sigma=np.array([0.5, 1.0]),  # [v, omega] noise std
-        gamma_mean=0.0,
-        gamma_sigma=1.0,
-        a_mean=0.8,
-        a_sigma=0.2,
+        N=20,
+        K=512,
+        dt=0.05,
+        lambda_=10.0,
+        noise_sigma=np.array([0.3, 0.3]),
+        Q=np.diag([10.0, 10.0, 1.0]),
+        R=np.diag([0.01, 0.01]),
+        Qf=np.diag([100.0, 100.0, 10.0]),
     )
-    
-    # Create MPPI controller
-    mppi = MPPIController(robot_params, mppi_params)
-    
-    # Generate reference trajectory (circle)
-    center = np.array([0.0, 0.0])
+
+    # ─── 컨트롤러 & 모델 생성 ───
+    controller = MPPIController(
+        robot_params=robot_params,
+        mppi_params=mppi_params,
+        seed=42,
+    )
+    model = DifferentialDriveModel(robot_params)
+
+    # ─── 원형 궤적 생성 ───
     radius = 2.0
     trajectory = generate_circle_trajectory(
-        center=center,
+        center=np.array([0.0, 0.0]),
         radius=radius,
-        num_points=200,
-        start_angle=0.0,
-        end_angle=2 * np.pi
+        num_points=400,
     )
-    
-    # Create trajectory interpolator
-    traj_interpolator = TrajectoryInterpolator(trajectory, dt=0.05)
-    
-    # Initial state
-    initial_state = np.array([radius, 0.0, np.pi/2])
-    
-    # Simulation configuration
-    sim_config = SimulationConfig(
-        dt=0.05,
-        max_time=20.0,
-        process_noise_std=np.array([0.01, 0.01, 0.005]),
-        measurement_noise_std=np.array([0.02, 0.02, 0.01])
-    )
-    
-    # Create simulator
-    sim = Simulator(robot_params, sim_config)
-    sim.reset(initial_state)
-    
-    # Setup visualization
+    interpolator = TrajectoryInterpolator(trajectory, dt=mppi_params.dt)
+
+    # ─── 실시간 시각화 설정 ───
     visualizer = None
-    if live_visualization:
+    if live:
+        from simulation import MPPILiveVisualizer
+
         visualizer = MPPILiveVisualizer(
-            trajectory=trajectory,
-            update_interval=0.1
+            reference_trajectory=trajectory,
+            title="MPPI Circle Tracking (Live)",
+            update_interval=2,
         )
-        visualizer.start()
-    
-    print("\n=== MPPI Controller Demo ===")
-    print(f"Samples: {mppi_params.num_samples}")
-    print(f"Horizon: {mppi_params.horizon}")
-    print(f"Lambda: {mppi_params.lambda_}")
-    print(f"Sigma: {mppi_params.sigma}")
-    print(f"Live visualization: {live_visualization}")
-    print("\nRunning simulation...")
-    
-    # Simulation loop
-    times = []
-    states = []
-    controls = []
-    references = []
-    tracking_errors = []
-    
-    num_steps = int(sim_config.max_time / sim_config.dt)
-    
-    for step in range(num_steps):
-        t = step * sim_config.dt
-        
-        # Get current state
-        current_state = sim.get_measurement(add_noise=False)
-        
-        # Get reference trajectory
-        ref_traj = traj_interpolator.get_reference(
-            t, mppi_params.horizon, mppi_params.dt,
-            current_theta=current_state[2]
+
+    # ─── 시뮬레이션 ───
+    state = np.array([radius, 0.0, np.pi / 2])  # 원 위 시작
+    dt_sim = mppi_params.dt
+    total_time = 10.0  # 10초
+    num_steps = int(total_time / dt_sim)
+
+    states_history = [state.copy()]
+    controls_history = []
+    costs_history = []
+    ess_history = []
+
+    print("=" * 60)
+    print("  MPPI 원형 궤적 추적 데모")
+    print("=" * 60)
+    print(f"  샘플 수: {mppi_params.K}")
+    print(f"  호라이즌: {mppi_params.N} (dt={mppi_params.dt}s)")
+    print(f"  온도: {mppi_params.lambda_}")
+    print(f"  목표 반지름: {radius}m")
+    print(f"  실시간 시각화: {'활성' if live else '비활성'}")
+    print("=" * 60)
+
+    for i in range(num_steps):
+        t = i * dt_sim
+
+        # 참조 궤적
+        ref = interpolator.get_reference(
+            t, mppi_params.N, mppi_params.dt,
+            current_theta=state[2],
         )
-        
-        # Compute control with MPPI
-        start_time = time.perf_counter()
-        control, info = mppi.compute_control(current_state, ref_traj)
-        solve_time = time.perf_counter() - start_time
-        
-        # Step simulation
-        next_state = sim.step(control, add_noise=False)
-        
-        # Compute tracking error
-        error = sim.compute_tracking_error(current_state, ref_traj[0])
-        
-        # Log data
-        times.append(t)
-        states.append(current_state.copy())
-        controls.append(control.copy())
-        references.append(ref_traj[0].copy())
-        tracking_errors.append(error.copy())
-        
-        # Update live visualization
+
+        # MPPI 제어 계산
+        control, info = controller.compute_control(state, ref)
+
+        # 실시간 시각화 업데이트
         if visualizer is not None:
             visualizer.update(
-                state=current_state,
+                state=state,
                 control=control,
-                reference=ref_traj[0],
-                prediction=info.get('predicted_trajectory', np.array([])),
+                reference=ref[0],
+                prediction=info.get("predicted_trajectory"),
                 info=info,
-                time=t
+                time=t,
             )
-        
-        # Print progress
-        if step % 50 == 0:
-            pos_error = np.linalg.norm(error[:2])
-            print(f"Step {step:3d}, Time: {t:5.1f}s, "
-                  f"Pos Error: {pos_error:.3f}m, "
-                  f"ESS: {info.get('effective_sample_size', 0):.1f}, "
-                  f"Solve: {solve_time*1000:.1f}ms")
-        
-        # Early termination if close to trajectory end
-        _, dist = traj_interpolator.find_closest_point(current_state[:2])
-        if dist < 0.1 and t > sim_config.max_time * 0.8:
-            print(f"\nReached trajectory end at t={t:.1f}s")
-            break
-    
-    print("\nSimulation completed!")
-    
-    # Convert to numpy arrays
-    times = np.array(times)
-    states = np.array(states)
-    controls = np.array(controls)
-    references = np.array(references)
-    tracking_errors = np.array(tracking_errors)
-    
-    # Calculate performance metrics
-    pos_errors = np.linalg.norm(tracking_errors[:, :2], axis=1)
-    pos_rmse = np.sqrt(np.mean(pos_errors**2))
-    pos_max = np.max(pos_errors)
-    heading_rmse = np.sqrt(np.mean(tracking_errors[:, 2]**2))
-    
-    print(f"\n=== Performance Metrics ===")
-    print(f"Position RMSE: {pos_rmse:.3f} m")
-    print(f"Position Max Error: {pos_max:.3f} m")
-    print(f"Heading RMSE: {np.degrees(heading_rmse):.1f} deg")
-    print(f"Average solve time: {np.mean([info.get('solve_time', 0) for info in [{}]*len(times)])*1000:.1f} ms")
-    
-    # Keep live visualization open
-    if live_visualization and visualizer is not None:
-        print("\nLive visualization is active. Close the plot window to exit.")
-        visualizer.wait()
-    else:
-        # Static result visualization
-        import matplotlib.pyplot as plt
-        
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        fig.suptitle('MPPI Controller Results', fontsize=16)
-        
-        # Trajectory tracking
-        ax = axes[0, 0]
-        ax.plot(trajectory[:, 0], trajectory[:, 1], 'k--', linewidth=2, label='Reference')
-        ax.plot(states[:, 0], states[:, 1], 'b-', linewidth=2, label='Actual')
-        ax.plot(states[0, 0], states[0, 1], 'go', markersize=8, label='Start')
-        ax.plot(states[-1, 0], states[-1, 1], 'ro', markersize=8, label='End')
-        ax.set_xlabel('X [m]')
-        ax.set_ylabel('Y [m]')
-        ax.set_title('Trajectory Tracking')
-        ax.legend()
-        ax.grid(True)
-        ax.axis('equal')
-        
-        # Control inputs
-        ax = axes[0, 1]
-        ax.plot(times, controls[:, 0], 'b-', label='Linear velocity')
-        ax.plot(times, controls[:, 1], 'r-', label='Angular velocity')
-        ax.axhline(y=robot_params.max_velocity, color='b', linestyle='--', alpha=0.5)
-        ax.axhline(y=-robot_params.max_velocity, color='b', linestyle='--', alpha=0.5)
-        ax.axhline(y=robot_params.max_omega, color='r', linestyle='--', alpha=0.5)
-        ax.axhline(y=-robot_params.max_omega, color='r', linestyle='--', alpha=0.5)
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Control Input')
-        ax.set_title('Control Inputs')
-        ax.legend()
-        ax.grid(True)
-        
-        # Position errors
-        ax = axes[1, 0]
-        ax.plot(times, pos_errors, 'r-', linewidth=2)
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Position Error [m]')
-        ax.set_title('Position Tracking Error')
-        ax.grid(True)
-        
-        # Heading errors
-        ax = axes[1, 1]
-        ax.plot(times, np.degrees(tracking_errors[:, 2]), 'g-', linewidth=2)
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Heading Error [deg]')
-        ax.set_title('Heading Tracking Error')
-        ax.grid(True)
-        
-        plt.tight_layout()
-        plt.show()
 
+        # 상태 전파
+        state = model.forward_simulate(state, control, dt_sim)
 
-def main() -> None:
-    """Main function with argument parsing."""
-    parser = argparse.ArgumentParser(
-        description="MPPI Basic Demo",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python mppi_basic_demo.py                    # Run with static result plots
-  python mppi_basic_demo.py --live            # Run with live visualization
-        """
+        # 기록
+        states_history.append(state.copy())
+        controls_history.append(control.copy())
+        costs_history.append(info["cost"])
+        ess_history.append(info["ess"])
+
+    # 실시간 시각화 종료
+    if visualizer is not None:
+        visualizer.wait_for_close()
+        return
+
+    states_history = np.array(states_history)
+    controls_history = np.array(controls_history)
+
+    # ─── RMSE 계산 ───
+    dist_from_center = np.sqrt(
+        states_history[:, 0] ** 2 + states_history[:, 1] ** 2
     )
-    
-    parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Enable real-time visualization with MPPI-specific elements"
-    )
-    
-    args = parser.parse_args()
-    
-    setup_logging()
-    
-    try:
-        run_mppi_demo(live_visualization=args.live)
-    except KeyboardInterrupt:
-        print("\nDemo interrupted by user")
-    except Exception as e:
-        logging.error(f"Demo failed: {e}")
-        raise
+    position_errors = np.abs(dist_from_center - radius)
+    rmse = np.sqrt(np.mean(position_errors ** 2))
+
+    print(f"\n  Position RMSE: {rmse:.4f} m")
+    print(f"  {'PASS' if rmse < 0.2 else 'FAIL'} (목표 < 0.2m)")
+    print(f"  평균 ESS: {np.mean(ess_history):.1f}/{mppi_params.K}")
+    print("=" * 60)
+
+    # ─── 시각화 ───
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # 1. 궤적 플롯
+    ax = axes[0, 0]
+    theta_ref = np.linspace(0, 2 * np.pi, 200)
+    ax.plot(radius * np.cos(theta_ref), radius * np.sin(theta_ref),
+            "g--", linewidth=1.5, label="Reference", alpha=0.7)
+    ax.plot(states_history[:, 0], states_history[:, 1],
+            "b-", linewidth=1.5, label="MPPI Tracking")
+    ax.plot(states_history[0, 0], states_history[0, 1],
+            "ko", markersize=8, label="Start")
+    ax.set_xlabel("X [m]")
+    ax.set_ylabel("Y [m]")
+    ax.set_title("MPPI Circle Tracking")
+    ax.legend()
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.3)
+
+    # 2. 위치 오차
+    ax = axes[0, 1]
+    time_arr = np.arange(len(position_errors)) * dt_sim
+    ax.plot(time_arr, position_errors, "r-", linewidth=1.0)
+    ax.axhline(y=0.2, color="k", linestyle="--", alpha=0.5, label="RMSE target")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Position Error [m]")
+    ax.set_title(f"Position Error (RMSE={rmse:.4f}m)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # 3. 제어 입력
+    ax = axes[1, 0]
+    time_ctrl = np.arange(len(controls_history)) * dt_sim
+    ax.plot(time_ctrl, controls_history[:, 0], "b-", label="v [m/s]")
+    ax.plot(time_ctrl, controls_history[:, 1], "r-", label="omega [rad/s]")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Control Input")
+    ax.set_title("Control Inputs")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # 4. 비용 & ESS
+    ax = axes[1, 1]
+    ax2 = ax.twinx()
+    l1 = ax.plot(time_ctrl, costs_history, "b-", alpha=0.7, label="Min Cost")
+    l2 = ax2.plot(time_ctrl, ess_history, "r-", alpha=0.7, label="ESS")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Cost", color="b")
+    ax2.set_ylabel("ESS", color="r")
+    ax.set_title("Cost & Effective Sample Size")
+    lines = l1 + l2
+    ax.legend(lines, [l.get_label() for l in lines])
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("mppi_circle_tracking_demo.png", dpi=150, bbox_inches="tight")
+    print(f"  그래프 저장: mppi_circle_tracking_demo.png")
+    plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="MPPI 원형 궤적 추적 데모")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="실시간 시각화 활성화 (샘플 궤적, 가중 평균, 최적 샘플 표시)",
+    )
+    args = parser.parse_args()
+
+    run_mppi_demo(live=args.live)
