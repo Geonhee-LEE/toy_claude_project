@@ -6,7 +6,7 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] MPPI M2: 고도화 - Colored Noise, Tube-MPPI, Adaptive temperature, GPU 가속
+- [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
 - [ ] MPPI M3: SOTA 변형 - Tsallis, Risk-Aware, Log-MPPI, Stein Variational
 - [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
@@ -45,6 +45,13 @@
 ## ✅ Completed
 
 ### 2026-01-31
+- [x] MPPI M2: Tube-MPPI — Ancillary 피드백 컨트롤러 (#49)
+  * AncillaryController (body frame 오차 변환 + 피드백 보정)
+  * TubeMPPIController (MPPIController 상속, 명목 상태 전파)
+  * TubeAwareCost (장애물 safety_margin + tube_margin)
+  * MPPIParams 확장 (tube_enabled, tube_K_fb 등)
+  * 단위 테스트 27개 통과 (ancillary 14 + tube_mppi 13)
+  * Vanilla vs Tube 비교 데모 (--live/--noise 지원)
 - [x] MPC vs MPPI 비교 데모 (#45, #46)
   * 비교 데모 스크립트 (`examples/mpc_vs_mppi_demo.py`)
   * `--live` 실시간 리플레이 모드

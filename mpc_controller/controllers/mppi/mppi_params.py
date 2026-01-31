@@ -51,6 +51,13 @@ class MPPIParams:
     colored_noise: bool = False
     noise_beta: float = 2.0
 
+    # Tube-MPPI (Williams et al., 2018 — Robust Sampling Based MPPI)
+    tube_enabled: bool = False
+    tube_K_fb: np.ndarray | None = None           # (nu, nx) 피드백 게인. None=기본값
+    tube_max_correction: np.ndarray | None = None  # [dv_max, domega_max]. None=기본값
+    tube_disturbance_bound: float = 0.1            # 예상 외란 크기 (튜브 폭 추정용)
+    tube_nominal_reset_threshold: float = 1.0      # 편차 > threshold → 명목 상태 리셋
+
     def __post_init__(self):
         if self.noise_sigma is None:
             self.noise_sigma = np.array([0.3, 0.3])

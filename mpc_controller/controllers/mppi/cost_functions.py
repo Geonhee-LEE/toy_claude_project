@@ -185,6 +185,65 @@ class ObstacleCost(MPPICostFunction):
         return total_cost
 
 
+class TubeAwareCost(MPPICostFunction):
+    """Tube-aware 장애물 회피 비용.
+
+    ObstacleCost의 safety_margin에 tube_margin을 추가하여
+    명목 궤적이 보수적으로 계획되도록 유도한다.
+
+    명목 궤적은 실제 상태와 tube_width만큼 편차가 있을 수 있으므로
+    장애물과의 안전 거리를 tube_width만큼 확장한다.
+
+    effective_safety = safety_margin + tube_margin
+    """
+
+    def __init__(
+        self,
+        obstacles: np.ndarray,
+        tube_margin: float = 0.15,
+        weight: float = 1000.0,
+        safety_margin: float = 0.3,
+    ):
+        """
+        Args:
+            obstacles: (M, 3) 장애물 [x, y, radius]
+            tube_margin: tube 폭에 의한 추가 안전 마진 [m]
+            weight: 장애물 비용 가중치
+            safety_margin: 기본 안전 마진 [m]
+        """
+        self.obstacles = obstacles
+        self.tube_margin = tube_margin
+        self.weight = weight
+        self.safety_margin = safety_margin
+
+    def compute(
+        self,
+        trajectories: np.ndarray,
+        controls: np.ndarray,
+        reference: np.ndarray,
+    ) -> np.ndarray:
+        if len(self.obstacles) == 0:
+            return np.zeros(trajectories.shape[0])
+
+        K = trajectories.shape[0]
+        positions = trajectories[:, :, :2]  # (K, N+1, 2)
+        total_cost = np.zeros(K)
+        effective_margin = self.safety_margin + self.tube_margin
+
+        for obs in self.obstacles:
+            ox, oy, radius = obs[0], obs[1], obs[2]
+            safety_dist = radius + effective_margin
+
+            dx = positions[:, :, 0] - ox
+            dy = positions[:, :, 1] - oy
+            dist = np.sqrt(dx ** 2 + dy ** 2)
+
+            penetration = np.maximum(0.0, safety_dist - dist)
+            total_cost += self.weight * np.sum(penetration ** 2, axis=1)
+
+        return total_cost
+
+
 class CompositeMPPICost:
     """여러 비용 함수를 합산하는 복합 비용."""
 
