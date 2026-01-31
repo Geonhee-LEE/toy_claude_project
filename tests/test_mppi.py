@@ -29,7 +29,7 @@ class TestMPPIParams:
         assert params.N == 30
         assert params.dt == 0.05
         assert params.K == 1024
-        assert params.lambda_ == 1.0
+        assert params.lambda_ == 10.0
 
     def test_default_matrices(self):
         params = MPPIParams()
