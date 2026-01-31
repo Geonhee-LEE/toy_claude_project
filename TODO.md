@@ -52,6 +52,11 @@
   * MPPIParams 확장 (tube_enabled, tube_K_fb 등)
   * 단위 테스트 27개 통과 (ancillary 14 + tube_mppi 13)
   * Vanilla vs Tube 비교 데모 (--live/--noise 지원)
+- [x] MPPI M2: 핵심 기능 — ControlRateCost, Adaptive Temp, Colored Noise (#47)
+  * ControlRateCost (제어 변화율 비용 함수)
+  * AdaptiveTemperature (ESS 기반 λ 자동 튜닝)
+  * ColoredNoiseSampler (OU 프로세스 기반 시간 상관 노이즈)
+  * Vanilla vs M2 비교 데모 (`examples/mppi_vanilla_vs_m2_demo.py`)
 - [x] MPC vs MPPI 비교 데모 (#45, #46)
   * 비교 데모 스크립트 (`examples/mpc_vs_mppi_demo.py`)
   * `--live` 실시간 리플레이 모드
