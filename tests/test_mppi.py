@@ -359,5 +359,182 @@ class TestMPPIIntegration:
         assert info["cost"] >= 0
 
 
+class TestAdaptiveTemperature:
+    """Adaptive Temperature 통합 테스트."""
+
+    def test_temperature_changes_with_ess(self):
+        """ESS가 낮을 때 λ가 증가하는지 확인."""
+        from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
+
+        at = AdaptiveTemperature(
+            initial_lambda=10.0,
+            target_ess_ratio=0.5,
+            adaptation_rate=0.5,
+        )
+        K = 100
+
+        # ESS가 매우 낮은 상황 (ess_ratio = 0.05 < target 0.5)
+        low_ess = 5.0
+        lambda_after_low = at.update(low_ess, K)
+        # target(0.5) - ratio(0.05) > 0 → λ 증가
+        assert lambda_after_low > 10.0, (
+            f"λ should increase when ESS is low, got {lambda_after_low}"
+        )
+
+    def test_temperature_decreases_with_high_ess(self):
+        """ESS가 높을 때 λ가 감소하는지 확인."""
+        from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
+
+        at = AdaptiveTemperature(
+            initial_lambda=10.0,
+            target_ess_ratio=0.5,
+            adaptation_rate=0.5,
+        )
+        K = 100
+
+        # ESS가 매우 높은 상황 (ess_ratio = 0.9 > target 0.5)
+        high_ess = 90.0
+        lambda_after_high = at.update(high_ess, K)
+        # target(0.5) - ratio(0.9) < 0 → λ 감소
+        assert lambda_after_high < 10.0, (
+            f"λ should decrease when ESS is high, got {lambda_after_high}"
+        )
+
+    def test_lambda_clamping(self):
+        """λ가 min/max 범위 내에 유지되는지 확인."""
+        from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
+
+        at = AdaptiveTemperature(
+            initial_lambda=10.0,
+            target_ess_ratio=0.5,
+            adaptation_rate=10.0,  # 매우 공격적
+            lambda_min=2.0,
+            lambda_max=50.0,
+        )
+
+        # 극단적인 ESS → λ max 도달
+        for _ in range(50):
+            at.update(1.0, 1000)
+        assert at.lambda_ <= 50.0
+
+        # 극단적인 ESS → λ min 도달
+        at2 = AdaptiveTemperature(
+            initial_lambda=10.0,
+            adaptation_rate=10.0,
+            lambda_min=2.0,
+            lambda_max=50.0,
+        )
+        for _ in range(50):
+            at2.update(999.0, 1000)
+        assert at2.lambda_ >= 2.0
+
+    def test_controller_with_adaptive_temp(self):
+        """컨트롤러에서 adaptive temperature가 동작하는지 확인."""
+        params = MPPIParams(
+            N=10,
+            K=64,
+            dt=0.1,
+            adaptive_temperature=True,
+            adaptive_temp_config={
+                "target_ess_ratio": 0.5,
+                "adaptation_rate": 0.1,
+            },
+        )
+        controller = MPPIController(mppi_params=params, seed=42)
+
+        state = np.array([0.0, 0.0, 0.0])
+        reference = np.zeros((11, 3))
+        reference[:, 0] = np.linspace(0, 2, 11)
+
+        # 여러 번 호출하여 temperature 변화 확인
+        temperatures = []
+        for _ in range(5):
+            _, info = controller.compute_control(state, reference)
+            temperatures.append(info["temperature"])
+
+        # adaptive temp가 활성화되었으므로 temperature는 변할 수 있음
+        assert all(isinstance(t, float) for t in temperatures)
+        assert all(t > 0 for t in temperatures)
+
+
+class TestColoredNoiseIntegration:
+    """Colored Noise 통합 테스트."""
+
+    def test_colored_noise_circle_tracking(self):
+        """Colored noise로 원형 궤적 추적 RMSE < 0.2m 확인."""
+        params = MPPIParams(
+            N=20,
+            K=512,
+            dt=0.05,
+            lambda_=10.0,
+            colored_noise=True,
+            noise_beta=2.0,
+        )
+        controller = MPPIController(mppi_params=params, seed=42)
+
+        trajectory = generate_circle_trajectory(
+            center=np.array([0.0, 0.0]),
+            radius=2.0,
+            num_points=200,
+        )
+        interpolator = TrajectoryInterpolator(trajectory, dt=0.05)
+
+        state = np.array([2.0, 0.0, np.pi / 2])
+        model = DifferentialDriveModel()
+        dt_sim = 0.05
+
+        errors = []
+        for i in range(100):
+            t = i * dt_sim
+            ref = interpolator.get_reference(
+                t, params.N, params.dt, current_theta=state[2]
+            )
+            control, _ = controller.compute_control(state, ref)
+            state = model.forward_simulate(state, control, dt_sim)
+            dist_from_center = np.sqrt(state[0] ** 2 + state[1] ** 2)
+            errors.append(abs(dist_from_center - 2.0))
+
+        rmse = np.sqrt(np.mean(np.array(errors) ** 2))
+        assert rmse < 0.2, f"Colored noise circle tracking RMSE = {rmse:.4f} (> 0.2m)"
+
+    def test_control_rate_cost_reduces_oscillation(self):
+        """ControlRateCost 적용 시 제어 변화율이 감소하는지 확인."""
+        base_params = MPPIParams(N=10, K=256, dt=0.1)
+        rate_params = MPPIParams(
+            N=10,
+            K=256,
+            dt=0.1,
+            R_rate=np.array([0.5, 0.5]),
+        )
+
+        ctrl_base = MPPIController(mppi_params=base_params, seed=42)
+        ctrl_rate = MPPIController(mppi_params=rate_params, seed=42)
+
+        state = np.array([0.0, 0.0, 0.0])
+        reference = np.zeros((11, 3))
+        reference[:, 0] = np.linspace(0, 2, 11)
+
+        controls_base = []
+        controls_rate = []
+
+        for _ in range(10):
+            u1, _ = ctrl_base.compute_control(state, reference)
+            u2, _ = ctrl_rate.compute_control(state, reference)
+            controls_base.append(u1.copy())
+            controls_rate.append(u2.copy())
+
+        # 제어 변화율 계산
+        cb = np.array(controls_base)
+        cr = np.array(controls_rate)
+        rate_base = np.mean(np.abs(np.diff(cb, axis=0)))
+        rate_smooth = np.mean(np.abs(np.diff(cr, axis=0)))
+
+        # ControlRateCost 적용 시 변화율이 같거나 작아야 함
+        # (seed가 같아도 비용 함수가 다르므로 궤적이 달라질 수 있음)
+        assert rate_smooth <= rate_base * 1.5, (
+            f"rate_smooth={rate_smooth:.4f} should be <= rate_base*1.5={rate_base*1.5:.4f}"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

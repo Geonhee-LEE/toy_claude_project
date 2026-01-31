@@ -40,6 +40,17 @@ class MPPIParams:
     # Terminal state weights
     Qf: np.ndarray | None = None
 
+    # Control rate weights (u_t - u_{t-1}) penalty — None = 비활성
+    R_rate: np.ndarray | None = None
+
+    # Adaptive temperature (ESS 기반 λ 자동 조정)
+    adaptive_temperature: bool = False
+    adaptive_temp_config: dict | None = None
+
+    # Colored noise sampling (Ornstein-Uhlenbeck 프로세스)
+    colored_noise: bool = False
+    noise_beta: float = 2.0
+
     def __post_init__(self):
         if self.noise_sigma is None:
             self.noise_sigma = np.array([0.3, 0.3])

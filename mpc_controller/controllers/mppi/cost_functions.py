@@ -106,6 +106,34 @@ class ControlEffortCost(MPPICostFunction):
         return np.sum(weighted, axis=(1, 2))
 
 
+class ControlRateCost(MPPICostFunction):
+    """제어 입력 변화율 비용 — 부드러운 제어 유도.
+
+    cost_k = sum_{t=0}^{N-2} (u_{t+1} - u_t)^T R_rate (u_{t+1} - u_t)
+
+    MPC의 Rd 행렬에 대응하며, 제어 입력 진동을 억제한다.
+    """
+
+    def __init__(self, R_rate: np.ndarray):
+        """
+        Args:
+            R_rate: (nu, nu) 또는 (nu,) 변화율 가중 행렬/벡터
+        """
+        self.r_diag = np.diag(R_rate) if R_rate.ndim == 2 else R_rate
+
+    def compute(
+        self,
+        trajectories: np.ndarray,
+        controls: np.ndarray,
+        reference: np.ndarray,
+    ) -> np.ndarray:
+        # du = u_{t+1} - u_t : (K, N-1, nu)
+        du = controls[:, 1:, :] - controls[:, :-1, :]
+        # 가중 제곱합: (K, N-1, nu) -> (K,)
+        weighted = du ** 2 * self.r_diag[np.newaxis, np.newaxis, :]
+        return np.sum(weighted, axis=(1, 2))
+
+
 class ObstacleCost(MPPICostFunction):
     """장애물 회피 비용.
 
