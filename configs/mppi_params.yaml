@@ -1,0 +1,38 @@
+# MPPI 컨트롤러 파라미터
+mppi:
+  # 예측 호라이즌
+  prediction_horizon: 30       # 예측 스텝 수 (N)
+  dt: 0.05                     # 샘플링 시간 [s]
+
+  # 샘플링
+  num_samples: 1024            # 샘플 수 (K)
+  temperature: 1.0             # 온도 파라미터 (lambda)
+
+  # 노이즈 표준편차
+  noise_sigma:
+    v: 0.5                     # 선속도 노이즈 [m/s]
+    omega: 0.3                 # 각속도 노이즈 [rad/s]
+
+  # 상태 가중치 [x, y, theta]
+  weights:
+    state:
+      x: 10.0
+      y: 10.0
+      theta: 1.0
+    control:
+      v: 0.01
+      omega: 0.01
+    terminal:
+      x: 100.0
+      y: 100.0
+      theta: 10.0
+
+  # 장애물 회피
+  obstacle:
+    weight: 1000.0             # 장애물 비용 가중치
+    safety_margin: 0.3         # 안전 마진 [m]
+
+# 로봇 파라미터 (robot_params.yaml과 호환)
+robot:
+  max_linear_velocity: 1.0     # 최대 선속도 [m/s]
+  max_angular_velocity: 1.5    # 최대 각속도 [rad/s]
