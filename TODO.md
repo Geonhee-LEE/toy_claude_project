@@ -6,6 +6,10 @@
 
 ## 🔴 High Priority (P0)
 
+- [ ] MPPI M2: 고도화 - Colored Noise, Tube-MPPI, Adaptive temperature, GPU 가속
+- [ ] MPPI M3: SOTA 변형 - Tsallis, Risk-Aware, Log-MPPI, Stein Variational
+- [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
+
 ## 🟠 Medium Priority (P1)
 
 - [ ] #104 실시간 경로 재계획 기능 - 환경 변화 대응
@@ -37,6 +41,16 @@
 ---
 
 ## ✅ Completed
+
+### 2026-01-31
+- [x] MPPI M1: Vanilla MPPI 구현 (#31~#36)
+  * PRD 문서 작성 (docs/mppi/PRD.md)
+  * MPPIParams 데이터클래스 & BatchDynamicsWrapper (RK4 벡터화)
+  * 비용 함수 모듈 (StateTracking, Terminal, ControlEffort, Obstacle)
+  * GaussianSampler 노이즈 샘플링
+  * Vanilla MPPI 컨트롤러 (compute_control 인터페이스 호환)
+  * RVIZ 시각화 (샘플 궤적, 가중 궤적, 비용 히트맵)
+  * 원형 궤적 추적 RMSE = 0.1534m (< 0.2m 기준 통과)
 
 ### 2026-01-25
 - [x] #103 동적 장애물 회피 기능 - 움직이는 장애물 대응
