@@ -6,11 +6,11 @@ mppi:
 
   # 샘플링
   num_samples: 1024            # 샘플 수 (K)
-  temperature: 1.0             # 온도 파라미터 (lambda)
+  temperature: 10.0            # 온도 파라미터 (lambda)
 
   # 노이즈 표준편차
   noise_sigma:
-    v: 0.5                     # 선속도 노이즈 [m/s]
+    v: 0.3                     # 선속도 노이즈 [m/s]
     omega: 0.3                 # 각속도 노이즈 [rad/s]
 
   # 상태 가중치 [x, y, theta]
