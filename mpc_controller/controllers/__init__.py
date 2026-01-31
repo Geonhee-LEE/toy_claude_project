@@ -7,10 +7,13 @@ from mpc_controller.controllers.non_coaxial_swerve_mpc import (
     NonCoaxialSwerveMPCController,
     NonCoaxialSwerveMPCParams,
 )
+from mpc_controller.controllers.mppi import MPPIController, MPPIParams
 
 __all__ = [
     "MPCController",
     "MPCParams",
+    "MPPIController",
+    "MPPIParams",
     "PIDController",
     "PIDGains",
     "SwerveMPCController",
