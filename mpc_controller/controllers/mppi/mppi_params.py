@@ -26,7 +26,7 @@ class MPPIParams:
 
     # Sampling
     K: int = 1024
-    lambda_: float = 1.0
+    lambda_: float = 10.0
 
     # Noise standard deviation [v, omega]
     noise_sigma: np.ndarray | None = None
@@ -42,10 +42,10 @@ class MPPIParams:
 
     def __post_init__(self):
         if self.noise_sigma is None:
-            self.noise_sigma = np.array([0.5, 0.3])
+            self.noise_sigma = np.array([0.3, 0.3])
         if self.Q is None:
             self.Q = np.diag([10.0, 10.0, 1.0])
         if self.R is None:
             self.R = np.diag([0.01, 0.01])
         if self.Qf is None:
-            self.Qf = np.diag([100.0, 100.0, 10.0])
+            self.Qf = np.diag([50.0, 50.0, 5.0])
