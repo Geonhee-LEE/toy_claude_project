@@ -101,10 +101,12 @@ class ColoredNoiseSampler(BaseSampler):
         Returns:
             (K, N, nu) 노이즈 배열 — 시간축 자기상관 존재
         """
+        # 정확한 OU 프로세스 이산화: decay = exp(-beta * dt)
+        # 이 공식은 beta*dt 값에 관계없이 항상 decay ∈ (0, 1) 보장
         dt = 1.0  # 단위 시간 간격 (실제 dt는 dynamics에서 처리)
-        decay = 1.0 - self.beta * dt
-        # diffusion: 정상 분포 분산 σ² 유지 조건
-        diffusion = self.sigma * np.sqrt(np.clip(1.0 - decay ** 2, 0.0, None))
+        decay = np.exp(-self.beta * dt)
+        # 정상 분포 분산 σ² 유지 조건: diffusion = sigma * sqrt(1 - decay^2)
+        diffusion = self.sigma * np.sqrt(1.0 - decay ** 2)
 
         noise = np.empty((K, N, nu))
         # 초기 샘플: 정상 분포에서 추출
