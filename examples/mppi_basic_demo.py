@@ -5,7 +5,10 @@ MPPI 컨트롤러로 원형 궤적을 추적하며,
 
 실행:
     python examples/mppi_basic_demo.py
+    python examples/mppi_basic_demo.py --live
 """
+
+import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,7 +23,7 @@ from mpc_controller import (
 )
 
 
-def run_mppi_demo():
+def run_mppi_demo(live: bool = False):
     """MPPI 원형 궤적 추적 데모."""
     # ─── 파라미터 설정 ───
     robot_params = RobotParams(
@@ -55,6 +58,17 @@ def run_mppi_demo():
     )
     interpolator = TrajectoryInterpolator(trajectory, dt=mppi_params.dt)
 
+    # ─── 실시간 시각화 설정 ───
+    visualizer = None
+    if live:
+        from simulation import MPPILiveVisualizer
+
+        visualizer = MPPILiveVisualizer(
+            reference_trajectory=trajectory,
+            title="MPPI Circle Tracking (Live)",
+            update_interval=2,
+        )
+
     # ─── 시뮬레이션 ───
     state = np.array([radius, 0.0, np.pi / 2])  # 원 위 시작
     dt_sim = mppi_params.dt
@@ -73,6 +87,7 @@ def run_mppi_demo():
     print(f"  호라이즌: {mppi_params.N} (dt={mppi_params.dt}s)")
     print(f"  온도: {mppi_params.lambda_}")
     print(f"  목표 반지름: {radius}m")
+    print(f"  실시간 시각화: {'활성' if live else '비활성'}")
     print("=" * 60)
 
     for i in range(num_steps):
@@ -87,6 +102,17 @@ def run_mppi_demo():
         # MPPI 제어 계산
         control, info = controller.compute_control(state, ref)
 
+        # 실시간 시각화 업데이트
+        if visualizer is not None:
+            visualizer.update(
+                state=state,
+                control=control,
+                reference=ref[0],
+                prediction=info.get("predicted_trajectory"),
+                info=info,
+                time=t,
+            )
+
         # 상태 전파
         state = model.forward_simulate(state, control, dt_sim)
 
@@ -95,6 +121,11 @@ def run_mppi_demo():
         controls_history.append(control.copy())
         costs_history.append(info["cost"])
         ess_history.append(info["ess"])
+
+    # 실시간 시각화 종료
+    if visualizer is not None:
+        visualizer.wait_for_close()
+        return
 
     states_history = np.array(states_history)
     controls_history = np.array(controls_history)
@@ -172,4 +203,12 @@ def run_mppi_demo():
 
 
 if __name__ == "__main__":
-    run_mppi_demo()
+    parser = argparse.ArgumentParser(description="MPPI 원형 궤적 추적 데모")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="실시간 시각화 활성화 (샘플 궤적, 가중 평균, 최적 샘플 표시)",
+    )
+    args = parser.parse_args()
+
+    run_mppi_demo(live=args.live)

@@ -13,6 +13,7 @@ from simulation.visualizer import (
     LiveVisualizer,
     draw_environment,
 )
+from simulation.mppi_live_visualizer import MPPILiveVisualizer
 from simulation.environments import (
     Obstacle,
     CircleObstacle,
@@ -37,6 +38,7 @@ __all__ = [
     "plot_comparison",
     "LiveVisualizer",
     "draw_environment",
+    "MPPILiveVisualizer",
     # Environments
     "Obstacle",
     "CircleObstacle",
