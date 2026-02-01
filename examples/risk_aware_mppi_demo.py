@@ -379,21 +379,27 @@ def generate_trajectory(traj_type: str) -> np.ndarray:
 
 
 def get_default_obstacles(traj_type: str) -> np.ndarray:
-    """궤적 유형에 맞는 기본 장애물 배치."""
+    """궤적 유형에 맞는 기본 장애물 배치.
+
+    장애물은 경로 **근처**이지만 위가 아닌 곳에 배치하여
+    safety 영역만 경로에 걸치도록 한다. (완전 차단 X, 부분 회피 유도)
+    """
     if traj_type == "circle":
+        # 경로에서 ~0.12m → safety=0.55m 침범, 부분 회피
         return np.array([
-            [2.0, 1.5, 0.3],
-            [-1.5, 1.8, 0.3],
+            [1.5, 1.5, 0.25],
+            [-1.5, -1.5, 0.25],
         ])
     elif traj_type == "figure8":
+        # 경로에서 0.3~0.4m → safety=0.55m 침범, 부분 회피
         return np.array([
-            [1.2, 0.8, 0.3],
-            [-1.2, -0.8, 0.3],
+            [1.5, -0.5, 0.25],
+            [-0.5, 0.9, 0.25],
         ])
     else:
         return np.array([
-            [3.0, 0.3, 0.3],
-            [7.0, -0.2, 0.3],
+            [3.0, 0.3, 0.25],
+            [7.0, -0.2, 0.25],
         ])
 
 
@@ -427,6 +433,12 @@ def main():
 
     results = []
     for alpha in alpha_values:
+        # adaptive temp target_ess_ratio를 alpha에 비례 조정:
+        # alpha=1.0 → target 0.5 (전체 512중 256)
+        # alpha=0.5 → target 0.25 (활성 256중 128)
+        # alpha=0.3 → target 0.15 (활성 154중 77)
+        # 이를 통해 CVaR 절단 후 남은 샘플 내에서 적절한 ESS 목표 유지
+        target_ess = 0.5 * alpha
         params = MPPIParams(
             N=20, K=512, dt=0.05, lambda_=10.0,
             noise_sigma=np.array([0.3, 0.3]),
@@ -436,7 +448,7 @@ def main():
             cvar_alpha=alpha,
             adaptive_temperature=True,
             adaptive_temp_config={
-                "target_ess_ratio": 0.5,
+                "target_ess_ratio": target_ess,
                 "adaptation_rate": 1.0,
                 "lambda_min": 0.001,
                 "lambda_max": 100.0,
