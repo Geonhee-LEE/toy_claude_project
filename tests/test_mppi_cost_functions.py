@@ -7,6 +7,7 @@ from mpc_controller.controllers.mppi.cost_functions import (
     StateTrackingCost,
     TerminalCost,
     ControlEffortCost,
+    ControlRateCost,
     ObstacleCost,
     CompositeMPPICost,
 )
@@ -133,6 +134,77 @@ class TestControlEffortCost:
 
         costs = cost_fn.compute(traj, ctrl, ref)
         assert costs[1] > costs[0]
+
+
+class TestControlRateCost:
+    """ControlRateCost 테스트."""
+
+    @pytest.fixture
+    def cost_fn(self):
+        R_rate = np.array([0.5, 0.5])
+        return ControlRateCost(R_rate)
+
+    def test_output_shape(self, cost_fn):
+        K, N = 8, 5
+        traj = np.zeros((K, N + 1, 3))
+        ctrl = np.zeros((K, N, 2))
+        ref = np.zeros((N + 1, 3))
+
+        costs = cost_fn.compute(traj, ctrl, ref)
+        assert costs.shape == (K,)
+
+    def test_zero_change_zero_cost(self, cost_fn):
+        """제어 변화가 없으면 비용 0."""
+        K, N = 4, 5
+        traj = np.zeros((K, N + 1, 3))
+        ctrl = np.ones((K, N, 2)) * 0.5  # 일정한 제어
+        ref = np.zeros((N + 1, 3))
+
+        costs = cost_fn.compute(traj, ctrl, ref)
+        np.testing.assert_allclose(costs, 0.0, atol=1e-10)
+
+    def test_larger_change_larger_cost(self, cost_fn):
+        """큰 제어 변화 → 큰 비용."""
+        K, N = 2, 5
+        traj = np.zeros((K, N + 1, 3))
+        ref = np.zeros((N + 1, 3))
+
+        ctrl = np.zeros((K, N, 2))
+        # 샘플 0: 작은 변화
+        ctrl[0, :, 0] = [0.0, 0.1, 0.2, 0.3, 0.4]
+        # 샘플 1: 큰 변화 (진동)
+        ctrl[1, :, 0] = [0.0, 1.0, 0.0, 1.0, 0.0]
+
+        costs = cost_fn.compute(traj, ctrl, ref)
+        assert costs[1] > costs[0]
+
+    def test_matrix_input(self):
+        """R_rate를 행렬로 전달해도 동작."""
+        R_rate_mat = np.diag([0.5, 0.3])
+        cost_fn = ControlRateCost(R_rate_mat)
+
+        K, N = 4, 5
+        traj = np.zeros((K, N + 1, 3))
+        ctrl = np.zeros((K, N, 2))
+        ctrl[:, :, 0] = np.linspace(0, 1, N)
+        ref = np.zeros((N + 1, 3))
+
+        costs = cost_fn.compute(traj, ctrl, ref)
+        assert costs.shape == (K,)
+        assert np.all(costs > 0)
+
+    def test_single_step_horizon(self):
+        """N=1 일 때 변화율 없음 → 비용 0."""
+        R_rate = np.array([0.5, 0.5])
+        cost_fn = ControlRateCost(R_rate)
+
+        K, N = 4, 1
+        traj = np.zeros((K, N + 1, 3))
+        ctrl = np.ones((K, N, 2))
+        ref = np.zeros((N + 1, 3))
+
+        costs = cost_fn.compute(traj, ctrl, ref)
+        np.testing.assert_allclose(costs, 0.0, atol=1e-10)
 
 
 class TestObstacleCost:

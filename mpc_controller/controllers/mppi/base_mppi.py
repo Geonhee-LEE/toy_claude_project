@@ -14,9 +14,11 @@ from mpc_controller.controllers.mppi.cost_functions import (
     StateTrackingCost,
     TerminalCost,
     ControlEffortCost,
+    ControlRateCost,
     ObstacleCost,
 )
-from mpc_controller.controllers.mppi.sampling import GaussianSampler
+from mpc_controller.controllers.mppi.sampling import GaussianSampler, ColoredNoiseSampler
+from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
 from mpc_controller.controllers.mppi.utils import softmax_weights, effective_sample_size
 
 logger = logging.getLogger(__name__)
@@ -59,13 +61,34 @@ class MPPIController:
 
         # 구성 요소 초기화
         self.dynamics = BatchDynamicsWrapper(self.robot_params)
-        self.sampler = GaussianSampler(self.params.noise_sigma, seed=seed)
+
+        # 샘플러 선택: Colored Noise 또는 Gaussian
+        if self.params.colored_noise:
+            self.sampler = ColoredNoiseSampler(
+                self.params.noise_sigma,
+                beta=self.params.noise_beta,
+                seed=seed,
+            )
+        else:
+            self.sampler = GaussianSampler(self.params.noise_sigma, seed=seed)
+
+        # Adaptive Temperature (옵트인)
+        self._adaptive_temp = None
+        if self.params.adaptive_temperature:
+            config = self.params.adaptive_temp_config or {}
+            self._adaptive_temp = AdaptiveTemperature(
+                initial_lambda=self.params.lambda_,
+                **config,
+            )
 
         # 비용 함수 구성
         self.cost = CompositeMPPICost()
         self.cost.add(StateTrackingCost(self.params.Q))
         self.cost.add(TerminalCost(self.params.Qf))
         self.cost.add(ControlEffortCost(self.params.R))
+
+        if self.params.R_rate is not None:
+            self.cost.add(ControlRateCost(self.params.R_rate))
 
         if obstacles is not None and len(obstacles) > 0:
             self.cost.add(ObstacleCost(obstacles))
@@ -127,7 +150,8 @@ class MPPIController:
         )  # (K,)
 
         # 6. Softmax 가중치
-        weights = softmax_weights(costs, self.params.lambda_)  # (K,)
+        current_lambda = self._get_current_lambda()
+        weights = self._compute_weights(costs)  # (K,)
 
         # 7. 가중 평균으로 제어열 업데이트
         # (K, 1, 1) * (K, N, nu) -> sum -> (N, nu)
@@ -152,6 +176,10 @@ class MPPIController:
         # ESS 계산
         ess = effective_sample_size(weights)
 
+        # Adaptive Temperature 업데이트
+        if self._adaptive_temp is not None:
+            current_lambda = self._adaptive_temp.update(ess, K)
+
         # 로깅
         self._iteration_count += 1
         logger.info(
@@ -175,7 +203,7 @@ class MPPIController:
             "best_trajectory": trajectories[best_idx],
             "best_index": best_idx,
             "ess": ess,
-            "temperature": self.params.lambda_,
+            "temperature": current_lambda,
         }
 
         return u_opt, info
@@ -191,8 +219,20 @@ class MPPIController:
         self.cost.add(StateTrackingCost(self.params.Q))
         self.cost.add(TerminalCost(self.params.Qf))
         self.cost.add(ControlEffortCost(self.params.R))
+        if self.params.R_rate is not None:
+            self.cost.add(ControlRateCost(self.params.R_rate))
         if len(obstacles) > 0:
             self.cost.add(ObstacleCost(obstacles))
+
+    def _get_current_lambda(self) -> float:
+        """현재 온도 파라미터 반환 (adaptive 적용 시 동적 값)."""
+        if self._adaptive_temp is not None:
+            return self._adaptive_temp.lambda_
+        return self.params.lambda_
+
+    def _compute_weights(self, costs: np.ndarray) -> np.ndarray:
+        """비용에서 가중치 계산. 서브클래스에서 오버라이드 가능."""
+        return softmax_weights(costs, self._get_current_lambda())
 
     def reset(self) -> None:
         """제어열 초기화 및 반복 횟수 리셋."""

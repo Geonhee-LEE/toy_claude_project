@@ -40,6 +40,37 @@ class MPPIParams:
     # Terminal state weights
     Qf: np.ndarray | None = None
 
+    # Control rate weights (u_t - u_{t-1}) penalty — None = 비활성
+    R_rate: np.ndarray | None = None
+
+    # Adaptive temperature (ESS 기반 λ 자동 조정)
+    adaptive_temperature: bool = False
+    adaptive_temp_config: dict | None = None
+
+    # Colored noise sampling (Ornstein-Uhlenbeck 프로세스)
+    colored_noise: bool = False
+    noise_beta: float = 2.0
+
+    # Tsallis-MPPI (Yin et al., 2021 — Variational Inference MPC using Tsallis Divergence)
+    tsallis_q: float = 1.0  # 1.0=Vanilla(Shannon), >1=heavy-tail, <1=light-tail
+
+    # M3c Risk-Aware MPPI (CVaR weight truncation)
+    # 1.0=risk-neutral(Vanilla), <1=risk-averse, 실용 범위 [0.1, 1.0]
+    cvar_alpha: float = 1.0
+
+    # M3d Stein Variational MPPI (Lambert et al., 2020 — SVMPC)
+    # SVGD로 샘플 간 상호작용(매력+반발)을 통해 분포 개선
+    svgd_num_iterations: int = 0       # 0=Vanilla 동등(비활성), 권장: 1~5
+    svgd_step_size: float = 0.1        # SVGD update step size
+    svgd_bandwidth: float | None = None  # RBF bandwidth. None=median heuristic
+
+    # Tube-MPPI (Williams et al., 2018 — Robust Sampling Based MPPI)
+    tube_enabled: bool = False
+    tube_K_fb: np.ndarray | None = None           # (nu, nx) 피드백 게인. None=기본값
+    tube_max_correction: np.ndarray | None = None  # [dv_max, domega_max]. None=기본값
+    tube_disturbance_bound: float = 0.1            # 예상 외란 크기 (튜브 폭 추정용)
+    tube_nominal_reset_threshold: float = 1.0      # 편차 > threshold → 명목 상태 리셋
+
     def __post_init__(self):
         if self.noise_sigma is None:
             self.noise_sigma = np.array([0.3, 0.3])

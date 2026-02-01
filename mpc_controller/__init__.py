@@ -7,7 +7,7 @@ from mpc_controller.models.non_coaxial_swerve import (
     NonCoaxialSwerveParams,
 )
 from mpc_controller.controllers.mpc import MPCController, MPCParams
-from mpc_controller.controllers.mppi import MPPIController, MPPIParams
+from mpc_controller.controllers.mppi import MPPIController, MPPIParams, TubeMPPIController
 from mpc_controller.controllers.swerve_mpc import SwerveMPCController, SwerveMPCParams
 from mpc_controller.controllers.non_coaxial_swerve_mpc import (
     NonCoaxialSwerveMPCController,
@@ -31,6 +31,7 @@ __all__ = [
     "MPCController",
     "MPCParams",
     "MPPIController",
+    "TubeMPPIController",
     "MPPIParams",
     "SwerveMPCController",
     "SwerveMPCParams",

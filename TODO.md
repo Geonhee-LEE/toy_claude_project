@@ -6,12 +6,17 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] MPPI M2: 고도화 - Colored Noise, Tube-MPPI, Adaptive temperature, GPU 가속
-- [ ] MPPI M3: SOTA 변형 - Tsallis, Risk-Aware, Log-MPPI, Stein Variational
+- [x] MPPI M3d: Stein Variational MPPI (SVMPC) ✅
+- [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
+- [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
+- [ ] MPPI M2: 고도화 - GPU 가속 (잔여) — CuPy 기반 NumPy drop-in 또는 JAX jit
+- [ ] MPPI M3d-GPU: SVMPC CUDA 가속 — pairwise kernel (K²) + rollout 병렬화
 - [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
 ## 🟠 Medium Priority (P1)
 
+- [ ] MPC vs MPPI 비교 데모 파라미터 공정화 — 호라이즌 통일 (MPC 2.0s vs MPPI 1.0s)
+- [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
 - [ ] #104 실시간 경로 재계획 기능 - 환경 변화 대응
 - [ ] #105 Ackermann 조향 모델 추가 - 자동차형 로봇 지원
 - [ ] #106 속도 제약 고려 MPC - 가속도/저크 제한
@@ -42,7 +47,52 @@
 
 ## ✅ Completed
 
+### 2026-02-01
+- [x] MPPI M3d: Stein Variational MPPI (SVMPC) — SVGD 커널 기반 샘플 다양성
+  * SteinVariationalMPPIController (SVGD 기반 gradient-free 샘플 분포 개선)
+  * rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
+  * svgd_num_iterations=0 → Vanilla 완전 동등성 검증
+  * compute_control 전체 오버라이드 (SVGD 루프: 매력력+반발력)
+  * 단위 테스트 23개 통과
+  * SVGD iteration수별 비교 데모
+- [x] MPPI M3c: Risk-Aware MPPI (CVaR) — alpha 기반 가중치 절단
+  * RiskAwareMPPIController (CVaR 가중치 절단, 최저 비용 ceil(alpha*K)개만 softmax)
+  * cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse)
+  * alpha=1.0 → Vanilla 완전 동등성 검증
+  * 장애물 회피 시 risk-averse가 더 보수적 경로 선택
+  * 단위 테스트 22개 통과
+  * alpha별 장애물 회피 비교 데모
+- [x] MPPI M3a: Log-MPPI — log-space softmax 수치 안정성 (#51)
+  * LogMPPIController (log-space 가중치 계산)
+  * 극단적 cost(1e-15~1e15)에서 NaN/Inf 방지
+  * Vanilla와 일반 범위에서 동일 결과 (차이 < 1e-6)
+  * 단위 테스트 15개 통과
+  * Vanilla vs Log-MPPI 비교 데모
+- [x] MPPI M3b: Tsallis-MPPI — q-exponential 일반화 엔트로피 (#52)
+  * TsallisMPPIController (q-exponential 가중치 + min-centering)
+  * q_exponential, q_logarithm 유틸리티
+  * q=1.0 → Vanilla 하위 호환 (차이 < 1e-8)
+  * q>1 heavy-tail(탐색↑), q<1 light-tail(집중↑) 검증
+  * min-centering 적용 (q-exp translation-invariance 보정)
+  * 단위 테스트 24개 통과
+  * q값 비교 데모 (q=0.5, 1.0, 1.2, 1.5)
+
 ### 2026-01-31
+- [x] MPPI M2: Tube-MPPI — Ancillary 피드백 컨트롤러 (#49)
+  * AncillaryController (body frame 오차 변환 + 피드백 보정)
+  * TubeMPPIController (MPPIController 상속, 명목 상태 전파)
+  * TubeAwareCost (장애물 safety_margin + tube_margin)
+  * MPPIParams 확장 (tube_enabled, tube_K_fb 등)
+  * 단위 테스트 27개 통과 (ancillary 14 + tube_mppi 13)
+  * Vanilla vs Tube 비교 데모 (--live/--noise 지원)
+- [x] MPPI M2: 핵심 기능 — ControlRateCost, Adaptive Temp, Colored Noise (#47)
+  * ControlRateCost (제어 변화율 비용 함수)
+  * AdaptiveTemperature (ESS 기반 λ 자동 튜닝)
+  * ColoredNoiseSampler (OU 프로세스 기반 시간 상관 노이즈)
+  * Vanilla vs M2 비교 데모 (`examples/mppi_vanilla_vs_m2_demo.py`)
+- [x] MPC vs MPPI 비교 데모 (#45, #46)
+  * 비교 데모 스크립트 (`examples/mpc_vs_mppi_demo.py`)
+  * `--live` 실시간 리플레이 모드
 - [x] MPPI M1: Vanilla MPPI 구현 (#31~#36)
   * PRD 문서 작성 (docs/mppi/PRD.md)
   * MPPIParams 데이터클래스 & BatchDynamicsWrapper (RK4 벡터화)
