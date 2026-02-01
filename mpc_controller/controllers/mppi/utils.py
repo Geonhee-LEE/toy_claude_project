@@ -100,3 +100,64 @@ def effective_sample_size(weights: np.ndarray) -> float:
         ESS 값
     """
     return 1.0 / np.sum(weights ** 2)
+
+
+# ─────────────────────────────────────────────────────────────
+# M3d Stein Variational MPPI — RBF 커널 유틸리티
+# ─────────────────────────────────────────────────────────────
+
+def rbf_kernel(particles: np.ndarray, bandwidth: float) -> np.ndarray:
+    """RBF (Gaussian) 커널 행렬.
+
+    k(x_i, x_j) = exp(-‖x_i - x_j‖² / (2h²))
+
+    Args:
+        particles: (K, D) 입자 배열
+        bandwidth: h (커널 폭)
+
+    Returns:
+        (K, K) 커널 행렬
+    """
+    # pairwise squared distance: ‖x_i - x_j‖²
+    diff = particles[:, np.newaxis, :] - particles[np.newaxis, :, :]  # (K, K, D)
+    sq_dist = np.sum(diff ** 2, axis=-1)  # (K, K)
+    return np.exp(-sq_dist / (2.0 * bandwidth ** 2))
+
+
+def rbf_kernel_grad(diff: np.ndarray, kernel: np.ndarray,
+                    bandwidth: float) -> np.ndarray:
+    """RBF 커널 gradient (각 particle에 대한).
+
+    ∇_{x_i} k(x_j, x_i) = k(x_j, x_i) · (x_j - x_i) / h²
+
+    Args:
+        diff: (K, K, D) pairwise 차이 (x_j - x_i)
+        kernel: (K, K) 커널 행렬
+        bandwidth: h
+
+    Returns:
+        (K, K, D) 커널 gradient
+    """
+    return kernel[:, :, np.newaxis] * diff / (bandwidth ** 2)
+
+
+def median_bandwidth(particles: np.ndarray) -> float:
+    """Median heuristic bandwidth.
+
+    h = sqrt(median(‖x_i - x_j‖²) / (2 · log(K + 1)))
+
+    Args:
+        particles: (K, D) 입자 배열
+
+    Returns:
+        bandwidth 값 (최소 1e-6 보장)
+    """
+    diff = particles[:, np.newaxis, :] - particles[np.newaxis, :, :]  # (K, K, D)
+    sq_dist = np.sum(diff ** 2, axis=-1)  # (K, K)
+    # 상삼각 원소만 사용 (대각선 제외)
+    K = particles.shape[0]
+    triu_idx = np.triu_indices(K, k=1)
+    pairwise_sq = sq_dist[triu_idx]
+    med = np.median(pairwise_sq)
+    h = np.sqrt(med / (2.0 * np.log(K + 1)))
+    return max(h, 1e-6)

@@ -58,6 +58,12 @@ class MPPIParams:
     # 1.0=risk-neutral(Vanilla), <1=risk-averse, 실용 범위 [0.1, 1.0]
     cvar_alpha: float = 1.0
 
+    # M3d Stein Variational MPPI (Lambert et al., 2020 — SVMPC)
+    # SVGD로 샘플 간 상호작용(매력+반발)을 통해 분포 개선
+    svgd_num_iterations: int = 0       # 0=Vanilla 동등(비활성), 권장: 1~5
+    svgd_step_size: float = 0.1        # SVGD update step size
+    svgd_bandwidth: float | None = None  # RBF bandwidth. None=median heuristic
+
     # Tube-MPPI (Williams et al., 2018 — Robust Sampling Based MPPI)
     tube_enabled: bool = False
     tube_K_fb: np.ndarray | None = None           # (nu, nx) 피드백 게인. None=기본값

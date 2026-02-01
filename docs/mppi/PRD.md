@@ -98,8 +98,10 @@ MPPI 알고리즘 흐름:
 - **FR-21**: RiskAwareMPPIController — CVaR 가중치 절단 (최저 비용 ceil(alpha*K)개만 softmax)
 - **FR-22**: cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse, 실용 범위 [0.1, 1.0])
 
-#### M3d: Stein Variational MPPI (예정)
-- **FR-23**: 커널 기반 샘플 다양성 유도 (SVMPC)
+#### M3d: Stein Variational MPPI (SVMPC) ✅ 완료
+- **FR-23**: SteinVariationalMPPIController — SVGD 기반 샘플 다양성 유도
+- **FR-24**: rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
+- **FR-25**: svgd_num_iterations=0 → Vanilla 하위 호환
 
 ### 2.4 비기능 요구사항
 
@@ -174,7 +176,8 @@ mpc_controller/controllers/mppi/
   log_mppi.py                   # LogMPPIController (log-space softmax 참조 구현) [M3a]
   tsallis_mppi.py               # TsallisMPPIController (q-exponential 가중치) [M3b]
   risk_aware_mppi.py            # RiskAwareMPPIController (CVaR 가중치 절단) [M3c]
-  utils.py                      # normalize_angle, log_sum_exp, q_exponential, q_logarithm
+  stein_variational_mppi.py     # SteinVariationalMPPIController (SVGD 샘플 다양성) [M3d]
+  utils.py                      # normalize_angle, log_sum_exp, q_exponential, rbf_kernel 등
 
 mpc_controller/ros2/
   mppi_rviz_visualizer.py       # RVIZ 시각화
@@ -189,6 +192,7 @@ tests/
   test_log_mppi.py              # LogMPPIController 테스트 (15개) [M3a]
   test_tsallis_mppi.py          # TsallisMPPIController 테스트 (24개) [M3b]
   test_risk_aware_mppi.py       # RiskAwareMPPIController 테스트 (22개) [M3c]
+  test_stein_variational_mppi.py # SteinVariationalMPPIController 테스트 (23개) [M3d]
 
 examples/
   mppi_basic_demo.py            # Vanilla MPPI 데모
@@ -197,6 +201,7 @@ examples/
   log_mppi_demo.py              # Vanilla vs Log-MPPI 비교 데모 [M3a]
   tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 데모 [M3b]
   risk_aware_mppi_demo.py       # Risk-Aware alpha 비교 데모 (장애물 회피) [M3c]
+  stein_variational_mppi_demo.py # SVMPC SVGD iteration 비교 데모 [M3d]
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -226,7 +231,7 @@ M3: SOTA 변형
 ├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
 ├── ✅ M3b: Tsallis-MPPI (q-exponential, min-centering)
 ├── ✅ M3c: Risk-Aware MPPI (CVaR 가중치 절단)
-└── ⬜ M3d: Stein Variational MPPI (SVMPC)
+└── ✅ M3d: Stein Variational MPPI (SVMPC — SVGD 커널 기반)
 
 M4: ROS2 통합 마무리 (예정)
 ├── nav2 플러그인
@@ -242,6 +247,7 @@ M4: ROS2 통합 마무리 (예정)
 - Williams et al. (2018) - "Robust Sampling Based MPPI" (Tube-MPPI)
 - Yin et al. (2021) - "Trajectory Distribution Control via Tsallis Entropy" (Tsallis MPPI)
 - Yin et al. (2023) - "Risk-Aware MPPI" (RA-MPPI)
+- Lambert et al. (2020) - "Stein Variational Model Predictive Control" (SVMPC)
 
 ### 참조 구현
 - `pytorch_mppi` - PyTorch GPU 가속 MPPI

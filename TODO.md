@@ -6,7 +6,7 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] MPPI M3d: Stein Variational MPPI (SVMPC)
+- [x] MPPI M3d: Stein Variational MPPI (SVMPC) ✅
 - [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
 - [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
 - [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
@@ -47,6 +47,13 @@
 ## ✅ Completed
 
 ### 2026-02-01
+- [x] MPPI M3d: Stein Variational MPPI (SVMPC) — SVGD 커널 기반 샘플 다양성
+  * SteinVariationalMPPIController (SVGD 기반 gradient-free 샘플 분포 개선)
+  * rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
+  * svgd_num_iterations=0 → Vanilla 완전 동등성 검증
+  * compute_control 전체 오버라이드 (SVGD 루프: 매력력+반발력)
+  * 단위 테스트 23개 통과
+  * SVGD iteration수별 비교 데모
 - [x] MPPI M3c: Risk-Aware MPPI (CVaR) — alpha 기반 가중치 절단
   * RiskAwareMPPIController (CVaR 가중치 절단, 최저 비용 ceil(alpha*K)개만 softmax)
   * cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse)
