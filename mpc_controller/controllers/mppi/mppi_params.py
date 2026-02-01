@@ -64,6 +64,22 @@ class MPPIParams:
     svgd_step_size: float = 0.1        # SVGD update step size
     svgd_bandwidth: float | None = None  # RBF bandwidth. None=median heuristic
 
+    # M3.5a Smooth MPPI (Kim et al., 2021 — input-lifting Δu space)
+    smooth_mppi_enabled: bool = False
+    smooth_R_jerk: np.ndarray | None = None         # (nu,) jerk 가중치. None=기본값 [0.1, 0.1]
+    smooth_action_cost_weight: float = 1.0           # jerk cost 전체 스케일
+
+    # M3.5b Spline-MPPI (ICRA 2024 — B-spline basis 보간)
+    spline_num_knots: int = 8                        # 제어점 수 (P << N)
+    spline_degree: int = 3                           # B-spline 차수 (cubic)
+    spline_knot_sigma: np.ndarray | None = None      # (nu,) knot 노이즈 σ. None=noise_sigma 재사용
+
+    # M3.5c SVG-MPPI (Kondo et al., ICRA 2024 — Guide particle SVGD)
+    svg_num_guide_particles: int = 16                # Guide 수 (G << K)
+    svg_guide_step_size: float = 0.2                 # SVGD step size for guides
+    svg_guide_iterations: int = 3                    # Guide SVGD 반복 횟수
+    svg_resample_std: float = 0.1                    # Follower 리샘플링 σ 스케일
+
     # Tube-MPPI (Williams et al., 2018 — Robust Sampling Based MPPI)
     tube_enabled: bool = False
     tube_K_fb: np.ndarray | None = None           # (nu, nx) 피드백 게인. None=기본값
