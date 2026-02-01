@@ -53,12 +53,13 @@
   * 단위 테스트 15개 통과
   * Vanilla vs Log-MPPI 비교 데모
 - [x] MPPI M3b: Tsallis-MPPI — q-exponential 일반화 엔트로피 (#52)
-  * TsallisMPPIController (q-exponential 가중치)
+  * TsallisMPPIController (q-exponential 가중치 + min-centering)
   * q_exponential, q_logarithm 유틸리티
   * q=1.0 → Vanilla 하위 호환 (차이 < 1e-8)
   * q>1 heavy-tail(탐색↑), q<1 light-tail(집중↑) 검증
+  * min-centering 적용 (q-exp translation-invariance 보정)
   * 단위 테스트 24개 통과
-  * q값 비교 데모 (q=0.5, 1.0, 1.5, 2.0)
+  * q값 비교 데모 (q=0.5, 1.0, 1.2, 1.5)
 
 ### 2026-01-31
 - [x] MPPI M2: Tube-MPPI — Ancillary 피드백 컨트롤러 (#49)

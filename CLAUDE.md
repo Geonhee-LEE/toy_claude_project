@@ -2,10 +2,8 @@
 
 # 로봇 개발 주제 설명
 - 저는 ROS2 및 모바일 로봇 주행을 개발하는 개발자입니다.
-- 저는 gaemi_navigation_controller_plugin, gaemi_navigation_planner_plugin 개발을 주로 하고 있습니다.
 - 한글을 사용하며, 코드 수정을 자동으로 승인해주시고, 최종적으로 변경된 부분에 대해서만 요약해주세요
 - 아스키코드로 진행사항이나 플로우를 표현해주세요
-- 새로운기능 추가시에 RVIZ 마커 시각화를 부탁드립니다.
 - toy_claude_project 프로젝트 진행시에는, Github 이슈, PR를 생성하고 close하고 관리해주세요
 
 # 프로젝트 구조 및 현황

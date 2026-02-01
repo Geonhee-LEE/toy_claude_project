@@ -6,37 +6,112 @@ Mobile Robot MPC Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - Path tracking with Model Predictive Control
-2. **Claude-driven development** - Automated development workflow via GitHub Issues
+2. **MPPI sampling-based control** - Derivative-free parallel sampling controller
+3. **Claude-driven development** - Automated development workflow via GitHub Issues
 
 ## Features
 
-- Differential drive robot model
+- Differential drive robot model (Swerve, Non-coaxial Swerve 포함)
 - CasADi-based MPC controller
+- MPPI (Model Predictive Path Integral) 샘플링 기반 제어
+  - Vanilla MPPI (M1)
+  - Tube-MPPI, Adaptive Temperature, Colored Noise, ControlRateCost (M2)
+  - Log-MPPI, Tsallis-MPPI (M3)
 - 2D simulation with visualization
 - Automated CI/CD with Claude integration
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# 의존성 설치
 pip install -e .
 
-# Run demo
+# MPC 데모
 python examples/path_tracking_demo.py
+
+# MPPI 데모 (Vanilla)
+python examples/mppi_basic_demo.py --trajectory circle --live
+
+# MPPI 비교 데모
+python examples/mppi_vanilla_vs_m2_demo.py --live
+python examples/mppi_vanilla_vs_tube_demo.py --live --noise 1.0
+
+# Log-MPPI vs Vanilla 비교
+python examples/log_mppi_demo.py --live
+
+# Tsallis-MPPI q 파라미터 비교
+python examples/tsallis_mppi_demo.py --trajectory circle --live
+python examples/tsallis_mppi_demo.py --trajectory circle --live --q 0.5 1.0 1.2 1.5
 ```
 
 ## Project Structure
 
 ```
-├── mpc_controller/       # Core MPC implementation
-│   ├── models/           # Robot kinematic models
-│   ├── controllers/      # MPC controller
-│   └── utils/            # Trajectory utilities
-├── simulation/           # 2D simulator & visualizer
-├── tests/                # Unit tests
-├── examples/             # Demo scripts
-└── .github/workflows/    # CI/CD & Claude automation
+mpc_controller/
+├── models/                       # 로봇 동역학 모델
+│   ├── differential_drive/       # 차동 구동 (v, omega)
+│   ├── swerve_drive/             # 스워브 구동
+│   └── non_coaxial_swerve/       # 비동축 스워브 구동
+├── controllers/
+│   ├── mpc/                      # CasADi/IPOPT 기반 MPC
+│   ├── mppi/                     # MPPI 샘플링 기반 제어
+│   │   ├── base_mppi.py          #   Vanilla MPPI (M1)
+│   │   ├── tube_mppi.py          #   Tube-MPPI (M2)
+│   │   ├── ancillary_controller.py #  Body frame 피드백 보정 (M2)
+│   │   ├── adaptive_temperature.py #  ESS 기반 λ 자동 튜닝 (M2)
+│   │   ├── log_mppi.py           #   Log-MPPI (M3a)
+│   │   ├── tsallis_mppi.py       #   Tsallis-MPPI (M3b)
+│   │   ├── cost_functions.py     #   비용 함수 모듈
+│   │   ├── sampling.py           #   Gaussian + Colored Noise 샘플러
+│   │   ├── dynamics_wrapper.py   #   배치 동역학 (RK4 벡터화)
+│   │   ├── mppi_params.py        #   파라미터 데이터클래스
+│   │   └── utils.py              #   유틸리티 (q_exponential 등)
+│   ├── swerve_mpc/               # 스워브 MPC
+│   └── non_coaxial_swerve_mpc/   # 비동축 스워브 MPC
+├── ros2/                         # ROS2 노드 및 RVIZ 시각화
+├── simulation/                   # 시뮬레이터
+└── utils/                        # 유틸리티 (logger, trajectory 등)
+
+docs/mppi/
+├── PRD.md                        # MPPI 제품 요구사항 문서
+└── MPPI_GUIDE.md                 # MPPI 기술 가이드 (알고리즘 상세 설명)
+
+tests/
+├── test_mppi.py                  # Vanilla MPPI 유닛 + 통합 테스트
+├── test_mppi_cost_functions.py   # 비용 함수 테스트
+├── test_mppi_sampling.py         # 샘플링 테스트
+├── test_ancillary_controller.py  # AncillaryController 테스트 (M2)
+├── test_tube_mppi.py             # TubeMPPIController 테스트 (M2)
+├── test_log_mppi.py              # LogMPPIController 테스트 (M3a)
+└── test_tsallis_mppi.py          # TsallisMPPIController 테스트 (M3b)
+
+examples/
+├── mppi_basic_demo.py            # Vanilla MPPI 데모
+├── mppi_vanilla_vs_m2_demo.py    # Vanilla vs M2 비교
+├── mppi_vanilla_vs_tube_demo.py  # Vanilla vs Tube 비교
+├── log_mppi_demo.py              # Log-MPPI 비교 데모 (M3a)
+├── tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 (M3b)
+├── path_tracking_demo.py         # MPC 경로 추종 데모
+└── ...                           # 기타 데모
 ```
+
+## MPPI 컨트롤러 계층 구조
+
+```
+MPPIController (base_mppi.py) — Vanilla MPPI
+├── _compute_weights()         ← 서브클래스 오버라이드 포인트
+│
+├── TubeMPPIController         ── 외란 강건성 (M2)
+│   └── AncillaryController    ── body frame 피드백
+│
+├── LogMPPIController          ── log-space softmax (M3a)
+│   └── 참조 구현 (Vanilla와 수학적 동등)
+│
+└── TsallisMPPIController      ── q-exponential 가중치 (M3b)
+    └── q=1.0→Vanilla, q>1→탐색↑, q<1→집중↑
+```
+
+자세한 알고리즘 설명은 [docs/mppi/MPPI_GUIDE.md](docs/mppi/MPPI_GUIDE.md) 참조.
 
 ## Development Workflow
 
@@ -305,9 +380,24 @@ source ~/.bashrc
 ## Dependencies
 
 - Python >= 3.10
-- CasADi >= 3.6
-- NumPy
-- Matplotlib
+- NumPy >= 1.24
+- Matplotlib >= 3.7
+- CasADi >= 3.6 (MPC 컨트롤러용)
+
+MPPI 컨트롤러는 순수 NumPy로 구현되어 CasADi 없이도 동작합니다.
+
+## Testing
+
+```bash
+# 전체 테스트 실행
+pytest tests/ -v
+
+# MPPI 테스트만 실행
+pytest tests/test_mppi*.py tests/test_log_mppi.py tests/test_tsallis_mppi.py tests/test_tube_mppi.py tests/test_ancillary_controller.py -v
+
+# 특정 테스트
+pytest tests/test_tsallis_mppi.py -v -k "circle_tracking"
+```
 
 ## License
 

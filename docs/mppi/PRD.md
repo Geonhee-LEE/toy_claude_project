@@ -81,7 +81,27 @@ MPPI 알고리즘 흐름:
 - **FR-12**: TubeAwareCost — 장애물 safety_margin + tube_margin 확장
 - **FR-13**: Vanilla vs M2 / Vanilla vs Tube 비교 데모 (--live, --noise 지원)
 
-### 2.3 비기능 요구사항
+### 2.3 SOTA 변형 (Milestone 3: M3 MPPI)
+
+#### M3a: Log-MPPI ✅ 완료
+- **FR-14**: LogMPPIController — log-space softmax 가중치 (참조 구현)
+- **FR-15**: Vanilla와 수학적 동등성 확인 (기존 max-shift trick과 동일)
+
+#### M3b: Tsallis-MPPI ✅ 완료
+- **FR-16**: TsallisMPPIController — q-exponential 가중치 (heavy/light-tail 제어)
+- **FR-17**: q_exponential(), q_logarithm() 유틸리티 함수
+- **FR-18**: tsallis_q 파라미터 (기본 1.0 = Vanilla 하위 호환)
+- **FR-19**: 비용 min-centering (q-exp translation-invariance 보정)
+- **FR-20**: q값 비교 데모 (q=0.5, 1.0, 1.2, 1.5)
+
+#### M3c: Risk-Aware MPPI (예정)
+- **FR-21**: CVaR 기반 위험 인지 가중치
+- **FR-22**: worst-case 시나리오 비용 함수
+
+#### M3d: Stein Variational MPPI (예정)
+- **FR-23**: 커널 기반 샘플 다양성 유도 (SVMPC)
+
+### 2.4 비기능 요구사항
 
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
 - **NFR-2**: K=1024 샘플, N=30 호라이즌에서 실행 가능
@@ -121,7 +141,7 @@ MPPI 알고리즘 흐름:
             │                      │                      │
 ┌───────────▼───────────┐  ┌──────▼──────────────┐  ┌────▼────────────────────┐
 │ TubeMPPIController    │  │ AdaptiveTemperature │  │ MPPIRVizVisualizer      │
-│ (tube_mppi.py)        │  │ (adaptive_temp.py)  │  │ (mppi_rviz_visualizer)  │
+│ (tube_mppi.py) [M2]   │  │ (adaptive_temp.py)  │  │ (mppi_rviz_visualizer)  │
 │ - MPPIController 상속 │  │ - ESS 기반 λ 튜닝  │  │ - 샘플 궤적 (투명도)   │
 │ - 명목 상태 전파      │  │ - 목표 ESS 비율    │  │ - 가중 평균 궤적 (시안)│
 │ - AncillaryController │  └─────────────────────┘  │ - 비용 히트맵           │
@@ -129,6 +149,13 @@ MPPI 알고리즘 흐름:
 │ - TubeAwareCost       │                           └─────────────────────────┘
 │ - tube 경계 시각화    │
 └───────────────────────┘
+┌───────────────────────┐  ┌───────────────────────┐
+│ LogMPPIController     │  │ TsallisMPPIController │
+│ (log_mppi.py) [M3a]   │  │ (tsallis_mppi.py)[M3b]│
+│ - log-space softmax   │  │ - q-exponential 가중치│
+│ - 참조 구현           │  │ - min-centering       │
+│   (Vanilla와 동등)    │  │ - q>1=탐색, q<1=집중 │
+└───────────────────────┘  └───────────────────────┘
 ```
 
 ### 파일 구조
@@ -140,11 +167,13 @@ mpc_controller/controllers/mppi/
   dynamics_wrapper.py           # BatchDynamicsWrapper (RK4 벡터화)
   cost_functions.py             # 비용 함수 모듈 (ControlRateCost, TubeAwareCost 포함)
   sampling.py                   # GaussianSampler, ColoredNoiseSampler
-  base_mppi.py                  # Vanilla MPPI 핵심 알고리즘
+  base_mppi.py                  # Vanilla MPPI 핵심 알고리즘 (_compute_weights 오버라이드 포인트)
   adaptive_temperature.py       # AdaptiveTemperature (ESS 기반 λ 자동 튜닝) [M2]
   ancillary_controller.py       # AncillaryController (body frame 피드백 보정) [M2]
   tube_mppi.py                  # TubeMPPIController (명목 상태 전파 + 피드백) [M2]
-  utils.py                      # normalize_angle_batch, log-sum-exp
+  log_mppi.py                   # LogMPPIController (log-space softmax 참조 구현) [M3a]
+  tsallis_mppi.py               # TsallisMPPIController (q-exponential 가중치) [M3b]
+  utils.py                      # normalize_angle, log_sum_exp, q_exponential, q_logarithm
 
 mpc_controller/ros2/
   mppi_rviz_visualizer.py       # RVIZ 시각화
@@ -156,11 +185,15 @@ tests/
   test_mppi_live_demo.py        # 라이브 데모 테스트
   test_ancillary_controller.py  # AncillaryController 테스트 (14개) [M2]
   test_tube_mppi.py             # TubeMPPIController 테스트 (13개) [M2]
+  test_log_mppi.py              # LogMPPIController 테스트 (15개) [M3a]
+  test_tsallis_mppi.py          # TsallisMPPIController 테스트 (24개) [M3b]
 
 examples/
   mppi_basic_demo.py            # Vanilla MPPI 데모
   mppi_vanilla_vs_m2_demo.py    # Vanilla vs M2 비교 데모 [M2]
   mppi_vanilla_vs_tube_demo.py  # Vanilla vs Tube 비교 데모 [M2]
+  log_mppi_demo.py              # Vanilla vs Log-MPPI 비교 데모 [M3a]
+  tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 데모 [M3b]
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -186,11 +219,11 @@ M2: 고도화 ✅ 완료 (GPU 가속 잔여)
 ├── ✅ TubeAwareCost (tube margin 확장)
 └── ⬜ GPU 가속 (PyTorch/Numba) — 잔여
 
-M3: SOTA 변형 (예정)
-├── Tsallis MPPI (일반화 엔트로피)
-├── Risk-Aware MPPI (CVaR)
-├── Log-MPPI (log-space update)
-└── Stein Variational MPPI (SVMPC)
+M3: SOTA 변형
+├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
+├── ✅ M3b: Tsallis-MPPI (q-exponential, min-centering)
+├── ⬜ M3c: Risk-Aware MPPI (CVaR)
+└── ⬜ M3d: Stein Variational MPPI (SVMPC)
 
 M4: ROS2 통합 마무리 (예정)
 ├── nav2 플러그인
