@@ -1,10 +1,11 @@
-"""Log-MPPI 컨트롤러 — log-space softmax 가중치로 수치 안정성 확보.
+"""Log-MPPI 컨트롤러 — log-space softmax 가중치 참조 구현.
 
-극단적 cost 범위(1e-15 ~ 1e15)에서 표준 softmax의 exp overflow/underflow를
-방지하기 위해 가중치 계산을 log-space에서 수행한다.
+가중치 계산을 log-space에서 수행하는 MPPI 변형.
 
-수학적으로 Vanilla MPPI와 동일한 결과를 내지만,
-cost 범위가 매우 넓을 때 NaN/Inf를 방지한다.
+주의: 현재 Vanilla MPPI의 softmax_weights()가 이미 max-shift trick을
+적용하고 있어, Log-MPPI와 수학적으로 동일한 결과를 낸다.
+따라서 **제어 성능 차이는 없으며**, log-space 가중치 조작이 필요한
+후속 확장(importance sampling 보정 등)의 기반 클래스로 활용 가능.
 """
 
 import numpy as np
