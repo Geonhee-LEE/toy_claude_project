@@ -6,46 +6,58 @@
 
 ## 🔴 High Priority (P0)
 
-- [x] MPPI M3d: Stein Variational MPPI (SVMPC) ✅
+- [ ] MPPI M4: ROS2 통합 마무리 — nav2 플러그인, 실제 로봇, 파라미터 서버
 - [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
 - [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
-- [ ] MPPI M2: 고도화 - GPU 가속 (잔여) — CuPy 기반 NumPy drop-in 또는 JAX jit
-- [ ] MPPI M3d-GPU: SVMPC CUDA 가속 — pairwise kernel (K²) + rollout 병렬화
-- [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
 ## 🟠 Medium Priority (P1)
 
+- [ ] MPPI GPU 가속 — CuPy/JAX 기반 rollout + cost 병렬화 (M2 잔여)
+- [ ] MPPI SVMPC GPU 가속 — pairwise kernel (K²) + rollout CUDA 병렬화
 - [ ] MPC vs MPPI 비교 데모 파라미터 공정화 — 호라이즌 통일 (MPC 2.0s vs MPPI 1.0s)
 - [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
-- [ ] #104 실시간 경로 재계획 기능 - 환경 변화 대응
-- [ ] #105 Ackermann 조향 모델 추가 - 자동차형 로봇 지원
-- [ ] #106 속도 제약 고려 MPC - 가속도/저크 제한
-- [ ] #107 CI/CD 파이프라인 개선 - 자동 테스트 및 배포
-- [ ] #108 시뮬레이션 환경 고도화 - 다양한 맵, 시나리오
+- [ ] 실시간 경로 재계획 기능 — 환경 변화 대응
+- [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
+- [ ] 속도 제약 고려 MPC — 가속도/저크 제한
+- [ ] CI/CD 파이프라인 개선 — 자동 테스트 및 배포
 
 ## 🟢 Low Priority (P2)
 
-- [ ] #109 Omnidirectional 로봇 모델 - 전방향 이동 로봇 (Mecanum/Omni wheel)
-- [ ] #110 성능 프로파일링 및 최적화 - 실시간 성능 개선
-- [ ] #111 웹 기반 시각화 대시보드 - 실시간 모니터링
-- [ ] #112 Docker 컨테이너화 - 배포 및 재현성 개선
-- [ ] #113 Multi-robot MPC - 다중 로봇 협조 제어
-- [ ] #114 NMPC (Nonlinear MPC) 구현 - 비선형 최적화
+- [ ] Omnidirectional 로봇 모델 — 전방향 이동 로봇 (Mecanum/Omni wheel)
+- [ ] 성능 프로파일링 및 최적화 — 실시간 성능 개선
+- [ ] 웹 기반 시각화 대시보드 — 실시간 모니터링
+- [ ] Docker 컨테이너화 — 배포 및 재현성 개선
+- [ ] Multi-robot MPC — 다중 로봇 협조 제어
+- [ ] NMPC (Nonlinear MPC) 구현 — 비선형 최적화
+- [ ] Covariance Steering MPPI — 공분산 제어 기반 정밀 분포 조정
+- [ ] Biased-MPPI (RA-L 2024) — 편향 샘플링 기반 효율 개선
+- [ ] π-MPPI / BR-MPPI / SOPPI (2025) — 최신 MPPI 변형
 
 ## 📚 Documentation
 
-- [ ] #115 API 문서 자동 생성 - Sphinx/MkDocs
-- [ ] #116 튜토리얼 작성 - 사용법 상세 가이드
-- [ ] #117 아키텍처 문서 작성 - 시스템 설계 문서
+- [ ] API 문서 자동 생성 — Sphinx/MkDocs
+- [ ] 튜토리얼 작성 — 사용법 상세 가이드
+- [ ] 아키텍처 문서 작성 — 시스템 설계 문서
+- [ ] MPPI 기술 가이드 업데이트 — M3.5 변형 설명 추가
 
 ## 🐛 Bug Fixes
 
-- [ ] #118 각도 정규화 엣지 케이스 수정
-- [ ] #119 고속 주행 시 경로 추적 오버슈트 개선
+- [ ] 각도 정규화 엣지 케이스 수정
+- [ ] 고속 주행 시 경로 추적 오버슈트 개선
+- [ ] Spline-MPPI figure8 궤적 추적 RMSE 개선 (현재 2.17m → 목표 <0.5m)
 
 ---
 
 ## ✅ Completed
+
+### 2026-02-01 (Benchmark)
+- [x] MPPI 전체 9종 변형 벤치마크 도구
+  * `examples/mppi_all_variants_benchmark.py` — 9종 동시 비교
+  * Vanilla, Tube, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG
+  * `--live` 실시간 시뮬레이션 모드 지원
+  * `--trajectory {circle,figure8,sine}` 궤적 선택
+  * ASCII 요약 테이블 + 6패널 정적 비교 차트
+  * RMSE, Smoothness, Speed 3개 카테고리 랭킹
 
 ### 2026-02-01 (M3.5)
 - [x] MPPI M3.5a: Smooth MPPI (SMPPI) — Δu input-lifting 구조적 부드러움 (#56)
@@ -124,10 +136,6 @@
 
 ### 2026-01-25
 - [x] #103 동적 장애물 회피 기능 - 움직이는 장애물 대응
-  * DynamicObstaclePredictor 예측 알고리즘 구현
-  * 충돌 시간 계산 및 위험 평가
-  * 동적 장애물 회피 데모 예제
-  * 단위 테스트 (5개 케이스 통과)
 - [x] #102 RVIZ 시각화 마커 구현 - 예측 궤적, 제약조건, 장애물 표시
 - [x] #101 ROS2 노드 기본 구조 구현 - MPC Controller ROS2 wrapper
 - [x] #010 Claude Code 상세 로깅 개선 - watcher 실시간 출력

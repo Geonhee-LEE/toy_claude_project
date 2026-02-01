@@ -103,7 +103,31 @@ MPPI 알고리즘 흐름:
 - **FR-24**: rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
 - **FR-25**: svgd_num_iterations=0 → Vanilla 하위 호환
 
-### 2.4 비기능 요구사항
+### 2.4 SOTA 변형 확장 (Milestone 3.5: M3.5 MPPI)
+
+#### M3.5a: Smooth MPPI (SMPPI) ✅ 완료
+- **FR-26**: SmoothMPPIController — Δu space 최적화 + cumsum 복원 (input-lifting)
+- **FR-27**: Jerk cost (ΔΔu 페널티, smooth_R_jerk 가중치)
+- **FR-28**: smooth_action_cost_weight 스케일링 파라미터
+
+#### M3.5b: Spline-MPPI ✅ 완료
+- **FR-29**: SplineMPPIController — P개 knot 노이즈 → B-spline basis(N,P) 보간
+- **FR-30**: _bspline_basis() — 순수 NumPy de Boor 재귀 (scipy 미사용, NFR-1 준수)
+- **FR-31**: spline_num_knots, spline_degree, spline_knot_sigma 파라미터
+
+#### M3.5c: SVG-MPPI ✅ 완료
+- **FR-32**: SVGMPPIController — G개 guide particle SVGD + (K-G)개 follower resampling
+- **FR-33**: svg_num_guide_particles, svg_guide_step_size, svg_guide_iterations 파라미터
+- **FR-34**: G << K로 SVGD 계산량 O(G²D) << O(K²D) — SVMPC 대비 고속
+
+### 2.5 벤치마크 도구
+
+- **FR-35**: mppi_all_variants_benchmark.py — 9종 변형 동시 비교 벤치마크
+- **FR-36**: Position RMSE, Max Error, Control Rate, Solve Time, ESS 등 메트릭 수집
+- **FR-37**: `--live` 실시간 시뮬레이션 모드 + `--trajectory` 궤적 선택
+- **FR-38**: ASCII 요약 테이블 + 6패널 정적 비교 차트
+
+### 2.6 비기능 요구사항
 
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
 - **NFR-2**: K=1024 샘플, N=30 호라이즌에서 실행 가능
@@ -158,6 +182,14 @@ MPPI 알고리즘 흐름:
 │ - 참조 구현           │  │ - min-centering       │  │ - alpha=1→Vanilla          │
 │   (Vanilla와 동등)    │  │ - q>1=탐색, q<1=집중 │  │ - alpha<1→risk-averse      │
 └───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
+┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────────┐
+│ SmoothMPPIController  │  │ SplineMPPIController  │  │ SVGMPPIController          │
+│ (smooth_mppi.py)      │  │ (spline_mppi.py)      │  │ (svg_mppi.py) [M3.5c]      │
+│ [M3.5a]               │  │ [M3.5b]               │  │ - G guide SVGD             │
+│ - Δu input-lifting    │  │ - B-spline basis 보간 │  │ - (K-G) follower resample  │
+│ - cumsum 복원         │  │ - P knot << N horizon │  │ - SVMPC 상속 (고속화)      │
+│ - jerk cost 페널티    │  │ - de Boor 재귀 (NumPy)│  │ - O(G²D) << O(K²D)        │
+└───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
 ```
 
 ### 파일 구조
@@ -177,6 +209,9 @@ mpc_controller/controllers/mppi/
   tsallis_mppi.py               # TsallisMPPIController (q-exponential 가중치) [M3b]
   risk_aware_mppi.py            # RiskAwareMPPIController (CVaR 가중치 절단) [M3c]
   stein_variational_mppi.py     # SteinVariationalMPPIController (SVGD 샘플 다양성) [M3d]
+  smooth_mppi.py                # SmoothMPPIController (Δu input-lifting, jerk cost) [M3.5a]
+  spline_mppi.py                # SplineMPPIController (B-spline basis 보간) [M3.5b]
+  svg_mppi.py                   # SVGMPPIController (Guide particle SVGD) [M3.5c]
   utils.py                      # normalize_angle, log_sum_exp, q_exponential, rbf_kernel 등
 
 mpc_controller/ros2/
@@ -193,6 +228,9 @@ tests/
   test_tsallis_mppi.py          # TsallisMPPIController 테스트 (24개) [M3b]
   test_risk_aware_mppi.py       # RiskAwareMPPIController 테스트 (22개) [M3c]
   test_stein_variational_mppi.py # SteinVariationalMPPIController 테스트 (23개) [M3d]
+  test_smooth_mppi.py           # SmoothMPPIController 테스트 (17개) [M3.5a]
+  test_spline_mppi.py           # SplineMPPIController 테스트 (23개) [M3.5b]
+  test_svg_mppi.py              # SVGMPPIController 테스트 (21개) [M3.5c]
 
 examples/
   mppi_basic_demo.py            # Vanilla MPPI 데모
@@ -205,6 +243,7 @@ examples/
   smooth_mppi_demo.py            # Vanilla vs SMPPI jerk weight 비교 [M3.5a]
   spline_mppi_demo.py            # Spline-MPPI knot 수 비교 [M3.5b]
   svg_mppi_demo.py               # SVG-MPPI vs SVMPC 비교 (장애물) [M3.5c]
+  mppi_all_variants_benchmark.py # 9종 변형 동시 비교 벤치마크 (--live, --trajectory)
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -242,10 +281,25 @@ M3.5: SOTA 변형 확장 ✅ 완료
 └── ✅ M3.5c: SVG-MPPI (Guide particle SVGD + follower resampling)
 
 M4: ROS2 통합 마무리 (예정)
-├── nav2 플러그인
+├── nav2 플러그인 (Python prototype → C++ 포팅)
 ├── 실제 로봇 인터페이스
 ├── 파라미터 서버 통합
 └── 성능 벤치마크
+
+M5a: C++ MPPI 코어 변환 (예정)
+├── Python → C++ 포팅 (실시간 성능)
+├── Eigen 기반 배치 rollout
+└── pybind11 Python 바인딩
+
+M5b: ROS2 nav2 Controller 플러그인 (예정)
+├── C++ MPPI nav2 Server 플러그인
+├── nav2 ComputePathToPose 호환
+└── 파라미터 YAML 설정
+
+GPU 가속 (예정)
+├── CuPy/JAX 기반 rollout + cost 병렬화
+├── SVMPC pairwise kernel CUDA 가속
+└── K=4096+ 대규모 샘플 벤치마크
 ```
 
 ## 5. 참조
