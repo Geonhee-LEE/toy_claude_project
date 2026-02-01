@@ -307,70 +307,89 @@ def plot_comparison(
 
 
 # ─────────────────────────────────────────────────────────────
-# Live 리플레이
+# Live 실시간 시뮬레이션 + 시각화
 # ─────────────────────────────────────────────────────────────
 
-def live_replay(
-    results: List[RunResult],
-    reference: np.ndarray,
+def live_simulation(
+    L: int,
+    trajectory: np.ndarray,
+    initial_state: np.ndarray,
+    sim_config: SimulationConfig,
+    robot_params: RobotParams,
     obstacles: Optional[np.ndarray] = None,
-    update_interval: int = 2,
 ) -> None:
-    n = len(results)
-    if any(r.info_history is None for r in results):
-        print("  [WARN] info_history 없음")
-        return
+    """실시간 시뮬레이션 + 시각화 (단일 iteration config).
 
-    plt.ion()
-    cols = min(n, 4)
-    rows = (n + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 6 * rows))
-    if n == 1:
-        axes = [axes]
-    else:
-        axes = axes.flatten() if hasattr(axes, 'flatten') else list(axes)
+    simulate → replay 가 아니라,
+    매 스텝마다 compute_control + 시각화를 동시에 수행.
+    """
+    from simulation.mppi_live_visualizer import MPPILiveVisualizer
 
-    margin = 1.5
-    x_min, x_max = reference[:, 0].min() - margin, reference[:, 0].max() + margin
-    y_min, y_max = reference[:, 1].min() - margin, reference[:, 1].max() + margin
+    K_live = 256  # live 모드에서 빠른 응답을 위해 축소
+    params = MPPIParams(
+        N=20, K=K_live, dt=0.05, lambda_=10.0,
+        noise_sigma=np.array([0.3, 0.3]),
+        Q=np.diag([10.0, 10.0, 1.0]),
+        R=np.diag([0.01, 0.01]),
+        Qf=np.diag([100.0, 100.0, 10.0]),
+        svgd_num_iterations=L,
+        svgd_step_size=0.1,
+        adaptive_temperature=True,
+        adaptive_temp_config={
+            "target_ess_ratio": 0.5,
+            "adaptation_rate": 1.0,
+            "lambda_min": 0.001,
+            "lambda_max": 100.0,
+        },
+    )
+    ctrl = SteinVariationalMPPIController(
+        robot_params=robot_params, mppi_params=params, seed=42,
+        obstacles=obstacles,
+    )
+    interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
 
-    traces, lines = [], []
-    for i, r in enumerate(results):
-        ax = axes[i]
-        c = ITER_COLORS.get(r.svgd_iters, "tab:gray")
-        ax.set_title(r.name, fontsize=13, fontweight="bold", color=c)
-        ax.plot(reference[:, 0], reference[:, 1], "k--", lw=1.5, alpha=0.4)
-        if obstacles is not None:
-            for obs in obstacles:
-                circle = plt.Circle((obs[0], obs[1]), obs[2], color="red", alpha=0.3)
-                ax.add_patch(circle)
-        ax.set_aspect("equal"); ax.grid(True, alpha=0.3)
-        ax.set_xlim(x_min, x_max); ax.set_ylim(y_min, y_max)
-        (line,) = ax.plot([], [], color=c, lw=2)
-        traces.append(([], []))
-        lines.append(line)
+    viz = MPPILiveVisualizer(
+        reference_trajectory=trajectory,
+        title=f"SVMPC Live (L={L}, K={K_live})",
+    )
 
-    for i in range(n, len(axes)):
-        axes[i].set_visible(False)
+    # 장애물 그리기
+    if obstacles is not None:
+        for obs in obstacles:
+            circle = plt.Circle(
+                (obs[0], obs[1]), obs[2], color="red", alpha=0.3,
+            )
+            viz.ax_traj.add_patch(circle)
+            viz.ax_traj.plot(obs[0], obs[1], "rx", markersize=8)
 
-    fig.suptitle("SVMPC Live — iteration comparison", fontsize=14, fontweight="bold")
-    fig.canvas.draw()
+    sim = Simulator(robot_params, sim_config)
+    sim.reset(initial_state)
+    ctrl.reset()
 
-    n_steps = min(len(r.time_array) for r in results)
-    for step in range(n_steps):
-        for i, r in enumerate(results):
-            s = r.states[step]
-            traces[i][0].append(s[0])
-            traces[i][1].append(s[1])
-        if step % update_interval != 0:
-            continue
-        for i in range(n):
-            lines[i].set_data(traces[i][0], traces[i][1])
-        fig.canvas.draw()
-        fig.canvas.flush_events()
+    num_steps = int(sim_config.max_time / sim_config.dt)
+    for step in range(num_steps):
+        t = step * sim_config.dt
+        state = sim.get_measurement()
+        ref = interp.get_reference(
+            t, ctrl.params.N, ctrl.params.dt, current_theta=state[2],
+        )
+        control, info = ctrl.compute_control(state, ref)
+        sim.step(control)
 
-    plt.ioff()
-    plt.show()
+        viz.update(
+            state=state,
+            control=control,
+            reference=ref[0],
+            prediction=info.get("predicted_trajectory"),
+            info=info,
+            time=t,
+        )
+
+        idx, dist = interp.find_closest_point(state[:2])
+        if idx >= interp.num_points - 1 and dist < 0.1:
+            break
+
+    viz.wait_for_close()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -422,7 +441,6 @@ def main():
     print("\n" + "=" * 64)
     print("    Stein Variational MPPI (SVMPC) Iteration Comparison Demo")
     print("=" * 64)
-    print(f"  SVGD iterations: {iter_values}")
     print(f"  Trajectory: {args.trajectory}")
     print(f"  Obstacles: {'None' if obstacles is None else f'{len(obstacles)} objects'}")
 
@@ -430,53 +448,61 @@ def main():
     sim_config = SimulationConfig(dt=0.05, max_time=20.0)
     trajectory = generate_trajectory(args.trajectory)
     initial_state = trajectory[0].copy()
-    need_info = args.live
-
-    results = []
-    for L in iter_values:
-        params = MPPIParams(
-            N=20, K=512, dt=0.05, lambda_=10.0,
-            noise_sigma=np.array([0.3, 0.3]),
-            Q=np.diag([10.0, 10.0, 1.0]),
-            R=np.diag([0.01, 0.01]),
-            Qf=np.diag([100.0, 100.0, 10.0]),
-            svgd_num_iterations=L,
-            svgd_step_size=0.1,
-            adaptive_temperature=True,
-            adaptive_temp_config={
-                "target_ess_ratio": 0.5,
-                "adaptation_rate": 1.0,
-                "lambda_min": 0.001,
-                "lambda_max": 100.0,
-            },
-        )
-        ctrl = SteinVariationalMPPIController(
-            robot_params=robot_params, mppi_params=params, seed=42,
-            obstacles=obstacles,
-        )
-        interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
-        name = f"L={L}"
-
-        print(f"\n  Running SVMPC ({name}) ...")
-        result = simulate(
-            ctrl, name, L, interp,
-            initial_state.copy(), sim_config, robot_params,
-            obstacles=obstacles, store_info=need_info,
-        )
-        print(f"    -> {len(result.time_array)} steps, "
-              f"RMSE={result.position_rmse:.4f}m, "
-              f"ESS={np.mean(result.ess_history):.1f}, "
-              f"AvgSolve={np.mean(result.solve_times)*1000:.1f}ms")
-        results.append(result)
-
-    print_summary(results)
 
     if args.live:
-        live_replay(results, trajectory, obstacles=obstacles)
-    elif not args.no_plot:
-        plot_comparison(results, trajectory, obstacles=obstacles, save_path=args.save)
-        if args.save is None:
-            plt.show()
+        # ── Live 모드: 실시간 sim + viz (단일 iteration) ──
+        live_L = iter_values[-1] if iter_values else 3
+        print(f"  Live mode: L={live_L}, K=256 (실시간 시각화)")
+        live_simulation(
+            live_L, trajectory, initial_state.copy(),
+            sim_config, robot_params, obstacles=obstacles,
+        )
+    else:
+        # ── Batch 모드: 다중 iteration 비교 ──
+        print(f"  SVGD iterations: {iter_values}")
+        results = []
+        for L in iter_values:
+            params = MPPIParams(
+                N=20, K=512, dt=0.05, lambda_=10.0,
+                noise_sigma=np.array([0.3, 0.3]),
+                Q=np.diag([10.0, 10.0, 1.0]),
+                R=np.diag([0.01, 0.01]),
+                Qf=np.diag([100.0, 100.0, 10.0]),
+                svgd_num_iterations=L,
+                svgd_step_size=0.1,
+                adaptive_temperature=True,
+                adaptive_temp_config={
+                    "target_ess_ratio": 0.5,
+                    "adaptation_rate": 1.0,
+                    "lambda_min": 0.001,
+                    "lambda_max": 100.0,
+                },
+            )
+            ctrl = SteinVariationalMPPIController(
+                robot_params=robot_params, mppi_params=params, seed=42,
+                obstacles=obstacles,
+            )
+            interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+            name = f"L={L}"
+
+            print(f"\n  Running SVMPC ({name}) ...")
+            result = simulate(
+                ctrl, name, L, interp,
+                initial_state.copy(), sim_config, robot_params,
+                obstacles=obstacles,
+            )
+            print(f"    -> {len(result.time_array)} steps, "
+                  f"RMSE={result.position_rmse:.4f}m, "
+                  f"ESS={np.mean(result.ess_history):.1f}, "
+                  f"AvgSolve={np.mean(result.solve_times)*1000:.1f}ms")
+            results.append(result)
+
+        print_summary(results)
+
+        if not args.no_plot:
+            plot_comparison(results, trajectory, obstacles=obstacles, save_path=args.save)
+            if args.save is None:
+                plt.show()
 
 
 if __name__ == "__main__":

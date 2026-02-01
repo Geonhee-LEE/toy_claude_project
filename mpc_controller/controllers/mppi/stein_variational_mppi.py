@@ -40,9 +40,6 @@ from mpc_controller.controllers.mppi.base_mppi import MPPIController
 from mpc_controller.controllers.mppi.utils import (
     softmax_weights,
     effective_sample_size,
-    rbf_kernel,
-    rbf_kernel_grad,
-    median_bandwidth,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,6 +106,9 @@ class SteinVariationalMPPIController(MPPIController):
         diversity_before = self._compute_diversity(perturbed_controls)
 
         # ──── Phase 2: SVGD Loop ────
+        # 최적화: pairwise diff (K,K,D) 텐서를 iteration당 1회만 계산하여
+        # median_bandwidth, rbf_kernel, _svgd_update 간 공유.
+        # 기존 3회 → 1회로 메모리 할당 ~67% 절감.
 
         D = N * nu  # flatten 차원
 
@@ -120,17 +120,24 @@ class SteinVariationalMPPIController(MPPIController):
             current_lambda = self._get_current_lambda()
             weights = softmax_weights(costs, current_lambda)  # (K,)
 
-            # bandwidth (median heuristic 또는 고정값)
+            # ── 핵심 최적화: pairwise diff 1회 계산 후 재사용 ──
+            # diff[j, i] = x_j - x_i → (K, K, D)
+            diff = particles[:, np.newaxis, :] - particles[np.newaxis, :, :]
+            sq_dist = np.sum(diff ** 2, axis=-1)  # (K, K)
+
+            # bandwidth (median heuristic 또는 고정값) — sq_dist 재사용
             if self.params.svgd_bandwidth is not None:
                 h = self.params.svgd_bandwidth
             else:
-                h = median_bandwidth(particles)
+                triu_idx = np.triu_indices(K, k=1)
+                med = np.median(sq_dist[triu_idx])
+                h = max(np.sqrt(med / (2.0 * np.log(K + 1))), 1e-6)
 
-            # RBF 커널 (K, K)
-            kernel = rbf_kernel(particles, h)
+            # RBF 커널 — sq_dist 재사용
+            kernel = np.exp(-sq_dist / (2.0 * h ** 2))  # (K, K)
 
-            # SVGD force 계산
-            force = self._svgd_update(particles, weights, kernel, h)  # (K, D)
+            # SVGD force — diff, kernel 재사용 (추가 (K,K,D) 할당 없음)
+            force = self._svgd_update(diff, weights, kernel, h, K)  # (K, D)
 
             # particles 업데이트
             particles = particles + self.params.svgd_step_size * force
@@ -221,44 +228,41 @@ class SteinVariationalMPPIController(MPPIController):
 
         return u_opt, info
 
+    @staticmethod
     def _svgd_update(
-        self,
-        particles: np.ndarray,
+        diff: np.ndarray,
         weights: np.ndarray,
         kernel: np.ndarray,
         bandwidth: float,
+        K: int,
     ) -> np.ndarray:
         """Gradient-free SVGD force 계산: attractive + repulsive.
 
         attractive_i = Σ_j w_j · k(x_j, x_i) · (x_j - x_i)
         repulsive_i  = (1/K) Σ_j k(x_j, x_i) · (x_j - x_i) / h²
 
+        최적화: diff (K,K,D)를 외부에서 받아 재사용.
+        repulsive도 einsum으로 중간 (K,K,D) 텐서 할당 제거.
+
         Args:
-            particles: (K, D) 입자 배열
+            diff: (K, K, D) pairwise 차이 (x_j - x_i), 사전 계산됨
             weights: (K,) softmax 가중치
             kernel: (K, K) RBF 커널 행렬
             bandwidth: h
+            K: 샘플 수
 
         Returns:
             (K, D) SVGD force
         """
-        K, D = particles.shape
-
-        # pairwise diff: diff[j, i] = x_j - x_i → (K, K, D)
-        diff = particles[:, np.newaxis, :] - particles[np.newaxis, :, :]
-
         # Attractive force: 저비용 샘플 방향으로 끌어당김
         # attract_i = Σ_j w_j · k(x_j, x_i) · (x_j - x_i)
-        # weights (K,) → (K, 1): j 차원
-        # kernel (K, K): [j, i]
-        # diff (K, K, D): [j, i, :]
-        weighted_kernel = weights[:, np.newaxis] * kernel  # (K, K): w_j * k(x_j, x_i)
+        weighted_kernel = weights[:, np.newaxis] * kernel  # (K, K)
         attractive = np.einsum("ji,jid->id", weighted_kernel, diff)  # (K, D)
 
         # Repulsive force: 샘플 간 다양성 유지
         # repel_i = (1/K) Σ_j k(x_j, x_i) · (x_j - x_i) / h²
-        kernel_grad = kernel[:, :, np.newaxis] * diff / (bandwidth ** 2)  # (K, K, D)
-        repulsive = np.mean(kernel_grad, axis=0)  # (K, D): mean over j
+        # einsum으로 직접 축약 → 중간 (K,K,D) kernel_grad 텐서 제거
+        repulsive = np.einsum("ji,jid->id", kernel, diff) / (K * bandwidth ** 2)
 
         return attractive + repulsive
 

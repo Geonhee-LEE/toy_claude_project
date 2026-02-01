@@ -9,7 +9,8 @@
 - [x] MPPI M3d: Stein Variational MPPI (SVMPC) ✅
 - [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
 - [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
-- [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
+- [ ] MPPI M2: 고도화 - GPU 가속 (잔여) — CuPy 기반 NumPy drop-in 또는 JAX jit
+- [ ] MPPI M3d-GPU: SVMPC CUDA 가속 — pairwise kernel (K²) + rollout 병렬화
 - [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
 ## 🟠 Medium Priority (P1)
