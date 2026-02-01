@@ -354,7 +354,7 @@ def main():
     parser.add_argument("--live", action="store_true")
     args = parser.parse_args()
 
-    q_values = args.q if args.q else [0.5, 1.0, 1.5, 2.0]
+    q_values = args.q if args.q else [0.5, 1.0, 1.2, 1.5]
 
     print("\n" + "=" * 64)
     print("    Tsallis-MPPI q Parameter Comparison Demo")
@@ -370,13 +370,23 @@ def main():
 
     results = []
     for q in q_values:
+        # q>1 heavy-tail은 가중치를 균등화하므로 lambda를 줄여 보상.
+        # q-exponential은 polynomial decay이므로 q 커질수록 lambda를 크게 줄임.
+        lambda_init = 10.0 * np.exp(-5.0 * max(q - 1.0, 0.0))
         params = MPPIParams(
-            N=20, K=512, dt=0.05, lambda_=10.0,
+            N=20, K=512, dt=0.05, lambda_=lambda_init,
             noise_sigma=np.array([0.3, 0.3]),
             Q=np.diag([10.0, 10.0, 1.0]),
             R=np.diag([0.01, 0.01]),
             Qf=np.diag([100.0, 100.0, 10.0]),
             tsallis_q=q,
+            adaptive_temperature=True,
+            adaptive_temp_config={
+                "target_ess_ratio": 0.5,
+                "adaptation_rate": 1.0,
+                "lambda_min": 0.001,
+                "lambda_max": 100.0,
+            },
         )
         ctrl = TsallisMPPIController(
             robot_params=robot_params, mppi_params=params, seed=42,

@@ -23,6 +23,10 @@ class TsallisMPPIController(MPPIController):
     def _compute_weights(self, costs: np.ndarray) -> np.ndarray:
         """Tsallis q-exponential 가중치 계산.
 
+        비용을 min-centering 후 q-exponential 적용.
+        q-exponential은 translation-invariant가 아니므로
+        centering 없이는 절대 비용 크기가 가중치를 지배한다.
+
         Args:
             costs: (K,) 비용 배열
 
@@ -31,7 +35,8 @@ class TsallisMPPIController(MPPIController):
         """
         lambda_ = self._get_current_lambda()
         q = self.params.tsallis_q
-        raw = q_exponential(-costs / lambda_, q)
+        centered = costs - np.min(costs)  # min-centering (best cost → 0)
+        raw = q_exponential(-centered / lambda_, q)
         total = np.sum(raw)
         if total == 0.0:
             return np.ones_like(costs) / len(costs)
