@@ -467,7 +467,8 @@ def main():
         live_replay(results, trajectory, obstacles=obstacles)
     elif not args.no_plot:
         plot_comparison(results, trajectory, obstacles=obstacles, save_path=args.save)
-        plt.show()
+        if args.save is None:
+            plt.show()
 
 
 if __name__ == "__main__":
