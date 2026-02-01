@@ -6,9 +6,10 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
-- [ ] MPPI M3c: Risk-Aware MPPI (CVaR)
 - [ ] MPPI M3d: Stein Variational MPPI (SVMPC)
+- [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
+- [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
+- [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
 - [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
 ## 🟠 Medium Priority (P1)
@@ -46,6 +47,13 @@
 ## ✅ Completed
 
 ### 2026-02-01
+- [x] MPPI M3c: Risk-Aware MPPI (CVaR) — alpha 기반 가중치 절단
+  * RiskAwareMPPIController (CVaR 가중치 절단, 최저 비용 ceil(alpha*K)개만 softmax)
+  * cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse)
+  * alpha=1.0 → Vanilla 완전 동등성 검증
+  * 장애물 회피 시 risk-averse가 더 보수적 경로 선택
+  * 단위 테스트 22개 통과
+  * alpha별 장애물 회피 비교 데모
 - [x] MPPI M3a: Log-MPPI — log-space softmax 수치 안정성 (#51)
   * LogMPPIController (log-space 가중치 계산)
   * 극단적 cost(1e-15~1e15)에서 NaN/Inf 방지

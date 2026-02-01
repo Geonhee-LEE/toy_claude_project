@@ -54,6 +54,10 @@ class MPPIParams:
     # Tsallis-MPPI (Yin et al., 2021 — Variational Inference MPC using Tsallis Divergence)
     tsallis_q: float = 1.0  # 1.0=Vanilla(Shannon), >1=heavy-tail, <1=light-tail
 
+    # M3c Risk-Aware MPPI (CVaR weight truncation)
+    # 1.0=risk-neutral(Vanilla), <1=risk-averse, 실용 범위 [0.1, 1.0]
+    cvar_alpha: float = 1.0
+
     # Tube-MPPI (Williams et al., 2018 — Robust Sampling Based MPPI)
     tube_enabled: bool = False
     tube_K_fb: np.ndarray | None = None           # (nu, nx) 피드백 게인. None=기본값

@@ -94,9 +94,9 @@ MPPI 알고리즘 흐름:
 - **FR-19**: 비용 min-centering (q-exp translation-invariance 보정)
 - **FR-20**: q값 비교 데모 (q=0.5, 1.0, 1.2, 1.5)
 
-#### M3c: Risk-Aware MPPI (예정)
-- **FR-21**: CVaR 기반 위험 인지 가중치
-- **FR-22**: worst-case 시나리오 비용 함수
+#### M3c: Risk-Aware MPPI (CVaR) ✅ 완료
+- **FR-21**: RiskAwareMPPIController — CVaR 가중치 절단 (최저 비용 ceil(alpha*K)개만 softmax)
+- **FR-22**: cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse, 실용 범위 [0.1, 1.0])
 
 #### M3d: Stein Variational MPPI (예정)
 - **FR-23**: 커널 기반 샘플 다양성 유도 (SVMPC)
@@ -149,13 +149,13 @@ MPPI 알고리즘 흐름:
 │ - TubeAwareCost       │                           └─────────────────────────┘
 │ - tube 경계 시각화    │
 └───────────────────────┘
-┌───────────────────────┐  ┌───────────────────────┐
-│ LogMPPIController     │  │ TsallisMPPIController │
-│ (log_mppi.py) [M3a]   │  │ (tsallis_mppi.py)[M3b]│
-│ - log-space softmax   │  │ - q-exponential 가중치│
-│ - 참조 구현           │  │ - min-centering       │
-│   (Vanilla와 동등)    │  │ - q>1=탐색, q<1=집중 │
-└───────────────────────┘  └───────────────────────┘
+┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────────┐
+│ LogMPPIController     │  │ TsallisMPPIController │  │ RiskAwareMPPIController    │
+│ (log_mppi.py) [M3a]   │  │ (tsallis_mppi.py)[M3b]│  │ (risk_aware_mppi.py) [M3c] │
+│ - log-space softmax   │  │ - q-exponential 가중치│  │ - CVaR 가중치 절단         │
+│ - 참조 구현           │  │ - min-centering       │  │ - alpha=1→Vanilla          │
+│   (Vanilla와 동등)    │  │ - q>1=탐색, q<1=집중 │  │ - alpha<1→risk-averse      │
+└───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
 ```
 
 ### 파일 구조
@@ -173,6 +173,7 @@ mpc_controller/controllers/mppi/
   tube_mppi.py                  # TubeMPPIController (명목 상태 전파 + 피드백) [M2]
   log_mppi.py                   # LogMPPIController (log-space softmax 참조 구현) [M3a]
   tsallis_mppi.py               # TsallisMPPIController (q-exponential 가중치) [M3b]
+  risk_aware_mppi.py            # RiskAwareMPPIController (CVaR 가중치 절단) [M3c]
   utils.py                      # normalize_angle, log_sum_exp, q_exponential, q_logarithm
 
 mpc_controller/ros2/
@@ -187,6 +188,7 @@ tests/
   test_tube_mppi.py             # TubeMPPIController 테스트 (13개) [M2]
   test_log_mppi.py              # LogMPPIController 테스트 (15개) [M3a]
   test_tsallis_mppi.py          # TsallisMPPIController 테스트 (24개) [M3b]
+  test_risk_aware_mppi.py       # RiskAwareMPPIController 테스트 (22개) [M3c]
 
 examples/
   mppi_basic_demo.py            # Vanilla MPPI 데모
@@ -194,6 +196,7 @@ examples/
   mppi_vanilla_vs_tube_demo.py  # Vanilla vs Tube 비교 데모 [M2]
   log_mppi_demo.py              # Vanilla vs Log-MPPI 비교 데모 [M3a]
   tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 데모 [M3b]
+  risk_aware_mppi_demo.py       # Risk-Aware alpha 비교 데모 (장애물 회피) [M3c]
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -222,7 +225,7 @@ M2: 고도화 ✅ 완료 (GPU 가속 잔여)
 M3: SOTA 변형
 ├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
 ├── ✅ M3b: Tsallis-MPPI (q-exponential, min-centering)
-├── ⬜ M3c: Risk-Aware MPPI (CVaR)
+├── ✅ M3c: Risk-Aware MPPI (CVaR 가중치 절단)
 └── ⬜ M3d: Stein Variational MPPI (SVMPC)
 
 M4: ROS2 통합 마무리 (예정)
