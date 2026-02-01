@@ -7,7 +7,8 @@
 ## 🔴 High Priority (P0)
 
 - [ ] MPPI M2: 고도화 - GPU 가속 (잔여)
-- [ ] MPPI M3: SOTA 변형 - Tsallis, Risk-Aware, Log-MPPI, Stein Variational
+- [ ] MPPI M3c: Risk-Aware MPPI (CVaR)
+- [ ] MPPI M3d: Stein Variational MPPI (SVMPC)
 - [ ] MPPI M4: ROS2 통합 마무리 - nav2 플러그인, 실제 로봇, 파라미터 서버
 
 ## 🟠 Medium Priority (P1)
@@ -43,6 +44,21 @@
 ---
 
 ## ✅ Completed
+
+### 2026-02-01
+- [x] MPPI M3a: Log-MPPI — log-space softmax 수치 안정성 (#51)
+  * LogMPPIController (log-space 가중치 계산)
+  * 극단적 cost(1e-15~1e15)에서 NaN/Inf 방지
+  * Vanilla와 일반 범위에서 동일 결과 (차이 < 1e-6)
+  * 단위 테스트 15개 통과
+  * Vanilla vs Log-MPPI 비교 데모
+- [x] MPPI M3b: Tsallis-MPPI — q-exponential 일반화 엔트로피 (#52)
+  * TsallisMPPIController (q-exponential 가중치)
+  * q_exponential, q_logarithm 유틸리티
+  * q=1.0 → Vanilla 하위 호환 (차이 < 1e-8)
+  * q>1 heavy-tail(탐색↑), q<1 light-tail(집중↑) 검증
+  * 단위 테스트 24개 통과
+  * q값 비교 데모 (q=0.5, 1.0, 1.5, 2.0)
 
 ### 2026-01-31
 - [x] MPPI M2: Tube-MPPI — Ancillary 피드백 컨트롤러 (#49)

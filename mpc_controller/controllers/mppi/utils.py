@@ -48,6 +48,46 @@ def softmax_weights(costs: np.ndarray, lambda_: float) -> np.ndarray:
     return exp_vals / np.sum(exp_vals)
 
 
+def q_exponential(x: np.ndarray, q: float) -> np.ndarray:
+    """Tsallis q-exponential: exp_q(x) = [1 + (1-q)*x]_+^{1/(1-q)}.
+
+    q → 1 극한에서 표준 exp(x)와 동일.
+    base ≤ 0인 경우 결과는 0 (q>1일 때 1/음수 지수 → 발산 방지).
+
+    Args:
+        x: 입력 배열
+        q: Tsallis 파라미터 (q=1 → 표준 exp)
+
+    Returns:
+        q-exponential 값 배열
+    """
+    if abs(q - 1.0) < 1e-8:
+        return np.exp(x)
+    exponent = 1.0 / (1.0 - q)
+    base = 1.0 + (1.0 - q) * x
+    positive = base > 0
+    result = np.zeros_like(x, dtype=float)
+    result[positive] = np.power(base[positive], exponent)
+    return result
+
+
+def q_logarithm(x: np.ndarray, q: float) -> np.ndarray:
+    """Tsallis q-logarithm: ln_q(x) = (x^{1-q} - 1) / (1-q).
+
+    q → 1 극한에서 표준 ln(x)와 동일.
+
+    Args:
+        x: 입력 배열 (양수)
+        q: Tsallis 파라미터 (q=1 → 표준 ln)
+
+    Returns:
+        q-logarithm 값 배열
+    """
+    if abs(q - 1.0) < 1e-8:
+        return np.log(x)
+    return (np.power(x, 1.0 - q) - 1.0) / (1.0 - q)
+
+
 def effective_sample_size(weights: np.ndarray) -> float:
     """Effective Sample Size (ESS) 계산.
 

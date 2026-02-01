@@ -150,12 +150,8 @@ class MPPIController:
         )  # (K,)
 
         # 6. Softmax 가중치
-        current_lambda = (
-            self._adaptive_temp.lambda_
-            if self._adaptive_temp is not None
-            else self.params.lambda_
-        )
-        weights = softmax_weights(costs, current_lambda)  # (K,)
+        current_lambda = self._get_current_lambda()
+        weights = self._compute_weights(costs)  # (K,)
 
         # 7. 가중 평균으로 제어열 업데이트
         # (K, 1, 1) * (K, N, nu) -> sum -> (N, nu)
@@ -227,6 +223,16 @@ class MPPIController:
             self.cost.add(ControlRateCost(self.params.R_rate))
         if len(obstacles) > 0:
             self.cost.add(ObstacleCost(obstacles))
+
+    def _get_current_lambda(self) -> float:
+        """현재 온도 파라미터 반환 (adaptive 적용 시 동적 값)."""
+        if self._adaptive_temp is not None:
+            return self._adaptive_temp.lambda_
+        return self.params.lambda_
+
+    def _compute_weights(self, costs: np.ndarray) -> np.ndarray:
+        """비용에서 가중치 계산. 서브클래스에서 오버라이드 가능."""
+        return softmax_weights(costs, self._get_current_lambda())
 
     def reset(self) -> None:
         """제어열 초기화 및 반복 횟수 리셋."""
