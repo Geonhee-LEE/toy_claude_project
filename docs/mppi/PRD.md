@@ -202,6 +202,9 @@ examples/
   tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 데모 [M3b]
   risk_aware_mppi_demo.py       # Risk-Aware alpha 비교 데모 (장애물 회피) [M3c]
   stein_variational_mppi_demo.py # SVMPC SVGD iteration 비교 데모 [M3d]
+  smooth_mppi_demo.py            # Vanilla vs SMPPI jerk weight 비교 [M3.5a]
+  spline_mppi_demo.py            # Spline-MPPI knot 수 비교 [M3.5b]
+  svg_mppi_demo.py               # SVG-MPPI vs SVMPC 비교 (장애물) [M3.5c]
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -227,11 +230,16 @@ M2: 고도화 ✅ 완료 (GPU 가속 잔여)
 ├── ✅ TubeAwareCost (tube margin 확장)
 └── ⬜ GPU 가속 (PyTorch/Numba) — 잔여
 
-M3: SOTA 변형
+M3: SOTA 변형 ✅ 완료
 ├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
 ├── ✅ M3b: Tsallis-MPPI (q-exponential, min-centering)
 ├── ✅ M3c: Risk-Aware MPPI (CVaR 가중치 절단)
 └── ✅ M3d: Stein Variational MPPI (SVMPC — SVGD 커널 기반)
+
+M3.5: SOTA 변형 확장 ✅ 완료
+├── ✅ M3.5a: Smooth MPPI (SMPPI — Δu input-lifting, jerk cost)
+├── ✅ M3.5b: Spline-MPPI (B-spline basis 보간, P << N)
+└── ✅ M3.5c: SVG-MPPI (Guide particle SVGD + follower resampling)
 
 M4: ROS2 통합 마무리 (예정)
 ├── nav2 플러그인
@@ -248,6 +256,9 @@ M4: ROS2 통합 마무리 (예정)
 - Yin et al. (2021) - "Trajectory Distribution Control via Tsallis Entropy" (Tsallis MPPI)
 - Yin et al. (2023) - "Risk-Aware MPPI" (RA-MPPI)
 - Lambert et al. (2020) - "Stein Variational Model Predictive Control" (SVMPC)
+- Kim et al. (2021) - "Smooth MPPI" (SMPPI — input-lifting)
+- Bhardwaj et al. (2024) - "Spline-MPPI" (ICRA 2024, B-spline interpolation)
+- Kondo et al. (2024) - "SVG-MPPI" (ICRA 2024, Guide particle SVGD)
 
 ### 참조 구현
 - `pytorch_mppi` - PyTorch GPU 가속 MPPI

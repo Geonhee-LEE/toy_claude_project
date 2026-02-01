@@ -7,6 +7,9 @@ from mpc_controller.controllers.mppi.log_mppi import LogMPPIController
 from mpc_controller.controllers.mppi.tsallis_mppi import TsallisMPPIController
 from mpc_controller.controllers.mppi.risk_aware_mppi import RiskAwareMPPIController
 from mpc_controller.controllers.mppi.stein_variational_mppi import SteinVariationalMPPIController
+from mpc_controller.controllers.mppi.smooth_mppi import SmoothMPPIController
+from mpc_controller.controllers.mppi.spline_mppi import SplineMPPIController
+from mpc_controller.controllers.mppi.svg_mppi import SVGMPPIController
 from mpc_controller.controllers.mppi.ancillary_controller import AncillaryController
 from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
 from mpc_controller.controllers.mppi.cost_functions import ControlRateCost, TubeAwareCost
@@ -19,6 +22,9 @@ __all__ = [
     "TsallisMPPIController",
     "RiskAwareMPPIController",
     "SteinVariationalMPPIController",
+    "SmoothMPPIController",
+    "SplineMPPIController",
+    "SVGMPPIController",
     "AncillaryController",
     "MPPIParams",
     "AdaptiveTemperature",

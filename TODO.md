@@ -47,7 +47,27 @@
 
 ## ✅ Completed
 
-### 2026-02-01
+### 2026-02-01 (M3.5)
+- [x] MPPI M3.5a: Smooth MPPI (SMPPI) — Δu input-lifting 구조적 부드러움 (#56)
+  * SmoothMPPIController (Δu space 최적화 + cumsum 복원)
+  * Jerk cost (ΔΔu 페널티)로 액추에이터 보호
+  * Vanilla 대비 제어 변화율 감소 검증
+  * 단위 테스트 17개 통과
+  * Vanilla vs SMPPI jerk weight 비교 데모
+- [x] MPPI M3.5b: Spline-MPPI — B-spline 보간 기반 smooth sampling (#57)
+  * SplineMPPIController (P개 knot에 노이즈 → B-spline basis 보간)
+  * 순수 NumPy B-spline basis (de Boor 재귀, scipy 미사용)
+  * P << N으로 노이즈 차원 축소 → 구조적 smooth 제어
+  * 단위 테스트 23개 통과
+  * Vanilla vs Spline P=4/P=8 비교 데모
+- [x] MPPI M3.5c: SVG-MPPI — Guide particle 다중 모드 탐색 (#58)
+  * SVGMPPIController (G개 guide SVGD + follower resampling)
+  * G << K로 SVGD 계산량 O(G²D) << O(K²D)
+  * SVMPC 대비 속도 향상 + 다중 모드 유지
+  * 단위 테스트 21개 통과
+  * Vanilla vs SVMPC vs SVG-MPPI 장애물 환경 비교 데모
+
+### 2026-02-01 (M3)
 - [x] MPPI M3d: Stein Variational MPPI (SVMPC) — SVGD 커널 기반 샘플 다양성
   * SteinVariationalMPPIController (SVGD 기반 gradient-free 샘플 분포 개선)
   * rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
