@@ -16,7 +16,6 @@
 - [ ] MPPI SVMPC GPU 가속 — pairwise kernel (K²) + rollout CUDA 병렬화
 - [ ] MPC vs MPPI 비교 데모 파라미터 공정화 — 호라이즌 통일 (MPC 2.0s vs MPPI 1.0s)
 - [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
-- [ ] 실시간 경로 재계획 기능 — 환경 변화 대응
 - [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
 - [ ] 속도 제약 고려 MPC — 가속도/저크 제한
 - [ ] CI/CD 파이프라인 개선 — 자동 테스트 및 배포
@@ -49,6 +48,16 @@
 ---
 
 ## ✅ Completed
+
+### 2026-02-07
+- [x] #104 실시간 경로 재계획 기능 — 환경 변화 대응
+  * RealtimeReplanner 클래스 (realtime_replanner.py)
+  * 재계획 트리거: 충돌 위험, 경로 이탈, 신규 장애물, 목표 변경
+  * 환경 변화 자동 감지 및 실시간 재계획
+  * 장애물 회피 웨이포인트 생성
+  * 부드러운 궤적 전환 (블렌딩)
+  * 단위 테스트 8개 통과 (test_realtime_replanner.py)
+  * 통합 데모 (realtime_replanning_demo.py) — 동적 장애물 시나리오
 
 ### 2026-02-01 (Benchmark)
 - [x] MPPI 전체 9종 변형 벤치마크 도구
