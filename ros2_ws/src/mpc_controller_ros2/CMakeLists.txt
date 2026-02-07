@@ -150,6 +150,11 @@ if(BUILD_TESTING)
   if(TARGET test_sampling)
     target_link_libraries(test_sampling mppi_controller_plugin)
   endif()
+
+  ament_add_gtest(test_mppi_algorithm test/unit/test_mppi_algorithm.cpp)
+  if(TARGET test_mppi_algorithm)
+    target_link_libraries(test_mppi_algorithm mppi_controller_plugin)
+  endif()
 endif()
 
 # Export dependencies
