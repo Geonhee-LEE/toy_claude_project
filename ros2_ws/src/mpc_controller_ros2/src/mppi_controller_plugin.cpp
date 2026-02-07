@@ -74,17 +74,90 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
   nav2_core::GoalChecker* goal_checker
 )
 {
-  // Stub implementation
+  (void)velocity;  // Unused parameter
+  (void)goal_checker;  // Unused parameter
+
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.stamp = node_->now();
   cmd_vel.header.frame_id = pose.header.frame_id;
-  cmd_vel.twist.linear.x = 0.0;
-  cmd_vel.twist.angular.z = 0.0;
 
-  RCLCPP_INFO_THROTTLE(
-    node_->get_logger(), *node_->get_clock(), 1000,
-    "MPPI controller stub: returning zero velocity"
-  );
+  // Check if plan is available
+  if (global_plan_.poses.empty()) {
+    RCLCPP_WARN_THROTTLE(
+      node_->get_logger(), *node_->get_clock(), 1000,
+      "No plan available, returning zero velocity"
+    );
+    cmd_vel.twist.linear.x = 0.0;
+    cmd_vel.twist.angular.z = 0.0;
+    return cmd_vel;
+  }
+
+  try {
+    // 1. Convert current pose to state
+    Eigen::Vector3d current_state = poseToState(pose);
+
+    // 2. Convert path to reference trajectory
+    Eigen::MatrixXd reference_trajectory = pathToReferenceTrajectory(global_plan_);
+
+    // 3. Extract obstacles from costmap
+    std::vector<Eigen::Vector3d> obstacles = extractObstaclesFromCostmap();
+
+    // Update obstacle cost function
+    if (cost_function_) {
+      // Rebuild cost function with updated obstacles
+      cost_function_ = std::make_unique<CompositeMPPICost>();
+      cost_function_->addCost(std::make_unique<StateTrackingCost>(params_.Q));
+      cost_function_->addCost(std::make_unique<TerminalCost>(params_.Qf));
+      cost_function_->addCost(std::make_unique<ControlEffortCost>(params_.R));
+      cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
+
+      if (!obstacles.empty()) {
+        auto obstacle_cost = std::make_unique<ObstacleCost>(
+          params_.obstacle_weight,
+          params_.safety_distance
+        );
+        obstacle_cost->setObstacles(obstacles);
+        cost_function_->addCost(std::move(obstacle_cost));
+      }
+    }
+
+    // 4. Compute optimal control
+    auto [u_opt, info] = computeControl(current_state, reference_trajectory);
+
+    // 5. Apply speed limit if set
+    double v_cmd = u_opt(0);
+    double omega_cmd = u_opt(1);
+
+    if (speed_limit_valid_) {
+      v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
+    }
+
+    // 6. Build Twist message
+    cmd_vel.twist.linear.x = v_cmd;
+    cmd_vel.twist.linear.y = 0.0;
+    cmd_vel.twist.linear.z = 0.0;
+    cmd_vel.twist.angular.x = 0.0;
+    cmd_vel.twist.angular.y = 0.0;
+    cmd_vel.twist.angular.z = omega_cmd;
+
+    // 7. Publish visualization
+    publishVisualization(info, current_state);
+
+    RCLCPP_DEBUG(
+      node_->get_logger(),
+      "MPPI: v=%.3f, omega=%.3f, min_cost=%.4f, ESS=%.1f/%d",
+      v_cmd, omega_cmd,
+      info.costs.minCoeff(), info.ess, params_.K
+    );
+
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(
+      node_->get_logger(),
+      "Exception in computeVelocityCommands: %s", e.what()
+    );
+    cmd_vel.twist.linear.x = 0.0;
+    cmd_vel.twist.angular.z = 0.0;
+  }
 
   return cmd_vel;
 }
@@ -92,10 +165,19 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
 {
   global_plan_ = path;
+
+  // Reset control sequence for new plan (warm start from zero)
+  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
+
   RCLCPP_INFO(
     node_->get_logger(),
-    "Received new plan with %zu poses", path.poses.size()
+    "Received new plan with %zu poses, reset control sequence",
+    path.poses.size()
   );
+
+  if (path.poses.empty()) {
+    RCLCPP_WARN(node_->get_logger(), "Received empty plan");
+  }
 }
 
 void MPPIControllerPlugin::setSpeedLimit(const double& speed_limit, const bool& percentage)
@@ -209,14 +291,94 @@ Eigen::Vector3d MPPIControllerPlugin::poseToState(const geometry_msgs::msg::Pose
 
 Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(const nav_msgs::msg::Path& path)
 {
-  // Stub implementation
-  return Eigen::MatrixXd::Zero(params_.N + 1, 3);
+  if (path.poses.empty()) {
+    RCLCPP_WARN(node_->get_logger(), "Empty path provided");
+    return Eigen::MatrixXd::Zero(params_.N + 1, 3);
+  }
+
+  int path_size = path.poses.size();
+  Eigen::MatrixXd reference = Eigen::MatrixXd::Zero(params_.N + 1, 3);
+
+  // If path is shorter than horizon, repeat last pose
+  if (path_size <= params_.N + 1) {
+    for (int t = 0; t < path_size; ++t) {
+      reference(t, 0) = path.poses[t].pose.position.x;
+      reference(t, 1) = path.poses[t].pose.position.y;
+      reference(t, 2) = quaternionToYaw(path.poses[t].pose.orientation);
+    }
+    // Fill remaining with last pose
+    for (int t = path_size; t <= params_.N; ++t) {
+      reference.row(t) = reference.row(path_size - 1);
+    }
+  } else {
+    // Interpolate path to match horizon length
+    for (int t = 0; t <= params_.N; ++t) {
+      double interp_idx = static_cast<double>(t) / params_.N * (path_size - 1);
+      int idx_lower = static_cast<int>(std::floor(interp_idx));
+      int idx_upper = std::min(idx_lower + 1, path_size - 1);
+      double alpha = interp_idx - idx_lower;
+
+      // Linear interpolation
+      reference(t, 0) = (1.0 - alpha) * path.poses[idx_lower].pose.position.x +
+                        alpha * path.poses[idx_upper].pose.position.x;
+      reference(t, 1) = (1.0 - alpha) * path.poses[idx_lower].pose.position.y +
+                        alpha * path.poses[idx_upper].pose.position.y;
+
+      // Angle interpolation (using shorter path on circle)
+      double theta_lower = quaternionToYaw(path.poses[idx_lower].pose.orientation);
+      double theta_upper = quaternionToYaw(path.poses[idx_upper].pose.orientation);
+      double theta_diff = normalizeAngle(theta_upper - theta_lower);
+      reference(t, 2) = normalizeAngle(theta_lower + alpha * theta_diff);
+    }
+  }
+
+  return reference;
 }
 
 std::vector<Eigen::Vector3d> MPPIControllerPlugin::extractObstaclesFromCostmap()
 {
-  // Stub implementation
-  return {};
+  std::vector<Eigen::Vector3d> obstacles;
+
+  if (!costmap_ros_) {
+    return obstacles;
+  }
+
+  auto costmap = costmap_ros_->getCostmap();
+  unsigned int size_x = costmap->getSizeInCellsX();
+  unsigned int size_y = costmap->getSizeInCellsY();
+  double resolution = costmap->getResolution();
+  double origin_x = costmap->getOriginX();
+  double origin_y = costmap->getOriginY();
+
+  // Sample obstacles from costmap (grid-based detection)
+  // To avoid too many obstacles, we sample every N cells
+  int sample_step = 3;
+
+  for (unsigned int i = 0; i < size_x; i += sample_step) {
+    for (unsigned int j = 0; j < size_y; j += sample_step) {
+      unsigned char cost = costmap->getCost(i, j);
+
+      // Check if cell is occupied (LETHAL_OBSTACLE = 254)
+      if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        // Convert cell coordinates to world coordinates
+        double wx = origin_x + (i + 0.5) * resolution;
+        double wy = origin_y + (j + 0.5) * resolution;
+
+        // Create obstacle: [x, y, radius]
+        // Use resolution as approximate radius
+        Eigen::Vector3d obs(wx, wy, resolution * 0.5);
+        obstacles.push_back(obs);
+      }
+    }
+  }
+
+  RCLCPP_DEBUG(
+    node_->get_logger(),
+    "Extracted %zu obstacles from costmap",
+    obstacles.size()
+  );
+
+  return obstacles;
 }
 
 void MPPIControllerPlugin::publishVisualization(
@@ -224,7 +386,90 @@ void MPPIControllerPlugin::publishVisualization(
   const Eigen::Vector3d& current_state
 )
 {
-  // Stub implementation
+  if (!marker_pub_ || marker_pub_->get_subscription_count() == 0) {
+    return;  // No subscribers
+  }
+
+  visualization_msgs::msg::MarkerArray marker_array;
+  auto stamp = node_->now();
+  std::string frame_id = "map";  // TODO: get from costmap
+
+  // 1. Best trajectory (red)
+  if (!info.best_trajectory.empty()) {
+    visualization_msgs::msg::Marker best_marker;
+    best_marker.header.stamp = stamp;
+    best_marker.header.frame_id = frame_id;
+    best_marker.ns = "mppi_best_trajectory";
+    best_marker.id = 0;
+    best_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    best_marker.action = visualization_msgs::msg::Marker::ADD;
+    best_marker.scale.x = 0.05;
+    best_marker.color.r = 1.0;
+    best_marker.color.g = 0.0;
+    best_marker.color.b = 0.0;
+    best_marker.color.a = 1.0;
+
+    for (int t = 0; t < info.best_trajectory.rows(); ++t) {
+      geometry_msgs::msg::Point p;
+      p.x = info.best_trajectory(t, 0);
+      p.y = info.best_trajectory(t, 1);
+      p.z = 0.0;
+      best_marker.points.push_back(p);
+    }
+    marker_array.markers.push_back(best_marker);
+  }
+
+  // 2. Sample trajectories (gray, semi-transparent)
+  // Only visualize a subset to avoid overwhelming RVIZ
+  int sample_vis_stride = std::max(1, static_cast<int>(info.sample_trajectories.size() / 20));
+
+  for (size_t k = 0; k < info.sample_trajectories.size(); k += sample_vis_stride) {
+    visualization_msgs::msg::Marker sample_marker;
+    sample_marker.header.stamp = stamp;
+    sample_marker.header.frame_id = frame_id;
+    sample_marker.ns = "mppi_samples";
+    sample_marker.id = k;
+    sample_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    sample_marker.action = visualization_msgs::msg::Marker::ADD;
+    sample_marker.scale.x = 0.01;
+    sample_marker.color.r = 0.5;
+    sample_marker.color.g = 0.5;
+    sample_marker.color.b = 0.5;
+    sample_marker.color.a = 0.3;
+
+    const auto& traj = info.sample_trajectories[k];
+    for (int t = 0; t < traj.rows(); ++t) {
+      geometry_msgs::msg::Point p;
+      p.x = traj(t, 0);
+      p.y = traj(t, 1);
+      p.z = 0.0;
+      sample_marker.points.push_back(p);
+    }
+    marker_array.markers.push_back(sample_marker);
+  }
+
+  // 3. Current position (green sphere)
+  visualization_msgs::msg::Marker current_marker;
+  current_marker.header.stamp = stamp;
+  current_marker.header.frame_id = frame_id;
+  current_marker.ns = "mppi_current";
+  current_marker.id = 0;
+  current_marker.type = visualization_msgs::msg::Marker::SPHERE;
+  current_marker.action = visualization_msgs::msg::Marker::ADD;
+  current_marker.pose.position.x = current_state(0);
+  current_marker.pose.position.y = current_state(1);
+  current_marker.pose.position.z = 0.0;
+  current_marker.pose.orientation.w = 1.0;
+  current_marker.scale.x = 0.2;
+  current_marker.scale.y = 0.2;
+  current_marker.scale.z = 0.2;
+  current_marker.color.r = 0.0;
+  current_marker.color.g = 1.0;
+  current_marker.color.b = 0.0;
+  current_marker.color.a = 1.0;
+  marker_array.markers.push_back(current_marker);
+
+  marker_pub_->publish(marker_array);
 }
 
 void MPPIControllerPlugin::declareParameters()
