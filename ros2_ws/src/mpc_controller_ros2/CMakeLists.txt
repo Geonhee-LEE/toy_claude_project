@@ -106,6 +106,7 @@ ament_python_install_package(${PROJECT_NAME})
 # Install Python executables
 install(PROGRAMS
   scripts/mpc_controller_node
+  scripts/send_goal.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
