@@ -121,6 +121,18 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+# Install Gazebo worlds
+install(DIRECTORY
+  worlds
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install robot URDF files
+install(DIRECTORY
+  urdf
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
