@@ -1,6 +1,7 @@
 #include "mpc_controller_ros2/mppi_controller_plugin.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
+#include <chrono>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Controller)
 
@@ -126,8 +127,11 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 4. Compute optimal control
+    // 4. Compute optimal control (measure computation time)
+    auto start_time = std::chrono::high_resolution_clock::now();
     auto [u_opt, info] = computeControl(current_state, reference_trajectory);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    double computation_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
     // 5. Apply speed limit if set
     double v_cmd = u_opt(0);
@@ -146,7 +150,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     cmd_vel.twist.angular.z = omega_cmd;
 
     // 7. Publish visualization
-    publishVisualization(info, current_state);
+    publishVisualization(info, current_state, reference_trajectory, info.weighted_avg_trajectory, computation_time_ms);
 
     RCLCPP_DEBUG(
       node_->get_logger(),
@@ -272,6 +276,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
   info.sample_trajectories = trajectories;
   info.sample_weights = weights;
   info.best_trajectory = trajectories[best_idx];
+  info.weighted_avg_trajectory = weighted_traj;
   info.temperature = params_.lambda;
   info.ess = ess;
   info.costs = costs;
@@ -388,7 +393,10 @@ std::vector<Eigen::Vector3d> MPPIControllerPlugin::extractObstaclesFromCostmap()
 
 void MPPIControllerPlugin::publishVisualization(
   const MPPIInfo& info,
-  const Eigen::Vector3d& current_state
+  const Eigen::Vector3d& current_state,
+  const Eigen::MatrixXd& reference_trajectory,
+  const Eigen::MatrixXd& weighted_avg_trajectory,
+  double computation_time_ms
 )
 {
   if (!marker_pub_ || marker_pub_->get_subscription_count() == 0) {
@@ -399,8 +407,91 @@ void MPPIControllerPlugin::publishVisualization(
   auto stamp = node_->now();
   std::string frame_id = "map";  // TODO: get from costmap
 
-  // 1. Best trajectory (red)
-  if (info.best_trajectory.size() > 0) {
+  // 1. Reference trajectory (yellow dashed line)
+  if (params_.visualize_reference && reference_trajectory.rows() > 0) {
+    visualization_msgs::msg::Marker ref_marker;
+    ref_marker.header.stamp = stamp;
+    ref_marker.header.frame_id = frame_id;
+    ref_marker.ns = "mppi_reference";
+    ref_marker.id = 0;
+    ref_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    ref_marker.action = visualization_msgs::msg::Marker::ADD;
+    ref_marker.scale.x = 0.03;
+    ref_marker.color.r = 1.0;
+    ref_marker.color.g = 1.0;
+    ref_marker.color.b = 0.0;
+    ref_marker.color.a = 0.6;
+
+    for (int t = 0; t < reference_trajectory.rows(); ++t) {
+      geometry_msgs::msg::Point p;
+      p.x = reference_trajectory(t, 0);
+      p.y = reference_trajectory(t, 1);
+      p.z = 0.0;
+      ref_marker.points.push_back(p);
+    }
+    marker_array.markers.push_back(ref_marker);
+  }
+
+  // 2. Sample trajectories (gray, semi-transparent)
+  if (params_.visualize_samples && !info.sample_trajectories.empty()) {
+    int sample_vis_stride = std::max(
+      1,
+      static_cast<int>(info.sample_trajectories.size()) / params_.max_visualized_samples
+    );
+
+    for (size_t k = 0; k < info.sample_trajectories.size(); k += sample_vis_stride) {
+      visualization_msgs::msg::Marker sample_marker;
+      sample_marker.header.stamp = stamp;
+      sample_marker.header.frame_id = frame_id;
+      sample_marker.ns = "mppi_samples";
+      sample_marker.id = k;
+      sample_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      sample_marker.action = visualization_msgs::msg::Marker::ADD;
+      sample_marker.scale.x = 0.01;
+      sample_marker.color.r = 0.5;
+      sample_marker.color.g = 0.5;
+      sample_marker.color.b = 0.5;
+      sample_marker.color.a = 0.3;
+
+      const auto& traj = info.sample_trajectories[k];
+      for (int t = 0; t < traj.rows(); ++t) {
+        geometry_msgs::msg::Point p;
+        p.x = traj(t, 0);
+        p.y = traj(t, 1);
+        p.z = 0.0;
+        sample_marker.points.push_back(p);
+      }
+      marker_array.markers.push_back(sample_marker);
+    }
+  }
+
+  // 3. Weighted average trajectory (blue)
+  if (params_.visualize_weighted_avg && weighted_avg_trajectory.rows() > 0) {
+    visualization_msgs::msg::Marker weighted_marker;
+    weighted_marker.header.stamp = stamp;
+    weighted_marker.header.frame_id = frame_id;
+    weighted_marker.ns = "mppi_weighted_avg";
+    weighted_marker.id = 0;
+    weighted_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    weighted_marker.action = visualization_msgs::msg::Marker::ADD;
+    weighted_marker.scale.x = 0.06;
+    weighted_marker.color.r = 0.0;
+    weighted_marker.color.g = 0.5;
+    weighted_marker.color.b = 1.0;
+    weighted_marker.color.a = 0.9;
+
+    for (int t = 0; t < weighted_avg_trajectory.rows(); ++t) {
+      geometry_msgs::msg::Point p;
+      p.x = weighted_avg_trajectory(t, 0);
+      p.y = weighted_avg_trajectory(t, 1);
+      p.z = 0.0;
+      weighted_marker.points.push_back(p);
+    }
+    marker_array.markers.push_back(weighted_marker);
+  }
+
+  // 4. Best trajectory (red)
+  if (params_.visualize_best && info.best_trajectory.size() > 0) {
     visualization_msgs::msg::Marker best_marker;
     best_marker.header.stamp = stamp;
     best_marker.header.frame_id = frame_id;
@@ -424,36 +515,54 @@ void MPPIControllerPlugin::publishVisualization(
     marker_array.markers.push_back(best_marker);
   }
 
-  // 2. Sample trajectories (gray, semi-transparent)
-  // Only visualize a subset to avoid overwhelming RVIZ
-  int sample_vis_stride = std::max(1, static_cast<int>(info.sample_trajectories.size() / 20));
+  // 5. Control sequence arrows
+  if (params_.visualize_control_sequence && control_sequence_.rows() > 0) {
+    // Visualize control arrows at intervals
+    int arrow_stride = std::max(1, static_cast<int>(control_sequence_.rows()) / 5);
 
-  for (size_t k = 0; k < info.sample_trajectories.size(); k += sample_vis_stride) {
-    visualization_msgs::msg::Marker sample_marker;
-    sample_marker.header.stamp = stamp;
-    sample_marker.header.frame_id = frame_id;
-    sample_marker.ns = "mppi_samples";
-    sample_marker.id = k;
-    sample_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-    sample_marker.action = visualization_msgs::msg::Marker::ADD;
-    sample_marker.scale.x = 0.01;
-    sample_marker.color.r = 0.5;
-    sample_marker.color.g = 0.5;
-    sample_marker.color.b = 0.5;
-    sample_marker.color.a = 0.3;
+    for (int t = 0; t < control_sequence_.rows(); t += arrow_stride) {
+      if (t < weighted_avg_trajectory.rows()) {
+        visualization_msgs::msg::Marker arrow_marker;
+        arrow_marker.header.stamp = stamp;
+        arrow_marker.header.frame_id = frame_id;
+        arrow_marker.ns = "mppi_control_arrows";
+        arrow_marker.id = t;
+        arrow_marker.type = visualization_msgs::msg::Marker::ARROW;
+        arrow_marker.action = visualization_msgs::msg::Marker::ADD;
 
-    const auto& traj = info.sample_trajectories[k];
-    for (int t = 0; t < traj.rows(); ++t) {
-      geometry_msgs::msg::Point p;
-      p.x = traj(t, 0);
-      p.y = traj(t, 1);
-      p.z = 0.0;
-      sample_marker.points.push_back(p);
+        // Arrow from current position
+        geometry_msgs::msg::Point start, end;
+        start.x = weighted_avg_trajectory(t, 0);
+        start.y = weighted_avg_trajectory(t, 1);
+        start.z = 0.0;
+
+        // Arrow direction based on velocity command
+        double theta = weighted_avg_trajectory(t, 2);
+        double v = control_sequence_(t, 0);
+        double arrow_length = 0.3 * std::abs(v);  // Scale by velocity
+
+        end.x = start.x + arrow_length * std::cos(theta);
+        end.y = start.y + arrow_length * std::sin(theta);
+        end.z = 0.0;
+
+        arrow_marker.points.push_back(start);
+        arrow_marker.points.push_back(end);
+
+        arrow_marker.scale.x = 0.05;  // Shaft diameter
+        arrow_marker.scale.y = 0.1;   // Head diameter
+        arrow_marker.scale.z = 0.1;   // Head length
+
+        arrow_marker.color.r = 0.0;
+        arrow_marker.color.g = 1.0;
+        arrow_marker.color.b = 0.5;
+        arrow_marker.color.a = 0.8;
+
+        marker_array.markers.push_back(arrow_marker);
+      }
     }
-    marker_array.markers.push_back(sample_marker);
   }
 
-  // 3. Current position (green sphere)
+  // 6. Current position (green sphere)
   visualization_msgs::msg::Marker current_marker;
   current_marker.header.stamp = stamp;
   current_marker.header.frame_id = frame_id;
@@ -473,6 +582,47 @@ void MPPIControllerPlugin::publishVisualization(
   current_marker.color.b = 0.0;
   current_marker.color.a = 1.0;
   marker_array.markers.push_back(current_marker);
+
+  // 7. Text information (ESS, cost, lambda, computation time)
+  if (params_.visualize_text_info) {
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.header.stamp = stamp;
+    text_marker.header.frame_id = frame_id;
+    text_marker.ns = "mppi_text_info";
+    text_marker.id = 0;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+
+    // Position above current state
+    text_marker.pose.position.x = current_state(0);
+    text_marker.pose.position.y = current_state(1);
+    text_marker.pose.position.z = 1.0;
+    text_marker.pose.orientation.w = 1.0;
+
+    // Format text
+    char text_buffer[256];
+    snprintf(
+      text_buffer,
+      sizeof(text_buffer),
+      "ESS: %.1f/%d\nλ: %.1f\nCost: %.2f/%.2f/%.2f\nTime: %.1f ms",
+      info.ess,
+      params_.K,
+      info.temperature,
+      info.costs.minCoeff(),
+      info.costs.mean(),
+      info.costs.maxCoeff(),
+      computation_time_ms
+    );
+    text_marker.text = text_buffer;
+
+    text_marker.scale.z = 0.2;  // Text height
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 1.0;
+    text_marker.color.a = 1.0;
+
+    marker_array.markers.push_back(text_marker);
+  }
 
   marker_pub_->publish(marker_array);
 }
@@ -519,6 +669,15 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "obstacle_weight", params_.obstacle_weight);
   node_->declare_parameter(prefix + "safety_distance", params_.safety_distance);
 
+  // Visualization
+  node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
+  node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
+  node_->declare_parameter(prefix + "visualize_weighted_avg", params_.visualize_weighted_avg);
+  node_->declare_parameter(prefix + "visualize_reference", params_.visualize_reference);
+  node_->declare_parameter(prefix + "visualize_text_info", params_.visualize_text_info);
+  node_->declare_parameter(prefix + "visualize_control_sequence", params_.visualize_control_sequence);
+  node_->declare_parameter(prefix + "max_visualized_samples", params_.max_visualized_samples);
+
   RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared");
 }
 
@@ -563,6 +722,15 @@ void MPPIControllerPlugin::loadParameters()
   // Obstacle avoidance
   params_.obstacle_weight = node_->get_parameter(prefix + "obstacle_weight").as_double();
   params_.safety_distance = node_->get_parameter(prefix + "safety_distance").as_double();
+
+  // Visualization
+  params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();
+  params_.visualize_best = node_->get_parameter(prefix + "visualize_best").as_bool();
+  params_.visualize_weighted_avg = node_->get_parameter(prefix + "visualize_weighted_avg").as_bool();
+  params_.visualize_reference = node_->get_parameter(prefix + "visualize_reference").as_bool();
+  params_.visualize_text_info = node_->get_parameter(prefix + "visualize_text_info").as_bool();
+  params_.visualize_control_sequence = node_->get_parameter(prefix + "visualize_control_sequence").as_bool();
+  params_.max_visualized_samples = node_->get_parameter(prefix + "max_visualized_samples").as_int();
 
   RCLCPP_INFO(
     node_->get_logger(),

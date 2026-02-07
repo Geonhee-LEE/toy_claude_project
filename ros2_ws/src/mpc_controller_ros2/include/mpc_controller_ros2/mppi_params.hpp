@@ -38,6 +38,15 @@ struct MPPIParams
   double obstacle_weight{100.0};    // 장애물 회피 가중치
   double safety_distance{0.5};      // 안전 거리 (m)
 
+  // Visualization
+  bool visualize_samples{true};           // 샘플 궤적 표시
+  bool visualize_best{true};              // 최적 궤적 표시
+  bool visualize_weighted_avg{true};      // 가중 평균 궤적 표시
+  bool visualize_reference{true};         // 참조 궤적 표시
+  bool visualize_text_info{true};         // 텍스트 정보 표시
+  bool visualize_control_sequence{true};  // 제어 시퀀스 화살표 표시
+  int max_visualized_samples{20};         // 최대 표시 샘플 수
+
   // Constructor with default weights
   MPPIParams()
   {
