@@ -64,3 +64,12 @@ controller_server:
       # Obstacle avoidance
       obstacle_weight: 100.0   # Obstacle cost weight
       safety_distance: 0.5     # Safety distance (m)
+
+      # Visualization
+      visualize_samples: true          # Show sample trajectories
+      visualize_best: true             # Show best trajectory
+      visualize_weighted_avg: true     # Show weighted average trajectory
+      visualize_reference: true        # Show reference trajectory
+      visualize_text_info: true        # Show ESS, cost, lambda text
+      visualize_control_sequence: true # Show control arrows
+      max_visualized_samples: 20       # Max number of samples to visualize

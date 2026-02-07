@@ -29,6 +29,7 @@ struct MPPIInfo
   std::vector<Eigen::MatrixXd> sample_trajectories;
   Eigen::VectorXd sample_weights;
   Eigen::MatrixXd best_trajectory;
+  Eigen::MatrixXd weighted_avg_trajectory;
   double temperature;
   double ess;
   Eigen::VectorXd costs;
@@ -77,7 +78,13 @@ private:
   std::vector<Eigen::Vector3d> extractObstaclesFromCostmap();
 
   // 시각화
-  void publishVisualization(const MPPIInfo& info, const Eigen::Vector3d& current_state);
+  void publishVisualization(
+    const MPPIInfo& info,
+    const Eigen::Vector3d& current_state,
+    const Eigen::MatrixXd& reference_trajectory,
+    const Eigen::MatrixXd& weighted_avg_trajectory,
+    double computation_time_ms
+  );
 
   // 파라미터 관리
   void declareParameters();
