@@ -1,0 +1,9 @@
+<library path="mppi_controller_plugin">
+  <class type="mpc_controller_ros2::MPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Model Predictive Path Integral (MPPI) controller plugin for nav2.
+      Vanilla MPPI implementation using sampling-based optimization with Gaussian noise.
+      Supports differential drive robots with trajectory tracking and obstacle avoidance.
+    </description>
+  </class>
+</library>

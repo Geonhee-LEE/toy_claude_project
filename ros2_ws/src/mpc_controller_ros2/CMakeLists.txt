@@ -19,6 +19,87 @@ find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
+# C++ dependencies for MPPI plugin
+find_package(rclcpp REQUIRED)
+find_package(nav2_core REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
+find_package(nav2_util REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(OpenMP)
+
+# C++ library: MPPI controller utilities
+add_library(mppi_utils SHARED
+  src/utils.cpp
+)
+
+target_include_directories(mppi_utils PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${EIGEN3_INCLUDE_DIRS}
+)
+
+ament_target_dependencies(mppi_utils
+  rclcpp
+  geometry_msgs
+  tf2
+  tf2_geometry_msgs
+)
+
+# C++ library: MPPI controller plugin
+add_library(mppi_controller_plugin SHARED
+  src/mppi_controller_plugin.cpp
+  src/batch_dynamics_wrapper.cpp
+  src/cost_functions.cpp
+  src/sampling.cpp
+)
+
+target_include_directories(mppi_controller_plugin PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${EIGEN3_INCLUDE_DIRS}
+)
+
+target_link_libraries(mppi_controller_plugin
+  mppi_utils
+)
+
+ament_target_dependencies(mppi_controller_plugin
+  rclcpp
+  nav2_core
+  nav2_costmap_2d
+  nav2_util
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  pluginlib
+  geometry_msgs
+  nav_msgs
+)
+
+# OpenMP support (optional)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(mppi_controller_plugin OpenMP::OpenMP_CXX)
+endif()
+
+# Export plugin description
+pluginlib_export_plugin_description_file(nav2_core plugins/mppi_controller_plugin.xml)
+
+# Install C++ libraries
+install(TARGETS mppi_utils mppi_controller_plugin
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+# Install C++ headers
+install(DIRECTORY include/
+  DESTINATION include/
+)
+
 # Install Python modules
 ament_python_install_package(${PROJECT_NAME})
 
@@ -51,6 +132,45 @@ if(BUILD_TESTING)
 
   # Add pytest tests
   ament_add_pytest_test(test_mpc_controller_node test/test_mpc_controller_node.py)
+
+  # Add C++ unit tests
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_batch_dynamics test/unit/test_batch_dynamics.cpp)
+  if(TARGET test_batch_dynamics)
+    target_link_libraries(test_batch_dynamics mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cost_functions test/unit/test_cost_functions.cpp)
+  if(TARGET test_cost_functions)
+    target_link_libraries(test_cost_functions mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_sampling test/unit/test_sampling.cpp)
+  if(TARGET test_sampling)
+    target_link_libraries(test_sampling mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_mppi_algorithm test/unit/test_mppi_algorithm.cpp)
+  if(TARGET test_mppi_algorithm)
+    target_link_libraries(test_mppi_algorithm mppi_controller_plugin)
+  endif()
 endif()
+
+# Export dependencies
+ament_export_include_directories(include)
+ament_export_libraries(mppi_utils mppi_controller_plugin)
+ament_export_dependencies(
+  rclcpp
+  nav2_core
+  nav2_costmap_2d
+  nav2_util
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  pluginlib
+  geometry_msgs
+  nav_msgs
+)
 
 ament_package()
