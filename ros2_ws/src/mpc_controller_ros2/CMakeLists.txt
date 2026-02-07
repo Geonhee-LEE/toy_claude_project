@@ -110,6 +110,7 @@ install(PROGRAMS
   scripts/send_nav_goal.py
   scripts/test_robot_motion.py
   scripts/verify_robot_motion.py
+  scripts/odom_to_tf.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

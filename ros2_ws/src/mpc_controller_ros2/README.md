@@ -39,24 +39,90 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 - **동적 파라미터** 런타임 중 튜닝 가능
 - **RVIZ 시각화** 예측 궤적, 샘플 궤적, 장애물 마커
 
-### 빠른 시작 (Gazebo Harmonic)
+### 빠른 시작 (Gazebo Harmonic + ros2_control + nav2)
+
+**권장: 단일 명령으로 전체 스택 실행**
 
 ```bash
-# 터미널 1: Gazebo 실행
-ros2 launch mpc_controller_ros2 gazebo_harmonic_test.launch.py
+cd ~/toy_claude_project/ros2_ws
+source install/setup.bash
 
-# 터미널 2: nav2 + MPPI 실행 (Gazebo가 완전히 시작된 후)
-ros2 launch mpc_controller_ros2 nav2_mppi.launch.py
-
-# 터미널 3: 목표 지점 전송
-ros2 run mpc_controller_ros2 send_nav_goal.py --x 5.0 --y 0.0
+# Gazebo + ros2_control + nav2 통합 실행
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py
 ```
 
-### 또는 통합 실행
+**시작 순서 (자동 TimerAction 관리):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  0s  │ Gazebo Harmonic + Robot State Publisher + ros_gz_bridge │
+│  5s  │ Robot Spawn                                              │
+│  8s  │ Controllers (joint_state_broadcaster, diff_drive)        │
+│ 10s  │ Localization (map_server, amcl)                          │
+│ 15s  │ Navigation (controller_server, planner, bt_navigator)    │
+│ 20s  │ RVIZ                                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 목표 지점 설정
+
+**RVIZ에서:**
+1. **2D Pose Estimate** 클릭 → 초기 위치 설정
+2. **Nav2 Goal** 클릭 → 목표 지점 설정
+
+**명령줄:**
+```bash
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: 'map'}, pose: {position: {x: 5.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}}"
+```
+
+### 토픽 구조 (ros2_control 통합)
+
+```
+                    ┌──────────────────┐
+                    │  nav2            │
+                    │  controller_     │
+                    │  server          │
+                    └────────┬─────────┘
+                             │ cmd_vel (geometry_msgs/Twist)
+                             │ remapped to:
+                             ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  /diff_drive_controller/cmd_vel_unstamped            │
+    └────────────────────────┬─────────────────────────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │  diff_drive_     │
+                    │  controller      │
+                    │  (ros2_control)  │
+                    └────────┬─────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                              ▼
+       /odom (nav_msgs/Odometry)     TF: odom → base_link
+```
+
+### TF 트리
+
+```
+map
+ └── odom (AMCL 발행)
+      └── base_link (diff_drive_controller 발행)
+           ├── left_wheel
+           ├── right_wheel
+           ├── caster_wheel
+           └── lidar_link
+```
+
+### 별도 실행 (터미널 분리)
 
 ```bash
-# 단일 명령으로 Gazebo + nav2 + MPPI 실행
-ros2 launch mpc_controller_ros2 mppi_nav2_gazebo.launch.py
+# 터미널 1: Gazebo + ros2_control
+ros2 launch mpc_controller_ros2 gazebo_ros2_control.launch.py
+
+# 터미널 2: nav2 + MPPI (Gazebo 완전 시작 후)
+ros2 launch mpc_controller_ros2 nav2_mppi.launch.py
 ```
 
 ### MPPI 파라미터 (nav2_params.yaml)
@@ -116,6 +182,48 @@ ros2 param set /controller_server FollowPath.noise_sigma_v 0.5
 # 상태 추적 가중치 조정
 ros2 param set /controller_server FollowPath.Q_x 20.0
 ```
+
+### 디버깅
+
+**토픽 확인:**
+```bash
+# cmd_vel 체인 확인
+ros2 topic echo /diff_drive_controller/cmd_vel_unstamped
+
+# odom 확인
+ros2 topic echo /odom
+
+# 라이다 스캔 확인
+ros2 topic echo /scan
+```
+
+**TF 확인:**
+```bash
+ros2 run tf2_tools view_frames
+ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+**Controller 상태:**
+```bash
+ros2 control list_controllers
+# 예상: joint_state_broadcaster [active], diff_drive_controller [active]
+```
+
+**nav2 라이프사이클:**
+```bash
+ros2 lifecycle get /controller_server
+ros2 lifecycle get /amcl
+```
+
+### 트러블슈팅
+
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| "Control loop missed rate" | cmd_vel 토픽 연결 문제 | `ros2 topic info -v` 확인 |
+| TF map→odom 없음 | AMCL 라이다 미수신 | `/scan` 토픽 확인 |
+| 로봇 미동작 | Controller 비활성 | `ros2 control list_controllers` |
+| Twist/TwistStamped 충돌 | 메시지 타입 불일치 | `use_stamped_vel: false` 확인 |
 
 ### 아키텍처
 

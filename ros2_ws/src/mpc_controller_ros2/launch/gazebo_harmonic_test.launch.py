@@ -60,7 +60,8 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Bridge: Gazebo → ROS2
+    # Bridge: Gazebo ↔ ROS2
+    # 브릿지 방향: [ = GZ→ROS2, ] = ROS2→GZ, @ = 양방향
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -68,11 +69,13 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': True}],
         arguments=[
+            # GZ → ROS2 (단방향)
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
-            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
+            '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
             '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
+            '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            # ROS2 → GZ (단방향)
+            '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
         ]
     )
 
@@ -87,6 +90,15 @@ def generate_launch_description():
         arguments=['-d', rviz_config] if os.path.exists(rviz_config) else []
     )
 
+    # Odom to TF node (Gazebo DiffDrive TF 브릿지 문제 해결)
+    odom_to_tf = Node(
+        package='mpc_controller_ros2',
+        executable='odom_to_tf.py',
+        name='odom_to_tf',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+    )
+
     return LaunchDescription([
         set_gz_resource_path,
         gz_sim,
@@ -94,6 +106,11 @@ def generate_launch_description():
         TimerAction(
             period=5.0,
             actions=[spawn_robot]
+        ),
+        # Odom to TF (로봇 스폰 후 시작)
+        TimerAction(
+            period=6.0,
+            actions=[odom_to_tf]
         ),
         # RVIZ는 nav2_mppi.launch.py에서 실행
         # TimerAction(

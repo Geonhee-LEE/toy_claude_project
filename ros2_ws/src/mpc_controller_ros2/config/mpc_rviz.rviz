@@ -93,12 +93,11 @@ Visualization Manager:
       Value: true
 
     # ========== Map (from map_server) ==========
-    # Disabled: No map_server when using odom as global_frame
     - Alpha: 0.7
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: true
-      Enabled: false
+      Enabled: true
       Name: Map
       Topic:
         Depth: 1
@@ -355,7 +354,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:

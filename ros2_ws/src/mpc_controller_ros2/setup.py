@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mpc_controller_node = mpc_controller_ros2.mpc_controller_node:main',
+            'odom_to_tf = mpc_controller_ros2.odom_to_tf:main',
         ],
     },
 )
