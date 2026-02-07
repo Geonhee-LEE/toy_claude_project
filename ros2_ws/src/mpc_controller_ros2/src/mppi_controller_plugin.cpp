@@ -47,6 +47,11 @@ void MPPIControllerPlugin::configure(
     plugin_name_ + "/mppi_markers", 10
   );
 
+  // Register parameter callback for dynamic reconfiguration
+  param_callback_handle_ = node_->add_on_set_parameters_callback(
+    std::bind(&MPPIControllerPlugin::onSetParametersCallback, this, std::placeholders::_1)
+  );
+
   RCLCPP_INFO(node_->get_logger(), "MPPI controller configured successfully");
 }
 
@@ -395,7 +400,7 @@ void MPPIControllerPlugin::publishVisualization(
   std::string frame_id = "map";  // TODO: get from costmap
 
   // 1. Best trajectory (red)
-  if (!info.best_trajectory.empty()) {
+  if (info.best_trajectory.size() > 0) {
     visualization_msgs::msg::Marker best_marker;
     best_marker.header.stamp = stamp;
     best_marker.header.frame_id = frame_id;
@@ -564,6 +569,280 @@ void MPPIControllerPlugin::loadParameters()
     "MPPI parameters loaded: N=%d, K=%d, dt=%.3f, lambda=%.1f",
     params_.N, params_.K, params_.dt, params_.lambda
   );
+}
+
+rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCallback(
+  const std::vector<rclcpp::Parameter>& parameters
+)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+  result.reason = "success";
+
+  std::string prefix = plugin_name_ + ".";
+  bool need_recreate_sampler = false;
+  bool need_recreate_cost_function = false;
+
+  for (const auto& param : parameters) {
+    std::string param_name = param.get_name();
+
+    // Skip parameters not belonging to this plugin
+    if (param_name.find(prefix) != 0) {
+      continue;
+    }
+
+    // Remove prefix for easier matching
+    std::string short_name = param_name.substr(prefix.length());
+
+    // Handle parameters that require restart (N, K, dt)
+    if (short_name == "N" || short_name == "K" || short_name == "dt") {
+      result.successful = false;
+      result.reason = "Parameter '" + short_name + "' requires controller restart (affects memory allocation)";
+      RCLCPP_WARN(
+        node_->get_logger(),
+        "Cannot change parameter '%s' at runtime - requires restart",
+        short_name.c_str()
+      );
+      return result;
+    }
+
+    // Runtime changeable parameters
+    try {
+      // Temperature parameter (lambda)
+      if (short_name == "lambda") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "lambda must be >= 0.0";
+          return result;
+        }
+        params_.lambda = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated lambda: %.2f", value);
+      }
+      // Noise parameters
+      else if (short_name == "noise_sigma_v") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "noise_sigma_v must be >= 0.0";
+          return result;
+        }
+        params_.noise_sigma(0) = value;
+        need_recreate_sampler = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated noise_sigma_v: %.3f", value);
+      }
+      else if (short_name == "noise_sigma_omega") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "noise_sigma_omega must be >= 0.0";
+          return result;
+        }
+        params_.noise_sigma(1) = value;
+        need_recreate_sampler = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated noise_sigma_omega: %.3f", value);
+      }
+      // Control limits
+      else if (short_name == "v_max") {
+        double value = param.as_double();
+        if (value <= params_.v_min) {
+          result.successful = false;
+          result.reason = "v_max must be > v_min";
+          return result;
+        }
+        params_.v_max = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated v_max: %.3f", value);
+      }
+      else if (short_name == "v_min") {
+        double value = param.as_double();
+        if (value >= params_.v_max) {
+          result.successful = false;
+          result.reason = "v_min must be < v_max";
+          return result;
+        }
+        params_.v_min = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated v_min: %.3f", value);
+      }
+      else if (short_name == "omega_max") {
+        double value = param.as_double();
+        if (value <= params_.omega_min) {
+          result.successful = false;
+          result.reason = "omega_max must be > omega_min";
+          return result;
+        }
+        params_.omega_max = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated omega_max: %.3f", value);
+      }
+      else if (short_name == "omega_min") {
+        double value = param.as_double();
+        if (value >= params_.omega_max) {
+          result.successful = false;
+          result.reason = "omega_min must be < omega_max";
+          return result;
+        }
+        params_.omega_min = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated omega_min: %.3f", value);
+      }
+      // Cost weights - Q
+      else if (short_name == "Q_x") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Q_x must be >= 0.0";
+          return result;
+        }
+        params_.Q(0, 0) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Q_x: %.3f", value);
+      }
+      else if (short_name == "Q_y") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Q_y must be >= 0.0";
+          return result;
+        }
+        params_.Q(1, 1) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Q_y: %.3f", value);
+      }
+      else if (short_name == "Q_theta") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Q_theta must be >= 0.0";
+          return result;
+        }
+        params_.Q(2, 2) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Q_theta: %.3f", value);
+      }
+      // Cost weights - Qf
+      else if (short_name == "Qf_x") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Qf_x must be >= 0.0";
+          return result;
+        }
+        params_.Qf(0, 0) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Qf_x: %.3f", value);
+      }
+      else if (short_name == "Qf_y") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Qf_y must be >= 0.0";
+          return result;
+        }
+        params_.Qf(1, 1) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Qf_y: %.3f", value);
+      }
+      else if (short_name == "Qf_theta") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "Qf_theta must be >= 0.0";
+          return result;
+        }
+        params_.Qf(2, 2) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated Qf_theta: %.3f", value);
+      }
+      // Cost weights - R
+      else if (short_name == "R_v") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_v must be >= 0.0";
+          return result;
+        }
+        params_.R(0, 0) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated R_v: %.3f", value);
+      }
+      else if (short_name == "R_omega") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_omega must be >= 0.0";
+          return result;
+        }
+        params_.R(1, 1) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated R_omega: %.3f", value);
+      }
+      // Cost weights - R_rate
+      else if (short_name == "R_rate_v") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_rate_v must be >= 0.0";
+          return result;
+        }
+        params_.R_rate(0, 0) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated R_rate_v: %.3f", value);
+      }
+      else if (short_name == "R_rate_omega") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_rate_omega must be >= 0.0";
+          return result;
+        }
+        params_.R_rate(1, 1) = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated R_rate_omega: %.3f", value);
+      }
+      // Obstacle avoidance
+      else if (short_name == "obstacle_weight") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "obstacle_weight must be >= 0.0";
+          return result;
+        }
+        params_.obstacle_weight = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated obstacle_weight: %.3f", value);
+      }
+      else if (short_name == "safety_distance") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "safety_distance must be >= 0.0";
+          return result;
+        }
+        params_.safety_distance = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated safety_distance: %.3f", value);
+      }
+
+    } catch (const rclcpp::ParameterTypeException& e) {
+      result.successful = false;
+      result.reason = "Type mismatch for parameter: " + short_name;
+      RCLCPP_ERROR(node_->get_logger(), "Parameter type error: %s", e.what());
+      return result;
+    }
+  }
+
+  // Recreate components if necessary
+  if (need_recreate_sampler) {
+    sampler_ = std::make_unique<GaussianSampler>(params_.noise_sigma);
+    RCLCPP_INFO(node_->get_logger(), "Recreated sampler with new noise parameters");
+  }
+
+  if (need_recreate_cost_function) {
+    // Note: Cost function is recreated every control cycle with obstacles,
+    // so no explicit recreation needed here. The new parameters will be
+    // used in the next control computation.
+    RCLCPP_INFO(node_->get_logger(), "Cost function will use new weights in next iteration");
+  }
+
+  return result;
 }
 
 }  // namespace mpc_controller_ros2

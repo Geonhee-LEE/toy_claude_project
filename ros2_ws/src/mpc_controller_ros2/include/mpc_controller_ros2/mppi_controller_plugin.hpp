@@ -82,12 +82,16 @@ private:
   // 파라미터 관리
   void declareParameters();
   void loadParameters();
+  rcl_interfaces::msg::SetParametersResult onSetParametersCallback(
+    const std::vector<rclcpp::Parameter>& parameters
+  );
 
   // ROS2
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
   // MPPI 컴포넌트
   MPPIParams params_;
