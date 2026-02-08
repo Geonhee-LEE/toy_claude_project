@@ -5,9 +5,8 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /MPC Controller1
-        - /MPC Controller1/Predicted Trajectory1
-        - /MPC Controller1/Obstacles1
+        - /Navigation1
+        - /Navigation1/MPPI Trajectories1
       Splitter Ratio: 0.5
     Tree Height: 549
   - Class: rviz_common/Selection
@@ -123,7 +122,7 @@ Visualization Manager:
       Name: Global Costmap
       Topic:
         Depth: 1
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /global_costmap/costmap
@@ -139,7 +138,7 @@ Visualization Manager:
       Name: Local Costmap
       Topic:
         Depth: 1
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /local_costmap/costmap
@@ -207,7 +206,7 @@ Visualization Manager:
           Description Source: Topic
           Description Topic:
             Depth: 5
-            Durability Policy: Volatile
+            Durability Policy: Transient Local
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /robot_description
@@ -255,101 +254,71 @@ Visualization Manager:
             Value: /odom
           Value: true
 
-        # 참조 경로
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 25; 255; 0
+        # Custom MPPI 시각화 (샘플궤적, best, weighted avg, reference, ESS 등)
+        - Class: rviz_default_plugins/MarkerArray
           Enabled: true
-          Head Diameter: 0.30000001192092896
-          Head Length: 0.20000000298023224
-          Length: 0.30000001192092896
-          Line Style: Lines
-          Line Width: 0.029999999329447746
-          Name: Reference Path
-          Offset:
-            X: 0
-            Y: 0
-            Z: 0
-          Pose Color: 25; 255; 0
-          Pose Style: None
-          Radius: 0.029999999329447746
-          Shaft Diameter: 0.10000000149011612
-          Shaft Length: 0.10000000149011612
+          Name: MPPI Markers
           Topic:
             Depth: 5
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /reference_path
+            Value: /FollowPath/mppi_markers
           Value: true
 
-        # 예측 궤적
+        # nav2 기본 MPPI 시각화 (controller:=nav2 사용시 활성화)
+        # 샘플 궤적 (nav2 MPPI trajectories)
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: false
+          Name: nav2 MPPI Trajectories
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /FollowPath/trajectories
+          Value: false
+
+        # 변환된 글로벌 경로 (nav2 MPPI transformed plan)
         - Alpha: 1
           Buffer Length: 1
           Class: rviz_default_plugins/Path
+          Color: 255; 0; 255
+          Enabled: false
+          Line Style: Lines
+          Line Width: 0.05
+          Name: nav2 MPPI Transformed Plan
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0.08
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /transformed_global_plan
+          Value: false
+
+        # AMCL Particle Cloud (위치 추정 시각화)
+        - Class: nav2_rviz_plugins/ParticleCloud
+          Arrow Length: 0.3
           Color: 0; 255; 0
           Enabled: true
-          Head Diameter: 0.30000001192092896
-          Head Length: 0.20000000298023224
-          Length: 0.30000001192092896
-          Line Style: Lines
-          Line Width: 0.05000000074505806
-          Name: Predicted Trajectory
-          Offset:
-            X: 0
-            Y: 0
-            Z: 0
-          Pose Color: 0; 255; 0
-          Pose Style: None
-          Radius: 0.029999999329447746
-          Shaft Diameter: 0.10000000149011612
-          Shaft Length: 0.10000000149011612
+          Max Arrow Length: 0.3
+          Min Arrow Length: 0.05
+          Name: AMCL Particles
+          Shape: Arrow (Flat)
           Topic:
             Depth: 5
             Durability Policy: Volatile
             History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /predicted_trajectory
-          Value: true
-
-        # MPC 마커 (예측 궤적, 제약조건, 장애물 등)
-        - Class: rviz_default_plugins/MarkerArray
-          Enabled: true
-          Name: MPC Markers
-          Namespaces:
-            predicted_trajectory: true
-            trajectory_points: true
-            velocity_limits: true
-            acceleration_arrows: true
-            constraint_violations: true
-            obstacles: true
-            safety_zones: true
-            dynamic_predictions: true
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /mpc_markers
-          Value: true
-
-        # 장애물
-        - Class: rviz_default_plugins/MarkerArray
-          Enabled: true
-          Name: Obstacles
-          Namespaces:
-            obstacles: true
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /obstacles
+            Reliability Policy: Best Effort
+            Value: /particle_cloud
           Value: true
 
       Enabled: true
-      Name: MPC Controller
+      Name: Navigation
 
   Enabled: true
   Global Options:
