@@ -354,6 +354,13 @@ std::vector<Eigen::Vector3d> MPPIControllerPlugin::extractObstaclesFromCostmap()
   }
 
   auto costmap = costmap_ros_->getCostmap();
+  if (!costmap) {
+    RCLCPP_WARN_THROTTLE(
+      node_->get_logger(), *node_->get_clock(), 2000,
+      "Costmap not yet available, skipping obstacle extraction"
+    );
+    return obstacles;
+  }
   unsigned int size_x = costmap->getSizeInCellsX();
   unsigned int size_y = costmap->getSizeInCellsY();
   double resolution = costmap->getResolution();
