@@ -107,6 +107,10 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/mpc_controller_node
   scripts/send_goal.py
+  scripts/send_nav_goal.py
+  scripts/test_robot_motion.py
+  scripts/verify_robot_motion.py
+  scripts/odom_to_tf.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -131,6 +135,18 @@ install(DIRECTORY
 # Install robot URDF files
 install(DIRECTORY
   urdf
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install Gazebo models
+install(DIRECTORY
+  models
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install maps
+install(DIRECTORY
+  maps
   DESTINATION share/${PROJECT_NAME}/
 )
 
