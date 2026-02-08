@@ -32,8 +32,11 @@ def generate_launch_description():
     nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
     rviz_config = os.path.join(pkg_dir, 'config', 'mpc_rviz.rviz')
 
-    # Process xacro
-    robot_description = xacro.process_file(urdf_file).toxml()
+    # Process xacro with controller config path
+    robot_description = xacro.process_file(
+        urdf_file,
+        mappings={'controller_config': controller_config}
+    ).toxml()
 
     # Set Gazebo paths
     set_gz_resource_path = SetEnvironmentVariable(
@@ -108,7 +111,11 @@ def generate_launch_description():
     diff_drive_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
-        arguments=['diff_drive_controller', '--controller-manager', '/controller_manager'],
+        arguments=[
+            'diff_drive_controller',
+            '--controller-manager', '/controller_manager',
+            '--param-file', controller_config
+        ],
         output='screen',
     )
 
@@ -141,7 +148,35 @@ def generate_launch_description():
         name='controller_server',
         output='screen',
         parameters=[nav2_params_file],
-        remappings=[('cmd_vel', '/diff_drive_controller/cmd_vel_unstamped')]
+        remappings=[('cmd_vel', '/cmd_vel_nav')]
+    )
+
+    # Twist → TwistStamped 변환 (inline Python)
+    twist_to_stamped_cmd = '''
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from geometry_msgs.msg import Twist, TwistStamped
+
+class TwistStamper(Node):
+    def __init__(self):
+        super().__init__("twist_stamper")
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.pub = self.create_publisher(TwistStamped, "/diff_drive_controller/cmd_vel", qos)
+        self.sub = self.create_subscription(Twist, "/cmd_vel_nav", self.cb, 10)
+    def cb(self, msg):
+        out = TwistStamped()
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = "base_link"
+        out.twist = msg
+        self.pub.publish(out)
+
+rclpy.init()
+rclpy.spin(TwistStamper())
+'''
+    twist_stamper = ExecuteProcess(
+        cmd=['python3', '-c', twist_to_stamped_cmd],
+        output='screen'
     )
 
     planner_server = Node(
@@ -262,6 +297,7 @@ def generate_launch_description():
             period=15.0,
             actions=[
                 LogInfo(msg='Starting navigation...'),
+                twist_stamper,
                 controller_server,
                 planner_server,
                 behavior_server,

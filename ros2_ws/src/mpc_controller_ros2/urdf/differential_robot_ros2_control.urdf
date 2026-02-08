@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <robot name="differential_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
+  <!-- Controller config path (passed from launch file) -->
+  <xacro:arg name="controller_config" default=""/>
+
   <!-- Robot dimensions -->
   <xacro:property name="base_width" value="0.4"/>
   <xacro:property name="base_length" value="0.6"/>
@@ -176,7 +179,7 @@
   <!-- Gazebo Harmonic gz_ros2_control plugin -->
   <gazebo>
     <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-      <parameters>$(find mpc_controller_ros2)/config/diff_drive_controller.yaml</parameters>
+      <parameters>$(arg controller_config)</parameters>
     </plugin>
   </gazebo>
 
