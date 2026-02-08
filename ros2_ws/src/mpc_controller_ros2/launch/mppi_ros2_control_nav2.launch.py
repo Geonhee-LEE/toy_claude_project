@@ -175,13 +175,15 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ========== 8. nav2 Nodes ==========
-    # controller_server: 컨트롤러별 전용 파라미터 파일 사용
+    # controller_server: 공통 파라미터(local_costmap 등) + 컨트롤러별 전용 파라미터
+    # nav2의 controller_server는 내부적으로 local_costmap 노드를 생성하므로
+    # 반드시 local_costmap 파라미터가 포함된 공통 파일도 함께 전달해야 함
     controller_server = Node(
         package='nav2_controller',
         executable='controller_server',
         name='controller_server',
         output='screen',
-        parameters=[controller_params_file],
+        parameters=[nav2_params_file, controller_params_file],
         remappings=[('cmd_vel', '/cmd_vel_nav')]
     )
 
