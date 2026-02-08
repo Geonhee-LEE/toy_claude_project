@@ -84,6 +84,23 @@ private:
   Eigen::Matrix2d R_rate_;
 };
 
+/**
+ * @brief 전진 선호 비용 (후진 시 페널티)
+ * cost = weight * Σ max(-v_t, 0)²
+ */
+class PreferForwardCost : public MPPICostFunction
+{
+public:
+  explicit PreferForwardCost(double weight);
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  double weight_;
+};
+
 class ObstacleCost : public MPPICostFunction
 {
 public:
