@@ -49,12 +49,15 @@ ament_target_dependencies(mppi_utils
   tf2_geometry_msgs
 )
 
-# C++ library: MPPI controller plugin
+# C++ library: MPPI controller plugin (M2 features included)
 add_library(mppi_controller_plugin SHARED
   src/mppi_controller_plugin.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
   src/sampling.cpp
+  src/adaptive_temperature.cpp
+  src/ancillary_controller.cpp
+  src/tube_mppi.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -183,6 +186,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_mppi_algorithm test/unit/test_mppi_algorithm.cpp)
   if(TARGET test_mppi_algorithm)
     target_link_libraries(test_mppi_algorithm mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_adaptive_temperature test/unit/test_adaptive_temperature.cpp)
+  if(TARGET test_adaptive_temperature)
+    target_link_libraries(test_adaptive_temperature mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_tube_mppi test/unit/test_tube_mppi.cpp)
+  if(TARGET test_tube_mppi)
+    target_link_libraries(test_tube_mppi mppi_controller_plugin)
   endif()
 endif()
 
