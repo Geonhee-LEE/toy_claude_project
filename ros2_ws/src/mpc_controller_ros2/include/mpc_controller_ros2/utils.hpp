@@ -45,6 +45,15 @@ Eigen::VectorXd softmaxWeights(const Eigen::VectorXd& costs, double lambda);
 double quaternionToYaw(const geometry_msgs::msg::Quaternion& quat);
 
 /**
+ * @brief Log-Sum-Exp 계산 (수치 안정성 보장)
+ * @param values 입력 벡터
+ * @return log(sum(exp(values)))
+ *
+ * max-shift trick: log(Σ exp(v_i)) = max + log(Σ exp(v_i - max))
+ */
+double logSumExp(const Eigen::VectorXd& values);
+
+/**
  * @brief Effective Sample Size (ESS) 계산
  * @param weights 가중치 벡터 (정규화됨, 합 = 1)
  * @return ESS 값 [1, K]
