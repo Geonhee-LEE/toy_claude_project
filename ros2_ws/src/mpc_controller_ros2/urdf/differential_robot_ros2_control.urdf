@@ -13,8 +13,10 @@
   <xacro:property name="wheel_separation" value="0.5"/>
 
   <!-- Base link (robot body) -->
+  <!-- visual/collision을 5cm 올려서 지면 접촉 방지 (clearance 5cm) -->
   <link name="base_link">
     <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_height}"/>
       </geometry>
@@ -23,11 +25,13 @@
       </material>
     </visual>
     <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_height}"/>
       </geometry>
     </collision>
     <inertial>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <mass value="15.0"/>
       <inertia ixx="0.2" ixy="0.0" ixz="0.0"
                iyy="0.425" iyz="0.0"
@@ -53,9 +57,10 @@
       <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
     </collision>
     <inertial>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
       <mass value="2.0"/>
-      <inertia ixx="0.01" ixy="0.0" ixz="0.0"
-               iyy="0.01" iyz="0.0"
+      <inertia ixx="0.0054" ixy="0.0" ixz="0.0"
+               iyy="0.0054" iyz="0.0"
                izz="0.01"/>
     </inertial>
   </link>
@@ -86,9 +91,10 @@
       <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
     </collision>
     <inertial>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
       <mass value="2.0"/>
-      <inertia ixx="0.01" ixy="0.0" ixz="0.0"
-               iyy="0.01" iyz="0.0"
+      <inertia ixx="0.0054" ixy="0.0" ixz="0.0"
+               iyy="0.0054" iyz="0.0"
                izz="0.01"/>
     </inertial>
   </link>
@@ -232,8 +238,8 @@
   </gazebo>
 
   <gazebo reference="caster_wheel">
-    <mu1>0.01</mu1>
-    <mu2>0.01</mu2>
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
     <kp>1000000</kp>
     <kd>100</kd>
     <minDepth>0.001</minDepth>

@@ -127,7 +127,34 @@ MPPI 알고리즘 흐름:
 - **FR-37**: `--live` 실시간 시뮬레이션 모드 + `--trajectory` 궤적 선택
 - **FR-38**: ASCII 요약 테이블 + 6패널 정적 비교 차트
 
-### 2.6 비기능 요구사항
+### 2.6 ROS2 C++ nav2 플러그인 (Milestone 4/5)
+
+#### M4: ROS2 nav2 통합 ✅ 완료
+- **FR-39**: C++ Vanilla MPPI nav2 플러그인 (MPPIControllerPlugin)
+- **FR-40**: Gazebo Harmonic + ros2_control + nav2 통합 launch
+- **FR-41**: 커스텀 MPPI vs nav2 기본 MPPI 비교 전환 환경 (`controller:=custom|nav2`)
+- **FR-42**: local_costmap 장애물 추출 + ObstacleCost
+- **FR-43**: PreferForwardCost (후진 편향 해소)
+- **FR-44**: 동적 파라미터 재설정 (ROS2 parameter callback)
+
+#### M5a: C++ MPPI SOTA 변형 ✅ 완료
+- **FR-45**: WeightComputation Strategy 인터페이스 (가중치 계산 분리) — PR #82
+- **FR-46**: VanillaMPPIWeights, LogMPPIWeights 구현 — PR #82
+- **FR-47**: LogMPPIControllerPlugin (Log-MPPI nav2 플러그인) — PR #82
+- **FR-48**: logSumExp 유틸리티 함수 — PR #82
+- **FR-49**: TsallisMPPIWeights (q-exponential 가중치) — PR #84
+- **FR-50**: RiskAwareMPPIWeights (CVaR 가중치 절단) — PR #84
+- **FR-51**: TsallisMPPIControllerPlugin, RiskAwareMPPIControllerPlugin — PR #84
+- **FR-52**: SVMPCControllerPlugin (SVGD 커널 기반 computeControl override) — PR #86
+- **FR-53**: computeControl() virtual화 + private→protected 리팩터링 — PR #86
+- **FR-54**: SVGD Force (attractive + repulsive), medianBandwidth, computeDiversity — PR #86
+
+#### M5b: C++ MPPI M2 고도화 ✅ 완료 (PR #74)
+- **FR-55**: C++ Colored Noise Sampler (OU 프로세스)
+- **FR-56**: C++ Adaptive Temperature (ESS 기반 λ 자동 조정)
+- **FR-57**: C++ Tube-MPPI (AncillaryController)
+
+### 2.7 비기능 요구사항
 
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
 - **NFR-2**: K=1024 샘플, N=30 호라이즌에서 실행 가능
@@ -192,7 +219,68 @@ MPPI 알고리즘 흐름:
 └───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
 ```
 
-### 파일 구조
+### C++ nav2 플러그인 아키텍처
+
+```
+nav2_core::Controller
+       │
+  ┌────┴─────────────────────────────────────────────────────┐
+  │                                                           │
+MPPIControllerPlugin (base)                                   │
+  │ protected: computeControl() (virtual)                     │
+  │ protected: params_, control_sequence_, dynamics_, ...     │
+  │ uses WeightComputation strategy                           │
+  │                                                           │
+  ├── LogMPPIControllerPlugin (상속 + LogMPPIWeights)         │
+  ├── TsallisMPPIControllerPlugin (상속 + TsallisMPPIWeights) │
+  ├── RiskAwareMPPIControllerPlugin (상속 + RiskAwareMPPIWeights)
+  └── SVMPCControllerPlugin (상속 + computeControl override)  │
+        └─ SVGD Loop: RBF kernel, attractive+repulsive force │
+                                                              │
+  WeightComputation (Strategy 인터페이스)                     │
+  ├── VanillaMPPIWeights (softmax, max-shift)                 │
+  ├── LogMPPIWeights (log-space 정규화)                       │
+  ├── TsallisMPPIWeights (q-exponential)                      │
+  └── RiskAwareMPPIWeights (CVaR 절단)                        │
+
+C++ 파일 구조:
+ros2_ws/src/mpc_controller_ros2/
+├── include/mpc_controller_ros2/
+│   ├── mppi_controller_plugin.hpp         # Vanilla MPPI (base, virtual computeControl)
+│   ├── log_mppi_controller_plugin.hpp     # Log-MPPI 플러그인
+│   ├── tsallis_mppi_controller_plugin.hpp # Tsallis-MPPI 플러그인
+│   ├── risk_aware_mppi_controller_plugin.hpp # Risk-Aware MPPI 플러그인
+│   ├── svmpc_controller_plugin.hpp        # SVMPC 플러그인 (SVGD override)
+│   ├── weight_computation.hpp             # Strategy 인터페이스 + 4종 구현
+│   ├── mppi_params.hpp                    # 파라미터 (M2+SOTA+SVGD)
+│   ├── batch_dynamics_wrapper.hpp         # 배치 동역학 (Eigen)
+│   ├── cost_functions.hpp                 # 비용 함수 모듈
+│   ├── sampling.hpp                       # 노이즈 샘플러
+│   ├── adaptive_temperature.hpp           # ESS 기반 λ 자동 조정
+│   ├── tube_mppi.hpp                      # Tube-MPPI
+│   └── utils.hpp                          # logSumExp, softmaxWeights 등
+├── src/
+│   ├── mppi_controller_plugin.cpp
+│   ├── log_mppi_controller_plugin.cpp
+│   ├── tsallis_mppi_controller_plugin.cpp
+│   ├── risk_aware_mppi_controller_plugin.cpp
+│   ├── svmpc_controller_plugin.cpp
+│   ├── weight_computation.cpp
+│   └── ...
+├── plugins/
+│   └── mppi_controller_plugin.xml         # 5종 플러그인 등록
+├── config/
+│   ├── nav2_params_custom_mppi.yaml       # Vanilla MPPI 설정
+│   ├── nav2_params_log_mppi.yaml          # Log-MPPI 설정
+│   ├── nav2_params_tsallis_mppi.yaml      # Tsallis-MPPI 설정
+│   ├── nav2_params_risk_aware_mppi.yaml   # Risk-Aware MPPI 설정
+│   └── nav2_params_svmpc.yaml             # SVMPC 설정
+└── test/unit/
+    ├── test_weight_computation.cpp        # 30개 단위 테스트
+    └── test_svmpc.cpp                     # 13개 SVGD 테스트
+```
+
+### Python 파일 구조
 
 ```
 mpc_controller/controllers/mppi/
@@ -280,21 +368,30 @@ M3.5: SOTA 변형 확장 ✅ 완료
 ├── ✅ M3.5b: Spline-MPPI (B-spline basis 보간, P << N)
 └── ✅ M3.5c: SVG-MPPI (Guide particle SVGD + follower resampling)
 
-M4: ROS2 통합 마무리 (예정)
-├── nav2 플러그인 (Python prototype → C++ 포팅)
-├── 실제 로봇 인터페이스
-├── 파라미터 서버 통합
-└── 성능 벤치마크
+M4: ROS2 nav2 통합 ✅ 완료
+├── ✅ C++ Vanilla MPPI nav2 플러그인 (PR #72)
+├── ✅ Gazebo + ros2_control + nav2 통합 launch
+├── ✅ 커스텀 vs nav2 기본 MPPI 비교 환경 (PR #76)
+├── ✅ local_costmap 장애물 추출 + ObstacleCost
+├── ✅ PreferForwardCost 후진 편향 해소 (PR #80)
+└── ✅ 동적 파라미터 재설정 콜백
 
-M5a: C++ MPPI 코어 변환 (예정)
-├── Python → C++ 포팅 (실시간 성능)
-├── Eigen 기반 배치 rollout
-└── pybind11 Python 바인딩
+M5a: C++ MPPI SOTA 변형 ✅ 완료
+├── ✅ WeightComputation Strategy 패턴 (PR #82)
+├── ✅ Log-MPPI C++ nav2 플러그인 (PR #82)
+├── ✅ Tsallis-MPPI C++ 플러그인 (PR #84)
+├── ✅ Risk-Aware (CVaR) C++ 플러그인 (PR #84)
+└── ✅ SVMPC C++ 플러그인 (PR #86)
 
-M5b: ROS2 nav2 Controller 플러그인 (예정)
-├── C++ MPPI nav2 Server 플러그인
-├── nav2 ComputePathToPose 호환
-└── 파라미터 YAML 설정
+M5b: C++ MPPI M2 고도화 ✅ 완료 (PR #74)
+├── ✅ Colored Noise Sampler (OU 프로세스)
+├── ✅ Adaptive Temperature (ESS 기반 λ)
+└── ✅ Tube-MPPI (AncillaryController)
+
+M6: C++ M3.5 변형 (예정)
+├── ⬜ Smooth-MPPI C++ 플러그인 (Δu input-lifting)
+├── ⬜ Spline-MPPI C++ 플러그인 (B-spline basis)
+└── ⬜ SVG-MPPI C++ 플러그인 (Guide particle SVGD)
 
 GPU 가속 (예정)
 ├── CuPy/JAX 기반 rollout + cost 병렬화

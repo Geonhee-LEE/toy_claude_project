@@ -78,7 +78,7 @@ controller_server:
       safety_distance: 0.5
 
       # Forward preference (후진 페널티)
-      prefer_forward_weight: 5.0
+      prefer_forward_weight: 15.0
 
       # Visualization
       visualize_samples: true

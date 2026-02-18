@@ -6,9 +6,8 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] MPPI M4: ROS2 통합 마무리 — nav2 플러그인, 실제 로봇, 파라미터 서버
-- [ ] MPPI M5a: C++ MPPI 코어 변환 — Python → C++ 포팅 (실시간 성능)
-- [ ] MPPI M5b: ROS2 nav2 Controller 플러그인 — C++ MPPI nav2 Server 플러그인
+- [ ] 실제 로봇 인터페이스 — 하드웨어 연동 테스트
+- [ ] M3.5 C++ 포팅 — Smooth/Spline/SVG-MPPI nav2 플러그인
 
 ## 🟠 Medium Priority (P1)
 
@@ -53,6 +52,51 @@
 ---
 
 ## ✅ Completed
+
+### 2026-02-18
+- [x] #85 SVMPC (Stein Variational MPC) C++ nav2 플러그인 구현 (PR #86)
+  * SVMPCControllerPlugin: SVGD 커널 기반 샘플 다양성 유도
+  * computeControl() virtual화 + private→protected 리팩터링
+  * computeSVGDForce(): attractive + repulsive force
+  * medianBandwidth(): median heuristic, computeDiversity(): pairwise L2
+  * nav2_params_svmpc.yaml, launch `controller:=svmpc` 분기
+  * 단위 테스트 13개 통과 (SVGD Force, Diversity, MedianBandwidth, RBF Kernel)
+  * .gitignore 정리: build artifacts, Graphviz 출력 제외
+  * **M5a C++ SOTA 변형 완료** (Log-MPPI PR #82 + Tsallis/CVaR PR #84 + SVMPC PR #86)
+- [x] MPPI M5b: C++ M2 고도화 머지 완료 (PR #74)
+  * Colored Noise Sampler, Adaptive Temperature, Tube-MPPI C++ 구현
+- [x] #83 Tsallis-MPPI + Risk-Aware(CVaR) C++ nav2 플러그인 구현 (PR #84)
+  * TsallisMPPIWeights: q-exponential 가중치 (heavy/light-tail 조절)
+  * RiskAwareMPPIWeights: CVaR 가중치 절단 (risk-averse)
+  * TsallisMPPIControllerPlugin, RiskAwareMPPIControllerPlugin
+  * qExponential() 유틸리티 함수
+  * nav2_params_tsallis_mppi.yaml, nav2_params_risk_aware_mppi.yaml
+  * launch에 `controller:=tsallis/risk_aware` 옵션 추가
+  * 단위 테스트 30개 통과 (기존 12 + 신규 18)
+- [x] launch 파일 정리 — 구버전 5개 삭제 (689줄 제거)
+  * 삭제: mppi_nav2_gazebo, gazebo_mppi_test, mppi_navigation, gazebo_harmonic_test, nav2_mppi
+  * 잔여: mppi_ros2_control_nav2 (주력), gazebo_ros2_control, mpc_controller, test_urdf
+
+### 2026-02-09
+- [x] #81 Log-MPPI C++ nav2 플러그인 구현 (PR #82)
+  * WeightComputation Strategy 인터페이스 (Vanilla/Log 분리)
+  * LogMPPIControllerPlugin (상속 + 전략 교체)
+  * logSumExp 유틸리티 함수
+  * nav2_params_log_mppi.yaml 설정 파일
+  * launch에 `controller:=log` 옵션 추가
+  * 단위 테스트 12개 통과 (Vanilla/Log 동등성, 극단 비용 안정성, greedy fallback)
+
+### 2026-02-08
+- [x] #79 PreferForwardCost 추가로 후진 편향 해소 (PR #80)
+- [x] #77 controller_server local_costmap 파라미터 누락 수정 (PR #78)
+- [x] #75 커스텀 MPPI vs nav2 기본 MPPI 비교 전환 환경 (PR #76)
+
+### 2026-02-07
+- [x] MPPI M4: ROS2 nav2 통합 완료 (PR #72)
+  * C++ Vanilla MPPI nav2 플러그인
+  * Gazebo Harmonic + ros2_control + nav2 통합 launch
+  * local_costmap 장애물 추출
+  * 동적 파라미터 재설정
 
 ### 2026-02-07
 - [x] #104 실시간 경로 재계획 기능 — 환경 변화 대응
@@ -182,10 +226,11 @@
 ## 💡 Ideas / Backlog
 
 - 강화학습 기반 MPC 튜닝
-- ROS2 nav2 플러그인 통합
+- ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~
 - 실제 로봇 테스트 환경 구축
 - 슬립 모델 적용
 - 적응형 MPC 가중치 튜닝
+- pybind11 Python 바인딩 (C++ ↔ Python 연동)
 
 ---
 
