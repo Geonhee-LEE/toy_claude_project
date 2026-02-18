@@ -9,13 +9,18 @@ namespace mpc_controller_ros2
 /**
  * @brief Smooth-MPPI nav2 Controller Plugin
  *
- * Kim et al. (2021) 기반, Δu (제어 변화량) space에서 최적화하여
- * 구조적으로 부드러운 제어 시퀀스를 생성.
+ * Reference: Kim et al. (2021) "Smooth Model Predictive Path Integral
+ *            Control without Smoothing" — pytorch_mppi v0.8.0+
+ *
+ * 핵심 수식 (Input-Lifting / Δu Reparameterization):
+ *   u[t] = u_prev + Σ_{i=0}^{t} Δu[i]              — cumsum 복원
+ *   J_jerk = w · Σ_t R_jerk · ‖Δu[t+1] - Δu[t]‖²  — jerk cost (2차 차분)
+ *   ΔU* ← ΔU + Σ_k w_k · ε_k                        — Δu-space 가중 업데이트
  *
  * 알고리즘 플로우:
  *   1. Δu space에서 노이즈 샘플링
- *   2. cumsum으로 u 시퀀스 복원: u[t] = u_prev + Σ Δu[0..t]
- *   3. 비용 계산 (기본 cost + jerk cost: ‖ΔΔu‖²)
+ *   2. cumsum으로 u 시퀀스 복원
+ *   3. 비용 계산 (tracking + terminal + effort + jerk)
  *   4. Δu space에서 가중 평균 업데이트
  */
 class SmoothMPPIControllerPlugin : public MPPIControllerPlugin

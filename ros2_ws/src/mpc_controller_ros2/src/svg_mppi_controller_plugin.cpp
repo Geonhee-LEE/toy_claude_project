@@ -1,3 +1,30 @@
+// =============================================================================
+// SVG-MPPI (Stein Variational Guided MPPI) Controller Plugin
+//
+// Reference: Kondo et al. (2024) "SVG-MPPI: Steering Stein Variational
+//            Guided MPPI for Efficient Navigation" — ICRA 2024
+//
+// 핵심 아이디어 (Guide Particle + Follower Resampling):
+//   SVMPC는 K×K pairwise SVGD를 수행하여 O(K²D)로 비용이 큼.
+//   SVG-MPPI는 G개 guide particle만 SVGD(O(G²D))로 최적화한 뒤,
+//   나머지 K-G개를 guide 주변에서 리샘플링하여 계산량을 대폭 절감.
+//   G << K이므로 총 복잡도: O(G²D) + O(KND) << O(K²D)
+//
+// 수식:
+//   Guide 선택:    {x_g}_{g=1}^G = argmin_G S(x)      ... (1) Top-G selection
+//   SVGD update:   φ*(x_i) ← (1/G) Σ_j [k(x_j,x_i)·∇log p(x_j)
+//                            + ∇_{x_j} k(x_j,x_i)]    ... (2) Stein force
+//   Gradient-free attractive force:
+//                  attract_i = Σ_j w_j · k(x_j,x_i) · (x_j - x_i)  ... (2a)
+//   Repulsive force (diversity):
+//                  repel_i = (1/G) Σ_j k(x_j,x_i) · (x_j - x_i) / h²  ... (2b)
+//   RBF kernel:    k(x_i,x_j) = exp(-‖x_i-x_j‖² / 2h²)  ... (3)
+//   Median bandwidth:  h = √(med(‖x_i-x_j‖²) / (2·log(G+1)))  ... (4)
+//   Follower:      x_f ~ N(x_guide, σ²_resample)        ... (5) Resampling
+//
+// Python 대응: mpc_controller/controllers/mppi/svg_mppi.py
+// =============================================================================
+
 #include "mpc_controller_ros2/svg_mppi_controller_plugin.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
@@ -16,7 +43,8 @@ void SVGMPPIControllerPlugin::configure(
   std::shared_ptr<tf2_ros::Buffer> tf,
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
-  // 부모 configure 호출 (SVMPC → MPPI base)
+  // SVMPCControllerPlugin::configure() → MPPIControllerPlugin::configure()
+  // SVGD 메서드(computeSVGDForce, computeDiversity, medianBandwidth) 상속
   SVMPCControllerPlugin::configure(parent, name, tf, costmap_ros);
 
   auto node = parent.lock();
@@ -33,29 +61,33 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   const Eigen::Vector3d& current_state,
   const Eigen::MatrixXd& reference_trajectory)
 {
-  int G = params_.svg_num_guide_particles;
-  int L = params_.svg_guide_iterations;
+  int G = params_.svg_num_guide_particles;  // guide particle 수
+  int L = params_.svg_guide_iterations;     // SVGD 반복 횟수
   int K = params_.K;
   int N = params_.N;
   int nu = 2;
-  int D = N * nu;
+  int D = N * nu;  // flatten 차원 (제어 시퀀스 전체)
 
-  // G=0 또는 L=0이면 Vanilla fallback (SVMPC로)
+  // G=0 또는 L=0이면 SVMPC (전체 K×K SVGD) fallback
+  // Python 차이점: Python은 MPPIController (Vanilla) fallback,
+  //             C++은 SVMPCControllerPlugin (SVMPC) fallback
   if (G <= 0 || L <= 0) {
     return SVMPCControllerPlugin::computeControl(current_state, reference_trajectory);
   }
 
   G = std::min(G, K);
 
-  // ──── Phase 1: 초기 샘플링 & 비용 ────
+  // ════════════════════════════════════════════════════════════════════
+  // Phase 1: 초기 샘플링 & 비용 — 전체 K개 sample → rollout → cost
+  // ════════════════════════════════════════════════════════════════════
 
-  // Shift previous control sequence
+  // Shift (warm start)
   for (int t = 0; t < N - 1; ++t) {
     control_sequence_.row(t) = control_sequence_.row(t + 1);
   }
   control_sequence_.row(N - 1).setZero();
 
-  // Sample noise (전체 K개)
+  // 전체 K개 노이즈 샘플링 (guide 후보 선택용)
   auto noise_samples = sampler_->sample(K, N, nu);
 
   std::vector<Eigen::MatrixXd> perturbed_controls;
@@ -72,15 +104,21 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   Eigen::VectorXd costs = cost_function_->compute(
     trajectories, perturbed_controls, reference_trajectory);
 
-  // ──── Phase 2: Guide particle 선택 (비용 최저 G개) ────
+  // ════════════════════════════════════════════════════════════════════
+  // Phase 2: Guide particle 선택 — 수식 (1)
+  //   비용 최저 G개를 guide로 선택
+  //   Python: np.argpartition(costs, G)[:G]  — O(K) average
+  //   C++ 차이점: std::partial_sort — O(K·logG)
+  // ════════════════════════════════════════════════════════════════════
 
-  // 인덱스를 비용 순으로 부분 정렬
   std::vector<int> indices(K);
   std::iota(indices.begin(), indices.end(), 0);
   std::partial_sort(indices.begin(), indices.begin() + G, indices.end(),
     [&costs](int a, int b) { return costs(a) < costs(b); });
 
-  // Guide particles flatten (G, D)
+  // Guide particles를 flatten — (G, D) where D = N·nu
+  // Python: guide_particles = perturbed_controls[guide_idx].reshape(G, D)
+  // C++ 차이점: Eigen::Map으로 zero-copy flatten (Python은 np.reshape view)
   Eigen::MatrixXd guide_particles(G, D);
   Eigen::VectorXd guide_costs(G);
   for (int g = 0; g < G; ++g) {
@@ -91,7 +129,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
     guide_costs(g) = costs(idx);
   }
 
-  // Diversity before SVGD
+  // Diversity before SVGD (평균 pairwise L2 거리)
   std::vector<Eigen::MatrixXd> guide_ctrl_vec;
   guide_ctrl_vec.reserve(G);
   for (int g = 0; g < G; ++g) {
@@ -102,7 +140,19 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   }
   double diversity_before = computeDiversity(guide_ctrl_vec, G, D);
 
-  // ──── Phase 3: SVGD on guides only (G×G) ────
+  // ════════════════════════════════════════════════════════════════════
+  // Phase 3: SVGD on guides only — G×G 커널 (수식 2, 3, 4)
+  //   SVMPC와 달리 G << K이므로 O(G²D) << O(K²D)
+  //
+  //   수식 (2a): attract_i = Σ_j w_j · k(x_j,x_i) · (x_j - x_i)
+  //   수식 (2b): repel_i = (1/G) Σ_j k(x_j,x_i) · (x_j-x_i) / h²
+  //   수식 (3):  k(x_i,x_j) = exp(-‖x_i-x_j‖² / 2h²)
+  //   수식 (4):  h = √(median(‖x_i-x_j‖²) / 2·log(G+1))
+  //
+  //   Python: self._svgd_update(diff, weights, kernel, h, K)
+  //   C++:    부모 SVMPCControllerPlugin의 protected 메서드 재사용
+  //           computeSVGDForce(), medianBandwidth(), computeDiversity()
+  // ════════════════════════════════════════════════════════════════════
 
   double step_size = params_.svg_guide_step_size;
 
@@ -116,7 +166,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
     }
     Eigen::VectorXd guide_weights = weight_computation_->compute(guide_costs, current_lambda);
 
-    // Pairwise diff (G×G)
+    // Pairwise diff (G×G) — diff[j,i] = x_j - x_i
     Eigen::MatrixXd sq_dist(G, G);
     std::vector<Eigen::VectorXd> diff_flat(G * G);
 
@@ -127,7 +177,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
       }
     }
 
-    // Bandwidth
+    // 수식 (4): Median heuristic bandwidth
     double h;
     if (params_.svgd_bandwidth > 0.0) {
       h = params_.svgd_bandwidth;
@@ -135,16 +185,16 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
       h = medianBandwidth(sq_dist, G);
     }
 
-    // RBF kernel
+    // 수식 (3): RBF kernel
     Eigen::MatrixXd kernel = (-sq_dist / (2.0 * h * h)).array().exp().matrix();
 
-    // SVGD force (재사용)
+    // 수식 (2a, 2b): SVGD force = attractive + repulsive
     Eigen::MatrixXd force = computeSVGDForce(diff_flat, guide_weights, kernel, h, G, D);
 
-    // Update guides
+    // Guide particle 업데이트: x_g ← x_g + ε · φ*(x_g)
     guide_particles += step_size * force;
 
-    // Clip & re-evaluate
+    // Clip & re-evaluate (unflatten → clip → re-flatten)
     for (int g = 0; g < G; ++g) {
       Eigen::MatrixXd ctrl(N, nu);
       Eigen::Map<Eigen::VectorXd> flat(ctrl.data(), D);
@@ -155,44 +205,51 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
       guide_ctrl_vec[g] = ctrl;
     }
 
-    // Re-rollout & re-cost for guides
+    // Re-rollout & re-cost (guide만, G개)
     auto guide_trajectories = dynamics_->rolloutBatch(
       current_state, guide_ctrl_vec, params_.dt);
     guide_costs = cost_function_->compute(
       guide_trajectories, guide_ctrl_vec, reference_trajectory);
   }
 
-  // Diversity after SVGD
+  // Diversity after SVGD (SVGD로 인한 다양성 변화 측정)
   double diversity_after = computeDiversity(guide_ctrl_vec, G, D);
 
-  // ──── Phase 4: Follower resampling ────
+  // ════════════════════════════════════════════════════════════════════
+  // Phase 4: Follower resampling — 수식 (5)
+  //   각 guide 주변에서 (K-G)/G개씩 follower 리샘플링
+  //   x_follower ~ N(x_guide, σ²_resample · I)
+  //
+  //   Python: follower_noise = sampler.sample(n_f, N, nu) * resample_std
+  //           follower_controls = guide[g] + follower_noise
+  // ════════════════════════════════════════════════════════════════════
 
   int n_followers = K - G;
   int followers_per_guide = std::max(1, n_followers / G);
 
-  // Collect all controls: guides + followers
   std::vector<Eigen::MatrixXd> all_controls;
   all_controls.reserve(K);
 
-  // Add guides
+  // Guide 자체를 먼저 추가
   for (int g = 0; g < G; ++g) {
     all_controls.push_back(guide_ctrl_vec[g]);
   }
 
-  // Add followers around each guide
+  // 각 guide 주변 follower 리샘플링
   double resample_std = params_.svg_resample_std;
   for (int g = 0; g < G; ++g) {
     int n_f;
     if (g < G - 1) {
       n_f = followers_per_guide;
     } else {
+      // 마지막 guide에 나머지 할당 (K-G가 G로 나누어떨어지지 않는 경우)
       n_f = n_followers - followers_per_guide * (G - 1);
     }
     if (n_f <= 0) {
       continue;
     }
 
-    // Sample follower noise
+    // σ_resample 스케일링된 노이즈로 follower 생성
     auto follower_noise = sampler_->sample(n_f, N, nu);
     for (int f = 0; f < n_f; ++f) {
       Eigen::MatrixXd follower_ctrl = guide_ctrl_vec[g] + resample_std * follower_noise[f];
@@ -203,7 +260,11 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
 
   int K_total = static_cast<int>(all_controls.size());
 
-  // ──── Phase 5: 전체 rollout & weight ────
+  // ════════════════════════════════════════════════════════════════════
+  // Phase 5: 전체 rollout → cost → weight → U 업데이트
+  //   Guide + Follower 전체 K개로 최종 가중 평균 업데이트
+  //   U* ← U + Σ_k w_k · (x_k - U)
+  // ════════════════════════════════════════════════════════════════════
 
   auto all_trajectories = dynamics_->rolloutBatch(
     current_state, all_controls, params_.dt);
@@ -220,7 +281,8 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   }
   Eigen::VectorXd weights = weight_computation_->compute(all_costs, current_lambda);
 
-  // Update U via effective noise
+  // effective noise 역산 후 가중 평균
+  // U ← U + Σ_k w_k · (perturbed_k - U)
   Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
   for (int k = 0; k < K_total; ++k) {
     Eigen::MatrixXd effective_noise = all_controls[k] - control_sequence_;
@@ -229,7 +291,6 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   control_sequence_ += weighted_noise;
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
-  // Extract optimal control
   Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
 
   // Weighted average trajectory
@@ -238,14 +299,10 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
     weighted_traj += weights(k) * all_trajectories[k];
   }
 
-  // Best sample
   int best_idx;
   double min_cost = all_costs.minCoeff(&best_idx);
-
-  // ESS
   double ess = computeESS(weights);
 
-  // Build info struct
   MPPIInfo info;
   info.sample_trajectories = all_trajectories;
   info.sample_weights = weights;

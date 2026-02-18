@@ -9,11 +9,20 @@ namespace mpc_controller_ros2
 /**
  * @brief SVG-MPPI (Stein Variational Guided MPPI) nav2 Controller Plugin
  *
- * Kondo et al., ICRA 2024 기반. G개 guide particle만 SVGD로 최적화한 뒤,
- * 나머지 K-G개 샘플을 guide 주변에서 리샘플링하여 효율적으로 다중 모드 탐색.
+ * Reference: Kondo et al. (2024) "SVG-MPPI: Steering Stein Variational
+ *            Guided MPPI for Efficient Navigation" — ICRA 2024
  *
- * SVMPCControllerPlugin을 상속하여 computeSVGDForce(), computeDiversity(),
- * medianBandwidth() 메서드를 재사용.
+ * 핵심 수식:
+ *   Guide 선택:  {x_g} = argmin_G S(x)               — Top-G by cost
+ *   SVGD force:  φ*(x_i) = Σ_j [w_j·k(x_j,x_i)·(x_j-x_i)  (attractive)
+ *                         + (1/G)·k(x_j,x_i)·(x_j-x_i)/h²]  (repulsive)
+ *   RBF kernel:  k(x_i,x_j) = exp(-‖x_i-x_j‖²/2h²)
+ *   Bandwidth:   h = √(median(‖x_i-x_j‖²) / 2·log(G+1))  (median heuristic)
+ *   Follower:    x_f ~ N(x_guide, σ²_resample·I)     — Resampling
+ *   복잡도:      O(G²D) + O(KND) << O(K²D) (SVMPC 대비)
+ *
+ * SVMPCControllerPlugin 상속 → computeSVGDForce(), computeDiversity(),
+ * medianBandwidth() 재사용.
  *
  * 알고리즘 플로우:
  *   Phase 1: 전체 K개 sample → rollout → cost

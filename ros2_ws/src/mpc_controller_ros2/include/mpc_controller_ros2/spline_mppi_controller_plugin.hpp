@@ -9,13 +9,23 @@ namespace mpc_controller_ros2
 /**
  * @brief Spline-MPPI nav2 Controller Plugin
  *
- * ICRA 2024 기반. P개 제어점(knot)에만 노이즈를 부여하고,
- * B-spline basis matrix로 N개 시점으로 보간하여 구조적으로 부드러운 제어를 생성.
+ * Reference: Yamada et al. (2024) "Spline-Based Model Predictive Path
+ *            Integral Control" — ICRA 2024
+ *
+ * 핵심 수식 (Parameterized Sampling via B-spline):
+ *   U_k = B · C_k,  B ∈ R^{N×P}, C_k ∈ R^{P×nu}   — B-spline 보간
+ *   C_k = C + ε_k,  ε_k ~ N(0, Σ)                   — Knot perturbation
+ *   C* ← C + Σ_k w_k · ε_k                           — Knot-space 업데이트
+ *
+ * B-spline basis (Cox-de Boor recursion):
+ *   N_{i,0}(t) = { 1 if t_i ≤ t < t_{i+1}, 0 otherwise }
+ *   N_{i,k}(t) = (t-t_i)/(t_{i+k}-t_i)·N_{i,k-1}(t)
+ *              + (t_{i+k+1}-t)/(t_{i+k+1}-t_{i+1})·N_{i+1,k-1}(t)
  *
  * 알고리즘 플로우:
  *   1. P개 knot에 노이즈 샘플링 (K, P, nu)
- *   2. B-spline basis (N, P) 행렬로 보간
- *   3. 보간된 (K, N, nu) 제어로 rollout/cost
+ *   2. B-spline basis (N, P) 행렬로 보간 → (K, N, nu)
+ *   3. 보간된 제어로 rollout/cost
  *   4. Knot space에서 가중 평균 업데이트
  */
 class SplineMPPIControllerPlugin : public MPPIControllerPlugin
