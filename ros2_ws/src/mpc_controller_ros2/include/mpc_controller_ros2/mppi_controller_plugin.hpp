@@ -42,6 +42,11 @@ struct MPPIInfo
   bool adaptive_temp_used{false};
   bool tube_mppi_used{false};
   TubeMPPIInfo tube_info;  // Tube-MPPI 정보
+
+  // SVGD 전용 정보
+  int svgd_iterations{0};
+  double sample_diversity_before{0.0};
+  double sample_diversity_after{0.0};
 };
 
 /**
@@ -78,13 +83,25 @@ protected:
   // Weight computation strategy (서브클래스에서 교체 가능)
   std::unique_ptr<WeightComputation> weight_computation_;
 
-private:
-  // MPPI 핵심 알고리즘
-  std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
+  // MPPI 핵심 알고리즘 (서브클래스에서 override 가능)
+  virtual std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
     const Eigen::Vector3d& current_state,
     const Eigen::MatrixXd& reference_trajectory
   );
 
+  // 서브클래스 접근 가능 멤버
+  MPPIParams params_;
+  Eigen::MatrixXd control_sequence_;  // N x 2
+  std::unique_ptr<BatchDynamicsWrapper> dynamics_;
+  std::unique_ptr<CompositeMPPICost> cost_function_;
+  std::unique_ptr<BaseSampler> sampler_;
+  std::unique_ptr<AdaptiveTemperature> adaptive_temp_;
+
+  // ROS2 (서브클래스 로깅용)
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  std::string plugin_name_;
+
+private:
   // 좌표 변환
   Eigen::Vector3d poseToState(const geometry_msgs::msg::PoseStamped& pose);
   Eigen::MatrixXd pathToReferenceTrajectory(const nav_msgs::msg::Path& path);
@@ -106,31 +123,20 @@ private:
     const std::vector<rclcpp::Parameter>& parameters
   );
 
-  // ROS2
-  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  // ROS2 (플러그인 내부 전용)
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
-  // MPPI 컴포넌트
-  MPPIParams params_;
-  std::unique_ptr<BatchDynamicsWrapper> dynamics_;
-  std::unique_ptr<CompositeMPPICost> cost_function_;
-  std::unique_ptr<BaseSampler> sampler_;
-
   // M2 확장 컴포넌트
-  std::unique_ptr<AdaptiveTemperature> adaptive_temp_;
   std::unique_ptr<TubeMPPI> tube_mppi_;
 
   // State
   nav_msgs::msg::Path global_plan_;
-  Eigen::MatrixXd control_sequence_;  // N x 2
   Eigen::MatrixXd nominal_trajectory_;  // N+1 x 3 (Tube-MPPI용)
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
-
-  std::string plugin_name_;
 
   // Tube 시각화
   void publishTubeVisualization(

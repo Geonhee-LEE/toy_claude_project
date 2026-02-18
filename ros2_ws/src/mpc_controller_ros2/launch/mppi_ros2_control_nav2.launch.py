@@ -28,11 +28,15 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     # Risk-Aware MPPI (CVaR 가중치 절단)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=risk_aware
 
+    # SVMPC (Stein Variational MPC)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc
+
 컨트롤러 전환:
     controller:=custom      → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
     controller:=log         → Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)
     controller:=tsallis     → Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)
     controller:=risk_aware  → Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)
+    controller:=svmpc       → SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)
     controller:=nav2        → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
 """
 
@@ -84,6 +88,11 @@ def launch_setup(context, *args, **kwargs):
             pkg_dir, 'config', 'nav2_params_risk_aware_mppi.yaml'
         )
         controller_label = 'Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)'
+    elif controller_type == 'svmpc':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_svmpc.yaml'
+        )
+        controller_label = 'SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)'
     else:
         controller_params_file = os.path.join(
             pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
@@ -115,17 +124,13 @@ def launch_setup(context, *args, **kwargs):
     # ========== 1. Gazebo Harmonic ==========
     gz_cmd = ['gz', 'sim', '-r', '-v4']
     if headless:
-        gz_cmd.append('-s')  # Server only, no GUI
+        gz_cmd.extend(['-s', '--headless-rendering'])  # Server only + EGL rendering
     gz_cmd.append(world_file)
 
     gz_env = {
         'GZ_SIM_SYSTEM_PLUGIN_PATH': gz_plugin_path,
         'GZ_SIM_RESOURCE_PATH': os.path.join(pkg_dir, 'models'),
     }
-    if headless:
-        # Software rendering for headless sensor processing (LiDAR uses ogre2)
-        gz_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
-        gz_env['MESA_GL_VERSION_OVERRIDE'] = '3.3'
 
     gz_sim = ExecuteProcess(
         cmd=gz_cmd,
@@ -429,7 +434,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", or "nav2"'
+            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

@@ -89,6 +89,11 @@ struct MPPIParams
   double tsallis_q{1.5};     // Tsallis q 파라미터 (q>1 heavy-tail, q<1 light-tail, q=1 Vanilla)
   double cvar_alpha{0.5};    // CVaR alpha 파라미터 (1.0=risk-neutral, <1=risk-averse)
 
+  // SVMPC (Stein Variational MPC) 파라미터
+  int svgd_num_iterations{0};        // SVGD 반복 횟수 (0=Vanilla 동등, 권장: 1~5)
+  double svgd_step_size{0.1};        // SVGD update step size
+  double svgd_bandwidth{-1.0};       // RBF bandwidth (-1=median heuristic)
+
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
   bool visualize_best{true};              // 최적 궤적 표시
