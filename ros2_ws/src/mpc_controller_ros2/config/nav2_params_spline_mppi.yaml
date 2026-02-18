@@ -80,8 +80,9 @@ controller_server:
       prefer_forward_weight: 15.0
 
       # Spline-MPPI 전용 파라미터
-      spline_num_knots: 8             # B-spline 제어점 수 (P << N)
+      spline_num_knots: 12            # B-spline 제어점 수 (P << N)
       spline_degree: 3                # B-spline 차수 (cubic)
+      spline_auto_knot_sigma: true    # basis 감쇠 자동 보정
 
       # SOTA 변형 (기본값 유지)
       tsallis_q: 1.5

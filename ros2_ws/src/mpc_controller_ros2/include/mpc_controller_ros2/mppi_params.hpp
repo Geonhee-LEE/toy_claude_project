@@ -104,8 +104,9 @@ struct MPPIParams
   double smooth_action_cost_weight{1.0}; // jerk cost 전체 가중치
 
   // Spline-MPPI (ICRA 2024)
-  int spline_num_knots{8};              // B-spline 제어점 수 (P << N)
+  int spline_num_knots{12};             // B-spline 제어점 수 (P << N)
   int spline_degree{3};                 // B-spline 차수 (cubic)
+  bool spline_auto_knot_sigma{true};    // basis 감쇠 자동 보정 (σ × amp_factor)
 
   // SVG-MPPI (Kondo et al., ICRA 2024)
   int svg_num_guide_particles{10};      // guide particle 수 (G << K)

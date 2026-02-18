@@ -70,9 +70,10 @@ class MPPIParams:
     smooth_action_cost_weight: float = 1.0           # jerk cost 전체 스케일
 
     # M3.5b Spline-MPPI (ICRA 2024 — B-spline basis 보간)
-    spline_num_knots: int = 8                        # 제어점 수 (P << N)
+    spline_num_knots: int = 12                       # 제어점 수 (P << N)
     spline_degree: int = 3                           # B-spline 차수 (cubic)
-    spline_knot_sigma: np.ndarray | None = None      # (nu,) knot 노이즈 σ. None=noise_sigma 재사용
+    spline_knot_sigma: np.ndarray | None = None      # (nu,) knot 노이즈 σ. None=auto or noise_sigma
+    spline_auto_knot_sigma: bool = True              # basis 감쇠 자동 보정 (σ × amp_factor)
 
     # M3.5c SVG-MPPI (Kondo et al., ICRA 2024 — Guide particle SVGD)
     svg_num_guide_particles: int = 16                # Guide 수 (G << K)

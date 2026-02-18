@@ -309,8 +309,10 @@ P개 knot에만 노이즈 → B-spline basis로 N개 보간:
 **핵심 파라미터**:
 | 파라미터 | 역할 | 기본값 |
 |---------|------|--------|
-| spline_num_knots | B-spline 제어점 수 (P) | 8 |
+| spline_num_knots | B-spline 제어점 수 (P) | 12 |
 | spline_degree | B-spline 차수 | 3 (cubic) |
+| spline_knot_sigma | knot 노이즈 σ (None=auto) | None |
+| spline_auto_knot_sigma | basis 감쇠 자동 보정 | True |
 
 ### 2.9 M3.5c: SVG-MPPI (Guide Particle)
 

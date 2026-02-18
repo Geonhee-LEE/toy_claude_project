@@ -322,3 +322,151 @@ class TestSplineMPPIObstacles:
 
         u, info = ctrl.compute_control(state, ref)
         assert np.all(np.isfinite(u))
+
+
+# ─────────────────────────────────────────────────────────────
+# Auto Knot Sigma 검증
+# ─────────────────────────────────────────────────────────────
+
+class TestSplineMPPIAutoSigma:
+    """spline_auto_knot_sigma 기능 검증."""
+
+    def test_auto_sigma_greater_than_noise_sigma(self, robot_params):
+        """Auto sigma는 basis 감쇠 보정으로 noise_sigma보다 커야 함."""
+        params = MPPIParams(
+            N=20, K=64, dt=0.05,
+            noise_sigma=np.array([0.3, 0.3]),
+            spline_num_knots=8,
+            spline_auto_knot_sigma=True,
+        )
+        ctrl = SplineMPPIController(robot_params, params, seed=42)
+        assert np.all(ctrl._knot_sigma > params.noise_sigma)
+
+    def test_amp_factor_range(self, robot_params):
+        """amp_factor는 1보다 크고 합리적 범위 (1, 10) 이내."""
+        for P in [6, 8, 12]:
+            params = MPPIParams(
+                N=20, K=64, dt=0.05,
+                noise_sigma=np.array([0.3, 0.3]),
+                spline_num_knots=P,
+                spline_auto_knot_sigma=True,
+            )
+            ctrl = SplineMPPIController(robot_params, params, seed=42)
+            amp_factor = ctrl._knot_sigma[0] / params.noise_sigma[0]
+            assert 1.0 < amp_factor < 10.0, f"P={P}, amp={amp_factor}"
+
+    def test_explicit_override(self, robot_params):
+        """명시적 spline_knot_sigma가 auto 보정을 무시."""
+        params = MPPIParams(
+            N=20, K=64, dt=0.05,
+            noise_sigma=np.array([0.3, 0.3]),
+            spline_num_knots=8,
+            spline_auto_knot_sigma=True,
+            spline_knot_sigma=np.array([0.5, 0.8]),
+        )
+        ctrl = SplineMPPIController(robot_params, params, seed=42)
+        np.testing.assert_array_equal(ctrl._knot_sigma, [0.5, 0.8])
+
+    def test_auto_disabled(self, robot_params):
+        """auto=False면 noise_sigma 그대로 사용."""
+        params = MPPIParams(
+            N=20, K=64, dt=0.05,
+            noise_sigma=np.array([0.3, 0.3]),
+            spline_num_knots=8,
+            spline_auto_knot_sigma=False,
+        )
+        ctrl = SplineMPPIController(robot_params, params, seed=42)
+        np.testing.assert_array_equal(ctrl._knot_sigma, params.noise_sigma)
+
+
+# ─────────────────────────────────────────────────────────────
+# LS Warm-start 검증
+# ─────────────────────────────────────────────────────────────
+
+class TestSplineMPPIWarmstart:
+    """LS 재투영 warm-start 일관성."""
+
+    def test_ls_reprojection_consistency(self, robot_params, circle_ref):
+        """LS 재투영 후 basis @ U_knots ≈ U_shifted."""
+        params = MPPIParams(
+            N=20, K=64, dt=0.05,
+            noise_sigma=np.array([0.3, 0.3]),
+            spline_num_knots=8,
+            spline_auto_knot_sigma=True,
+        )
+        ctrl = SplineMPPIController(robot_params, params, seed=42)
+        state = circle_ref[0].copy()
+        interp = TrajectoryInterpolator(circle_ref, dt=0.05)
+        ref = interp.get_reference(0, params.N, params.dt, state[2])
+
+        # 1회 실행하여 U에 비자명(non-trivial) 값 생성
+        ctrl.compute_control(state, ref)
+
+        # shift된 U를 생성
+        U_shifted = ctrl.U.copy()
+        U_shifted[:-1] = U_shifted[1:]
+        U_shifted[-1] = 0.0
+
+        # LS 재투영
+        knots_reproj = ctrl._basis_pinv @ U_shifted
+        U_reconstructed = ctrl._basis @ knots_reproj
+
+        # 재구성 오차가 작아야 함 (P >= degree+1이면 잘 맞음)
+        rmse = np.sqrt(np.mean((U_shifted - U_reconstructed) ** 2))
+        assert rmse < 0.1, f"LS reprojection RMSE={rmse}"
+
+
+# ─────────────────────────────────────────────────────────────
+# Figure8 RMSE 회귀 테스트
+# ─────────────────────────────────────────────────────────────
+
+class TestSplineMPPIFigure8Regression:
+    """figure8 궤적 추적 RMSE 회귀 테스트."""
+
+    @pytest.mark.slow
+    def test_figure8_rmse_below_threshold(self, robot_params):
+        """figure8 RMSE < 0.5m (Issue #64 목표)."""
+        from mpc_controller import generate_figure_eight_trajectory
+
+        trajectory = generate_figure_eight_trajectory(
+            np.array([0.0, 0.0]), 2.0, 400
+        )
+        params = MPPIParams(
+            N=20, K=512, dt=0.05, lambda_=10.0,
+            noise_sigma=np.array([0.3, 0.3]),
+            Q=np.diag([10.0, 10.0, 1.0]),
+            R=np.diag([0.01, 0.01]),
+            Qf=np.diag([100.0, 100.0, 10.0]),
+            spline_num_knots=12,
+            spline_auto_knot_sigma=True,
+        )
+        ctrl = SplineMPPIController(robot_params, params, seed=42)
+        interp = TrajectoryInterpolator(trajectory, dt=0.05)
+
+        state = trajectory[0].copy()
+        errors = []
+        dt = 0.05
+        max_steps = int(20.0 / dt)
+
+        for step in range(max_steps):
+            t = step * dt
+            ref = interp.get_reference(t, params.N, params.dt, state[2])
+            u, _ = ctrl.compute_control(state, ref)
+
+            # 추적 오차 기록
+            pos_err = np.linalg.norm(state[:2] - ref[0, :2])
+            errors.append(pos_err)
+
+            # 상태 업데이트 (Euler)
+            state = state + np.array([
+                u[0] * np.cos(state[2]) * dt,
+                u[0] * np.sin(state[2]) * dt,
+                u[1] * dt,
+            ])
+
+            idx, dist = interp.find_closest_point(state[:2])
+            if idx >= interp.num_points - 1 and dist < 0.1:
+                break
+
+        rmse = np.sqrt(np.mean(np.array(errors) ** 2))
+        assert rmse < 0.5, f"figure8 RMSE={rmse:.4f}m (target <0.5m)"

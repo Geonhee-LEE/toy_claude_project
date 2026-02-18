@@ -236,14 +236,6 @@ def main():
             R=np.diag([0.01, 0.01]),
             Qf=np.diag([100.0, 100.0, 10.0]),
         ), MPPIController),
-        ("Spline P=4", MPPIParams(
-            N=20, K=512, dt=0.05, lambda_=10.0,
-            noise_sigma=np.array([0.3, 0.3]),
-            Q=np.diag([10.0, 10.0, 1.0]),
-            R=np.diag([0.01, 0.01]),
-            Qf=np.diag([100.0, 100.0, 10.0]),
-            spline_num_knots=4,
-        ), SplineMPPIController),
         ("Spline P=8", MPPIParams(
             N=20, K=512, dt=0.05, lambda_=10.0,
             noise_sigma=np.array([0.3, 0.3]),
@@ -251,6 +243,14 @@ def main():
             R=np.diag([0.01, 0.01]),
             Qf=np.diag([100.0, 100.0, 10.0]),
             spline_num_knots=8,
+        ), SplineMPPIController),
+        ("Spline P=12", MPPIParams(
+            N=20, K=512, dt=0.05, lambda_=10.0,
+            noise_sigma=np.array([0.3, 0.3]),
+            Q=np.diag([10.0, 10.0, 1.0]),
+            R=np.diag([0.01, 0.01]),
+            Qf=np.diag([100.0, 100.0, 10.0]),
+            spline_num_knots=12,
         ), SplineMPPIController),
     ]
 

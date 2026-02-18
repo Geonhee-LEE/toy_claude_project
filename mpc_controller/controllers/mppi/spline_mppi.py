@@ -118,13 +118,23 @@ class SplineMPPIController(MPPIController):
         self._P = self.params.spline_num_knots
         self._degree = self.params.spline_degree
 
-        # Knot 노이즈 표준편차 (기본: noise_sigma 재사용)
+        # 1. B-spline basis 사전 계산 (N, P) — 변경되지 않으므로 캐싱
+        self._basis = _bspline_basis(self.params.N, self._P, self._degree)
+
+        # 2. Pseudo-inverse 사전 계산 (LS warm-start용)
+        self._basis_pinv = np.linalg.pinv(self._basis)  # (P, N)
+
+        # 3. Knot sigma 결정 (basis 기반 자동 보정)
+        # B-spline 보간 시 Var(control) = σ² × Σ basis[t,p]² < σ²
+        # → 유효 σ가 원본의 ~35%로 감쇠 → amp_factor로 보정
         self._knot_sigma = self.params.spline_knot_sigma
         if self._knot_sigma is None:
-            self._knot_sigma = self.params.noise_sigma
-
-        # B-spline basis 사전 계산 (N, P) — 변경되지 않으므로 캐싱
-        self._basis = _bspline_basis(self.params.N, self._P, self._degree)
+            if self.params.spline_auto_knot_sigma:
+                row_sq_sums = np.sum(self._basis ** 2, axis=1)
+                amp_factor = np.sqrt(1.0 / np.mean(row_sq_sums))
+                self._knot_sigma = self.params.noise_sigma * amp_factor
+            else:
+                self._knot_sigma = self.params.noise_sigma
 
         # Knot space warm-start
         self.U_knots = np.zeros((self._P, self.dynamics.nu))
@@ -147,9 +157,13 @@ class SplineMPPIController(MPPIController):
         nu = self.dynamics.nu
         P = self._P
 
-        # 1. Knot 시퀀스 shift
-        self.U_knots[:-1] = self.U_knots[1:]
-        self.U_knots[-1] = 0.0
+        # 1. Warm-start: LS 재투영
+        # 기존 shift는 knot index ↔ 시간축 불일치 (B-spline 비선형 매핑)
+        # → U를 1-step shift 후 knot space에 재투영하여 시간 정렬 보정
+        U_shifted = self.U.copy()
+        U_shifted[:-1] = U_shifted[1:]
+        U_shifted[-1] = 0.0
+        self.U_knots = self._basis_pinv @ U_shifted
 
         # 2. Knot space에서 노이즈 샘플링 (K, P, nu)
         knot_noise = self._knot_rng.standard_normal((K, P, nu))
