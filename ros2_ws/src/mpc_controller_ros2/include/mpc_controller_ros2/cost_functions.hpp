@@ -4,6 +4,8 @@
 #include <Eigen/Dense>
 #include <vector>
 #include <memory>
+#include <nav2_costmap_2d/costmap_2d.hpp>
+#include <nav2_costmap_2d/cost_values.hpp>
 #include "mpc_controller_ros2/mppi_params.hpp"
 
 namespace mpc_controller_ros2
@@ -122,12 +124,45 @@ private:
 };
 
 /**
+ * @brief Costmap 기반 장애물 비용 (TF 변환 + inflation gradient)
+ *
+ * 기존 ObstacleCost와 달리 costmap을 직접 참조하여:
+ * - map→odom 좌표 변환 적용
+ * - LETHAL/INSCRIBED/inflation gradient 비용 연속 반영
+ */
+class CostmapObstacleCost : public MPPICostFunction
+{
+public:
+  CostmapObstacleCost(double weight, double lethal_cost = 1000.0,
+                       double critical_cost = 100.0);
+
+  void setCostmap(nav2_costmap_2d::Costmap2D* costmap);
+  void setMapToOdomTransform(double tx, double ty,
+                             double cos_th, double sin_th, bool use_tf);
+
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+
+private:
+  nav2_costmap_2d::Costmap2D* costmap_{nullptr};
+  double weight_;
+  double lethal_cost_;
+  double critical_cost_;
+  double tx_{0.0}, ty_{0.0}, cos_th_{1.0}, sin_th_{0.0};
+  bool use_tf_{false};
+};
+
+/**
  * @brief 복합 비용 함수 (모든 비용 합산)
  */
 class CompositeMPPICost
 {
 public:
   void addCost(std::unique_ptr<MPPICostFunction> cost);
+  void clearCosts();
 
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,

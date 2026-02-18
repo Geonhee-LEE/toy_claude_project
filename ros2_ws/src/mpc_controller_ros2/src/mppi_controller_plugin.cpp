@@ -1,6 +1,7 @@
 #include "mpc_controller_ros2/mppi_controller_plugin.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
+#include <tf2/utils.h>
 #include <chrono>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Controller)
@@ -65,18 +66,30 @@ void MPPIControllerPlugin::configure(
     RCLCPP_INFO(node_->get_logger(), "Tube-MPPI enabled (tube_width=%.2f)", params_.tube_width);
   }
 
-  // Initialize cost function
+  // Initialize cost function (1회만 생성)
   cost_function_ = std::make_unique<CompositeMPPICost>();
   cost_function_->addCost(std::make_unique<StateTrackingCost>(params_.Q));
   cost_function_->addCost(std::make_unique<TerminalCost>(params_.Qf));
   cost_function_->addCost(std::make_unique<ControlEffortCost>(params_.R));
   cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
   cost_function_->addCost(
-    std::make_unique<ObstacleCost>(params_.obstacle_weight, params_.safety_distance)
-  );
-  cost_function_->addCost(
     std::make_unique<PreferForwardCost>(params_.prefer_forward_weight, params_.prefer_forward_linear_ratio)
   );
+
+  // CostmapObstacleCost 추가 (비소유 포인터 저장)
+  if (params_.use_costmap_cost) {
+    auto costmap_cost = std::make_unique<CostmapObstacleCost>(
+      params_.obstacle_weight, params_.costmap_lethal_cost, params_.costmap_critical_cost);
+    costmap_obstacle_cost_ptr_ = costmap_cost.get();
+    cost_function_->addCost(std::move(costmap_cost));
+    RCLCPP_INFO(node_->get_logger(), "CostmapObstacleCost enabled (lethal=%.0f, critical=%.0f)",
+      params_.costmap_lethal_cost, params_.costmap_critical_cost);
+  } else {
+    // 기존 ObstacleCost 사용
+    cost_function_->addCost(
+      std::make_unique<ObstacleCost>(params_.obstacle_weight, params_.safety_distance)
+    );
+  }
 
   // Initialize control sequence
   control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
@@ -143,36 +156,18 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 1. Convert current pose to state
     Eigen::Vector3d current_state = poseToState(pose);
 
-    // 2. Convert path to reference trajectory
-    Eigen::MatrixXd reference_trajectory = pathToReferenceTrajectory(global_plan_);
+    // 2. Prune plan (이미 지나간 waypoint 제거)
+    prunePlan(current_state);
 
-    // 3. Extract obstacles from costmap
-    std::vector<Eigen::Vector3d> obstacles = extractObstaclesFromCostmap();
+    // 3. Convert pruned path to reference trajectory (lookahead 기반)
+    Eigen::MatrixXd reference_trajectory = pathToReferenceTrajectory(pruned_plan_, current_state);
 
-    // Update obstacle cost function
-    if (cost_function_) {
-      // Rebuild cost function with updated obstacles
-      cost_function_ = std::make_unique<CompositeMPPICost>();
-      cost_function_->addCost(std::make_unique<StateTrackingCost>(params_.Q));
-      cost_function_->addCost(std::make_unique<TerminalCost>(params_.Qf));
-      cost_function_->addCost(std::make_unique<ControlEffortCost>(params_.R));
-      cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
-
-      cost_function_->addCost(
-        std::make_unique<PreferForwardCost>(params_.prefer_forward_weight, params_.prefer_forward_linear_ratio)
-      );
-
-      if (!obstacles.empty()) {
-        auto obstacle_cost = std::make_unique<ObstacleCost>(
-          params_.obstacle_weight,
-          params_.safety_distance
-        );
-        obstacle_cost->setObstacles(obstacles);
-        cost_function_->addCost(std::move(obstacle_cost));
-      }
+    // 4. Update costmap TF (cost_function_ 재생성 없이 TF만 갱신)
+    if (params_.use_costmap_cost) {
+      updateCostmapObstacles();
     }
 
-    // 4. Compute optimal control (measure computation time)
+    // 5. Compute optimal control (measure computation time)
     auto start_time = std::chrono::high_resolution_clock::now();
     auto [u_opt, info] = computeControl(current_state, reference_trajectory);
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -266,6 +261,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
 {
   global_plan_ = path;
+  prune_start_idx_ = 0;
 
   // Reset control sequence for new plan (warm start from zero)
   control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
@@ -409,8 +405,44 @@ Eigen::Vector3d MPPIControllerPlugin::poseToState(const geometry_msgs::msg::Pose
   return state;
 }
 
-Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(const nav_msgs::msg::Path& path)
+void MPPIControllerPlugin::prunePlan(const Eigen::Vector3d& current_state)
 {
+  if (global_plan_.poses.empty()) {
+    pruned_plan_ = global_plan_;
+    return;
+  }
+
+  // prune_start_idx_부터 점진적 탐색 (amortized O(1))
+  double min_dist_sq = std::numeric_limits<double>::max();
+  size_t closest_idx = prune_start_idx_;
+  size_t search_end = std::min(
+    prune_start_idx_ + 50, global_plan_.poses.size());
+
+  for (size_t i = prune_start_idx_; i < search_end; ++i) {
+    double dx = global_plan_.poses[i].pose.position.x - current_state(0);
+    double dy = global_plan_.poses[i].pose.position.y - current_state(1);
+    double dist_sq = dx * dx + dy * dy;
+    if (dist_sq < min_dist_sq) {
+      min_dist_sq = dist_sq;
+      closest_idx = i;
+    }
+  }
+
+  prune_start_idx_ = closest_idx;
+
+  // closest_idx부터 잘라서 pruned_plan_ 생성
+  pruned_plan_.header = global_plan_.header;
+  pruned_plan_.poses.assign(
+    global_plan_.poses.begin() + closest_idx,
+    global_plan_.poses.end()
+  );
+}
+
+Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
+  const nav_msgs::msg::Path& path, const Eigen::Vector3d& current_state)
+{
+  (void)current_state;
+
   if (path.poses.empty()) {
     RCLCPP_WARN(node_->get_logger(), "Empty path provided");
     return Eigen::MatrixXd::Zero(params_.N + 1, 3);
@@ -419,34 +451,52 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(const nav_msgs::
   int path_size = path.poses.size();
   Eigen::MatrixXd reference = Eigen::MatrixXd::Zero(params_.N + 1, 3);
 
-  // If path is shorter than horizon, repeat last pose
-  if (path_size <= params_.N + 1) {
-    for (int t = 0; t < path_size; ++t) {
-      reference(t, 0) = path.poses[t].pose.position.x;
-      reference(t, 1) = path.poses[t].pose.position.y;
-      reference(t, 2) = quaternionToYaw(path.poses[t].pose.orientation);
-    }
-    // Fill remaining with last pose
-    for (int t = path_size; t <= params_.N; ++t) {
-      reference.row(t) = reference.row(path_size - 1);
-    }
-  } else {
-    // Interpolate path to match horizon length
-    for (int t = 0; t <= params_.N; ++t) {
-      double interp_idx = static_cast<double>(t) / params_.N * (path_size - 1);
-      int idx_lower = static_cast<int>(std::floor(interp_idx));
-      int idx_upper = std::min(idx_lower + 1, path_size - 1);
-      double alpha = interp_idx - idx_lower;
+  // lookahead 거리 계산: 0 = auto (v_max * N * dt)
+  double lookahead = params_.lookahead_dist;
+  if (lookahead <= 0.0) {
+    lookahead = params_.v_max * params_.N * params_.dt;
+  }
 
-      // Linear interpolation
-      reference(t, 0) = (1.0 - alpha) * path.poses[idx_lower].pose.position.x +
-                        alpha * path.poses[idx_upper].pose.position.x;
-      reference(t, 1) = (1.0 - alpha) * path.poses[idx_lower].pose.position.y +
-                        alpha * path.poses[idx_upper].pose.position.y;
+  // 경로를 따라 누적 arc-length 계산
+  std::vector<double> arc_lengths(path_size, 0.0);
+  for (int i = 1; i < path_size; ++i) {
+    double dx = path.poses[i].pose.position.x - path.poses[i - 1].pose.position.x;
+    double dy = path.poses[i].pose.position.y - path.poses[i - 1].pose.position.y;
+    arc_lengths[i] = arc_lengths[i - 1] + std::sqrt(dx * dx + dy * dy);
+  }
 
-      // Angle interpolation (using shorter path on circle)
-      double theta_lower = quaternionToYaw(path.poses[idx_lower].pose.orientation);
-      double theta_upper = quaternionToYaw(path.poses[idx_upper].pose.orientation);
+  double total_path_length = arc_lengths.back();
+  double effective_lookahead = std::min(lookahead, total_path_length);
+  double step_distance = effective_lookahead / params_.N;
+
+  // arc-length stepping으로 참조 궤적 생성
+  int path_idx = 0;
+  for (int t = 0; t <= params_.N; ++t) {
+    double target_arc = t * step_distance;
+
+    // 목표 arc-length에 해당하는 경로 구간 탐색
+    while (path_idx < path_size - 1 && arc_lengths[path_idx + 1] < target_arc) {
+      ++path_idx;
+    }
+
+    if (path_idx >= path_size - 1) {
+      // 경로 끝 도달: 마지막 점 반복
+      reference(t, 0) = path.poses[path_size - 1].pose.position.x;
+      reference(t, 1) = path.poses[path_size - 1].pose.position.y;
+      reference(t, 2) = quaternionToYaw(path.poses[path_size - 1].pose.orientation);
+    } else {
+      // 구간 내 선형 보간
+      double seg_len = arc_lengths[path_idx + 1] - arc_lengths[path_idx];
+      double alpha = (seg_len > 1e-6) ?
+        (target_arc - arc_lengths[path_idx]) / seg_len : 0.0;
+
+      reference(t, 0) = (1.0 - alpha) * path.poses[path_idx].pose.position.x +
+                        alpha * path.poses[path_idx + 1].pose.position.x;
+      reference(t, 1) = (1.0 - alpha) * path.poses[path_idx].pose.position.y +
+                        alpha * path.poses[path_idx + 1].pose.position.y;
+
+      double theta_lower = quaternionToYaw(path.poses[path_idx].pose.orientation);
+      double theta_upper = quaternionToYaw(path.poses[path_idx + 1].pose.orientation);
       double theta_diff = normalizeAngle(theta_upper - theta_lower);
       reference(t, 2) = normalizeAngle(theta_lower + alpha * theta_diff);
     }
@@ -455,57 +505,42 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(const nav_msgs::
   return reference;
 }
 
-std::vector<Eigen::Vector3d> MPPIControllerPlugin::extractObstaclesFromCostmap()
+void MPPIControllerPlugin::updateCostmapObstacles()
 {
-  std::vector<Eigen::Vector3d> obstacles;
-
-  if (!costmap_ros_) {
-    return obstacles;
+  if (!costmap_obstacle_cost_ptr_ || !costmap_ros_) {
+    return;
   }
 
   auto costmap = costmap_ros_->getCostmap();
   if (!costmap) {
-    RCLCPP_WARN_THROTTLE(
+    return;
+  }
+
+  // costmap 포인터 갱신
+  costmap_obstacle_cost_ptr_->setCostmap(costmap);
+
+  // map→odom TF 조회
+  try {
+    auto transform = tf_buffer_->lookupTransform(
+      "odom", "map", tf2::TimePointZero,
+      tf2::durationFromSec(0.1));
+
+    double tx = transform.transform.translation.x;
+    double ty = transform.transform.translation.y;
+
+    // quaternion → yaw
+    double qz = transform.transform.rotation.z;
+    double qw = transform.transform.rotation.w;
+    double yaw = 2.0 * std::atan2(qz, qw);
+
+    costmap_obstacle_cost_ptr_->setMapToOdomTransform(
+      tx, ty, std::cos(yaw), std::sin(yaw), true);
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_DEBUG_THROTTLE(
       node_->get_logger(), *node_->get_clock(), 2000,
-      "Costmap not yet available, skipping obstacle extraction"
-    );
-    return obstacles;
+      "map→odom TF not available (%s), using identity", ex.what());
+    costmap_obstacle_cost_ptr_->setMapToOdomTransform(0.0, 0.0, 1.0, 0.0, false);
   }
-  unsigned int size_x = costmap->getSizeInCellsX();
-  unsigned int size_y = costmap->getSizeInCellsY();
-  double resolution = costmap->getResolution();
-  double origin_x = costmap->getOriginX();
-  double origin_y = costmap->getOriginY();
-
-  // Sample obstacles from costmap (grid-based detection)
-  // To avoid too many obstacles, we sample every N cells
-  int sample_step = 3;
-
-  for (unsigned int i = 0; i < size_x; i += sample_step) {
-    for (unsigned int j = 0; j < size_y; j += sample_step) {
-      unsigned char cost = costmap->getCost(i, j);
-
-      // Check if cell is occupied (LETHAL_OBSTACLE = 254)
-      if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
-        // Convert cell coordinates to world coordinates
-        double wx = origin_x + (i + 0.5) * resolution;
-        double wy = origin_y + (j + 0.5) * resolution;
-
-        // Create obstacle: [x, y, radius]
-        // Use resolution as approximate radius
-        Eigen::Vector3d obs(wx, wy, resolution * 0.5);
-        obstacles.push_back(obs);
-      }
-    }
-  }
-
-  RCLCPP_DEBUG(
-    node_->get_logger(),
-    "Extracted %zu obstacles from costmap",
-    obstacles.size()
-  );
-
-  return obstacles;
 }
 
 void MPPIControllerPlugin::publishVisualization(
@@ -790,6 +825,12 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "prefer_forward_weight", params_.prefer_forward_weight);
   node_->declare_parameter(prefix + "prefer_forward_linear_ratio", params_.prefer_forward_linear_ratio);
 
+  // Costmap obstacle cost
+  node_->declare_parameter(prefix + "use_costmap_cost", params_.use_costmap_cost);
+  node_->declare_parameter(prefix + "costmap_lethal_cost", params_.costmap_lethal_cost);
+  node_->declare_parameter(prefix + "costmap_critical_cost", params_.costmap_critical_cost);
+  node_->declare_parameter(prefix + "lookahead_dist", params_.lookahead_dist);
+
   // Phase 1: Colored Noise
   node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
   node_->declare_parameter(prefix + "noise_beta", params_.noise_beta);
@@ -890,6 +931,12 @@ void MPPIControllerPlugin::loadParameters()
   // Forward preference
   params_.prefer_forward_weight = node_->get_parameter(prefix + "prefer_forward_weight").as_double();
   params_.prefer_forward_linear_ratio = node_->get_parameter(prefix + "prefer_forward_linear_ratio").as_double();
+
+  // Costmap obstacle cost
+  params_.use_costmap_cost = node_->get_parameter(prefix + "use_costmap_cost").as_bool();
+  params_.costmap_lethal_cost = node_->get_parameter(prefix + "costmap_lethal_cost").as_double();
+  params_.costmap_critical_cost = node_->get_parameter(prefix + "costmap_critical_cost").as_double();
+  params_.lookahead_dist = node_->get_parameter(prefix + "lookahead_dist").as_double();
 
   // Phase 1: Colored Noise
   params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();

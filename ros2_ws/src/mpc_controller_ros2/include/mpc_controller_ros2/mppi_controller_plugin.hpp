@@ -109,8 +109,12 @@ protected:
 private:
   // 좌표 변환
   Eigen::Vector3d poseToState(const geometry_msgs::msg::PoseStamped& pose);
-  Eigen::MatrixXd pathToReferenceTrajectory(const nav_msgs::msg::Path& path);
-  std::vector<Eigen::Vector3d> extractObstaclesFromCostmap();
+  Eigen::MatrixXd pathToReferenceTrajectory(
+    const nav_msgs::msg::Path& path, const Eigen::Vector3d& current_state);
+
+  // 경로 pruning + costmap 장애물 갱신
+  void prunePlan(const Eigen::Vector3d& current_state);
+  void updateCostmapObstacles();
 
   // 시각화
   void publishVisualization(
@@ -139,9 +143,14 @@ private:
 
   // State
   nav_msgs::msg::Path global_plan_;
+  nav_msgs::msg::Path pruned_plan_;
+  size_t prune_start_idx_{0};
   Eigen::MatrixXd nominal_trajectory_;  // N+1 x 3 (Tube-MPPI용)
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
+
+  // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
+  CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};
 
   // Tube 시각화
   void publishTubeVisualization(

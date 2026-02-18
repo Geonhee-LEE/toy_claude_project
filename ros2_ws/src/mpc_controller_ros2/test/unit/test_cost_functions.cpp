@@ -413,6 +413,167 @@ TEST_F(CostFunctionsTest, PreferForwardCostQuadraticOnly)
   EXPECT_NEAR(costs(0), 15.0 * (0.2 * 0.2 + 0.3 * 0.3), 1e-9);
 }
 
+// ============================================================================
+// CostmapObstacleCost 테스트
+// ============================================================================
+
+class CostmapObstacleCostTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    K_ = 2;
+    N_ = 3;
+
+    reference_ = Eigen::MatrixXd::Zero(N_ + 1, 3);
+
+    // 직선 궤적 (x 방향)
+    Eigen::MatrixXd traj1 = Eigen::MatrixXd::Zero(N_ + 1, 3);
+    for (int t = 0; t <= N_; ++t) {
+      traj1(t, 0) = t * 0.1;
+    }
+    trajectories_.push_back(traj1);
+
+    // 오프셋 궤적
+    Eigen::MatrixXd traj2 = Eigen::MatrixXd::Zero(N_ + 1, 3);
+    for (int t = 0; t <= N_; ++t) {
+      traj2(t, 0) = t * 0.1;
+      traj2(t, 1) = 0.5;
+    }
+    trajectories_.push_back(traj2);
+
+    controls_.push_back(Eigen::MatrixXd::Zero(N_, 2));
+    controls_.push_back(Eigen::MatrixXd::Zero(N_, 2));
+  }
+
+  int K_;
+  int N_;
+  Eigen::MatrixXd reference_;
+  std::vector<Eigen::MatrixXd> trajectories_;
+  std::vector<Eigen::MatrixXd> controls_;
+};
+
+TEST_F(CostmapObstacleCostTest, NullCostmapReturnsZero)
+{
+  CostmapObstacleCost cost(100.0, 1000.0, 100.0);
+  // costmap 미설정 → 비용 0
+  auto costs = cost.compute(trajectories_, controls_, reference_);
+  EXPECT_EQ(costs.size(), K_);
+  EXPECT_NEAR(costs(0), 0.0, 1e-9);
+  EXPECT_NEAR(costs(1), 0.0, 1e-9);
+}
+
+TEST_F(CostmapObstacleCostTest, FreeTrajectoryCostIsZero)
+{
+  // 모두 FREE_SPACE인 costmap 생성 (궤적 전체를 커버하는 크기)
+  // traj: (0,0)→(0.3, 0), traj2: y=0.5까지
+  nav2_costmap_2d::Costmap2D costmap(40, 40, 0.05, -0.5, -0.5);
+  for (unsigned int i = 0; i < 40; ++i) {
+    for (unsigned int j = 0; j < 40; ++j) {
+      costmap.setCost(i, j, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+
+  CostmapObstacleCost cost(100.0, 1000.0, 100.0);
+  cost.setCostmap(&costmap);
+
+  auto costs = cost.compute(trajectories_, controls_, reference_);
+  EXPECT_NEAR(costs(0), 0.0, 1e-9);
+}
+
+TEST_F(CostmapObstacleCostTest, LethalTrajectoryCostIsHigh)
+{
+  // LETHAL 장애물이 있는 costmap
+  nav2_costmap_2d::Costmap2D costmap(20, 20, 0.05, -0.5, -0.5);
+  for (unsigned int i = 0; i < 20; ++i) {
+    for (unsigned int j = 0; j < 20; ++j) {
+      costmap.setCost(i, j, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+  // 원점(0,0) 부근에 LETHAL 셀 배치
+  unsigned int mx, my;
+  if (costmap.worldToMap(0.0, 0.0, mx, my)) {
+    costmap.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+  }
+
+  CostmapObstacleCost cost(100.0, 1000.0, 100.0);
+  cost.setCostmap(&costmap);
+
+  auto costs = cost.compute(trajectories_, controls_, reference_);
+  // traj1은 원점을 통과하므로 높은 비용
+  EXPECT_GT(costs(0), 500.0);
+}
+
+TEST_F(CostmapObstacleCostTest, TransformAppliedCorrectly)
+{
+  // 충분히 큰 costmap (모든 셀 FREE)
+  nav2_costmap_2d::Costmap2D costmap(100, 100, 0.05, -2.5, -2.5);
+  for (unsigned int i = 0; i < 100; ++i) {
+    for (unsigned int j = 0; j < 100; ++j) {
+      costmap.setCost(i, j, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+  // (0.1, 0.0) odom 좌표에 LETHAL 배치
+  unsigned int mx, my;
+  if (costmap.worldToMap(0.1, 0.0, mx, my)) {
+    costmap.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+  }
+
+  CostmapObstacleCost cost(100.0, 1000.0, 100.0);
+  cost.setCostmap(&costmap);
+
+  // TF 없이 → traj1은 (0,0)→(0.3,0) 이므로 (0.1,0) 통과 → 비용 발생
+  cost.setMapToOdomTransform(0.0, 0.0, 1.0, 0.0, false);
+  auto costs_no_tf = cost.compute(trajectories_, controls_, reference_);
+  EXPECT_GT(costs_no_tf(0), 0.0);  // 장애물 통과로 비용 발생
+
+  // TF 적용: map→odom에 x 오프셋 1.0 → map 좌표가 odom에서 +1.0 이동
+  // traj1의 (0.1, 0) → odom에서 (1.1, 0) → 장애물 위치(0.1,0)에 안 닿음
+  cost.setMapToOdomTransform(1.0, 0.0, 1.0, 0.0, true);
+  auto costs_with_tf = cost.compute(trajectories_, controls_, reference_);
+
+  // TF 적용 시 궤적이 장애물에서 벗어나므로 비용이 줄어야 함
+  EXPECT_GT(costs_no_tf(0), costs_with_tf(0));
+}
+
+TEST_F(CostmapObstacleCostTest, InflationGradientSmooth)
+{
+  // inflation 값이 있는 costmap
+  nav2_costmap_2d::Costmap2D costmap(20, 20, 0.05, -0.5, -0.5);
+  for (unsigned int i = 0; i < 20; ++i) {
+    for (unsigned int j = 0; j < 20; ++j) {
+      costmap.setCost(i, j, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+
+  // 서로 다른 inflation 값 배치
+  unsigned int mx1, my1, mx2, my2;
+  costmap.worldToMap(0.1, 0.0, mx1, my1);
+  costmap.worldToMap(0.2, 0.0, mx2, my2);
+
+  unsigned char low_inflation = 50;
+  unsigned char high_inflation = 200;
+  costmap.setCost(mx1, my1, low_inflation);
+  costmap.setCost(mx2, my2, high_inflation);
+
+  double weight = 100.0;
+  CostmapObstacleCost cost(weight, 1000.0, 100.0);
+  cost.setCostmap(&costmap);
+
+  auto costs = cost.compute(trajectories_, controls_, reference_);
+
+  // inflation gradient: cost = weight * (cell_cost/252)²
+  // low_inflation=50: 100 * (50/252)² ≈ 3.94
+  // high_inflation=200: 100 * (200/252)² ≈ 63.0
+  // traj1은 두 셀 모두 통과하므로 합산
+  double expected_low = weight * std::pow(50.0 / 252.0, 2);
+  double expected_high = weight * std::pow(200.0 / 252.0, 2);
+
+  // 비용이 0보다 크고 inflation gradient가 반영됨
+  EXPECT_GT(costs(0), expected_low);  // 최소 low_inflation만큼
+  EXPECT_NEAR(costs(0), expected_low + expected_high, 1e-6);
+}
+
 }  // namespace mpc_controller_ros2
 
 int main(int argc, char** argv)

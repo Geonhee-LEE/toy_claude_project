@@ -115,6 +115,14 @@ struct MPPIParams
   double svg_guide_step_size{0.1};      // guide SVGD step size
   double svg_resample_std{0.3};         // follower 리샘플링 표준편차
 
+  // ============================================================================
+  // Costmap 기반 장애물 비용 파라미터
+  // ============================================================================
+  bool use_costmap_cost{true};          // CostmapObstacleCost 사용
+  double costmap_lethal_cost{1000.0};   // LETHAL 셀 비용
+  double costmap_critical_cost{100.0};  // INSCRIBED 셀 비용
+  double lookahead_dist{0.0};           // 0 = auto (v_max * N * dt)
+
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
   bool visualize_best{true};              // 최적 궤적 표시
