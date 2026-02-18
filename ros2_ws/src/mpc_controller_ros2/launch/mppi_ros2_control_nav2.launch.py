@@ -151,14 +151,17 @@ def launch_setup(context, *args, **kwargs):
     # ========== 0. 이전 세션 잔여 프로세스 정리 ==========
     # 이전 launch가 깨끗하게 종료되지 않으면 gz sim, ros_gz_bridge,
     # nav2 노드 등이 살아남아 /scan, /clock 토픽 충돌을 일으킴.
+    # 주의: pkill -f "[x]yz" 패턴을 사용하여 자기 자신을 kill하지 않도록 함
+    #   - "[g]z sim" regex는 "gz sim"을 매칭하지만,
+    #     이 스크립트 커맨드라인의 "[g]z sim" 문자열은 매칭하지 않음
     cleanup_stale = ExecuteProcess(
         cmd=['bash', '-c',
-             'pkill -9 -f "gz sim" 2>/dev/null; '
-             'pkill -9 -f "ros_gz_bridge" 2>/dev/null; '
-             'pkill -9 -f "controller_server" 2>/dev/null; '
-             'pkill -9 -f "robot_state_publisher" 2>/dev/null; '
-             'pkill -9 -f "nav2_" 2>/dev/null; '
-             'pkill -9 -f "twist_stamper" 2>/dev/null; '
+             'pkill -9 -f "[g]z sim" 2>/dev/null; '
+             'pkill -9 -f "[r]os_gz_bridge" 2>/dev/null; '
+             'pkill -9 -f "[c]ontroller_server" 2>/dev/null; '
+             'pkill -9 -f "[r]obot_state_pub" 2>/dev/null; '
+             'pkill -9 -f "[n]av2_" 2>/dev/null; '
+             'pkill -9 -f "[t]wist_stamper" 2>/dev/null; '
              'sleep 2; echo "[cleanup] Stale processes killed"'],
         output='screen',
     )
@@ -220,11 +223,33 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
-    # ========== 5. Controller Spawners ==========
-    # gz_ros2_control 플러그인이 URDF의 <parameters> 경로에서
-    # diff_drive_controller.yaml을 읽어 joint_state_broadcaster와
-    # diff_drive_controller를 자동 로드/설정/활성화합니다.
-    # 별도 spawner 없이 gz_ros2_control에 위임합니다.
+    # ========== 5. Controller Activation ==========
+    # gz_ros2_control이 컨트롤러를 로드/설정하지만 활성화는 보장되지 않음.
+    # spawner로 활성화 시도, 이미 설정된 경우 switch_controllers로 폴백.
+    activate_controllers = ExecuteProcess(
+        cmd=['bash', '-c', ' '.join([
+            'echo "[controllers] Waiting for controller_manager...";',
+            'for i in $(seq 1 30); do',
+            '  if ros2 service list 2>/dev/null | grep -q "/controller_manager/list_controllers"; then',
+            '    echo "[controllers] controller_manager found"; break;',
+            '  fi;',
+            '  sleep 1;',
+            'done;',
+            # spawner 시도 (unconfigured → active)
+            'ros2 run controller_manager spawner joint_state_broadcaster'
+            ' -c /controller_manager --controller-manager-timeout 30 2>&1 ||',
+            # 폴백: 이미 configured 상태면 switch로 활성화
+            'ros2 control switch_controllers'
+            ' --activate joint_state_broadcaster -c /controller_manager 2>&1 || true;',
+            'ros2 run controller_manager spawner diff_drive_controller'
+            ' -c /controller_manager --controller-manager-timeout 30 2>&1 ||',
+            'ros2 control switch_controllers'
+            ' --activate diff_drive_controller -c /controller_manager 2>&1 || true;',
+            'echo "[controllers] Activation complete";',
+            'ros2 control list_controllers -c /controller_manager 2>&1 || true',
+        ])],
+        output='screen',
+    )
 
     # ========== 6. Map Server ==========
     map_server = Node(
@@ -392,11 +417,12 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 4. Controllers: gz_ros2_control이 자동 활성화하므로 spawner 불필요
+        # 4. Controller activation (14s delay — spawn 후 gz_ros2_control 안정화 대기)
         TimerAction(
             period=14.0,
             actions=[
-                LogInfo(msg='Controllers auto-started by gz_ros2_control plugin'),
+                LogInfo(msg='Activating ros2_control controllers...'),
+                activate_controllers,
             ]
         ),
 
