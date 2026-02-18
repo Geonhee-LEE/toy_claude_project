@@ -789,6 +789,11 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "tsallis_q", params_.tsallis_q);
   node_->declare_parameter(prefix + "cvar_alpha", params_.cvar_alpha);
 
+  // SVMPC (Stein Variational MPC)
+  node_->declare_parameter(prefix + "svgd_num_iterations", params_.svgd_num_iterations);
+  node_->declare_parameter(prefix + "svgd_step_size", params_.svgd_step_size);
+  node_->declare_parameter(prefix + "svgd_bandwidth", params_.svgd_bandwidth);
+
   // Visualization
   node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
   node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
@@ -868,6 +873,11 @@ void MPPIControllerPlugin::loadParameters()
   // SOTA 변형 파라미터 (Tsallis, Risk-Aware)
   params_.tsallis_q = node_->get_parameter(prefix + "tsallis_q").as_double();
   params_.cvar_alpha = node_->get_parameter(prefix + "cvar_alpha").as_double();
+
+  // SVMPC (Stein Variational MPC)
+  params_.svgd_num_iterations = node_->get_parameter(prefix + "svgd_num_iterations").as_int();
+  params_.svgd_step_size = node_->get_parameter(prefix + "svgd_step_size").as_double();
+  params_.svgd_bandwidth = node_->get_parameter(prefix + "svgd_bandwidth").as_double();
 
   // Visualization
   params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();

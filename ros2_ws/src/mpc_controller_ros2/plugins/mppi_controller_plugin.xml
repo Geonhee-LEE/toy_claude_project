@@ -27,4 +27,11 @@
       alpha&lt;1: risk-averse (uses only best alpha fraction of samples).
     </description>
   </class>
+  <class type="mpc_controller_ros2::SVMPCControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Stein Variational MPC (SVMPC) controller plugin for nav2.
+      SVGD kernel-based sample diversity for multi-modal distribution exploration.
+      svgd_num_iterations=0: Vanilla equivalent, &gt;0: SVGD loop enabled.
+    </description>
+  </class>
 </library>

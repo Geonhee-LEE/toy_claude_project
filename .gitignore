@@ -58,6 +58,15 @@ Thumbs.db
 results/
 logs/
 
+# ROS2 build artifacts
+install/
+install_backup/
+log/
+
+# Graphviz outputs (tf2 frame dumps)
+frames_*.gv
+frames_*.pdf
+
 # Claude hooks
 .claude/command-history.log
 .claude/settings.local.json
