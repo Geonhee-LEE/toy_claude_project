@@ -62,6 +62,50 @@ public:
   std::string name() const override { return "LogMPPI"; }
 };
 
+/**
+ * @brief Tsallis-MPPI 가중치 (q-exponential 일반화)
+ *
+ * q-exponential 가중치:
+ *   centered = costs - min(costs)  (q-exp는 translation-invariant 아님)
+ *   raw = exp_q(-centered / lambda, q)
+ *   weights = raw / sum(raw)
+ *
+ * q > 1: heavy-tail (탐색 증가)
+ * q < 1: light-tail (집중 증가)
+ * q → 1: Vanilla MPPI와 동일
+ */
+class TsallisMPPIWeights : public WeightComputation
+{
+public:
+  explicit TsallisMPPIWeights(double q = 1.5);
+  Eigen::VectorXd compute(const Eigen::VectorXd& costs, double lambda) const override;
+  std::string name() const override { return "TsallisMPPI"; }
+
+private:
+  double q_;
+};
+
+/**
+ * @brief Risk-Aware MPPI 가중치 (CVaR 기반 가중치 절단)
+ *
+ * Conditional Value at Risk:
+ *   n_keep = ceil(alpha * K)
+ *   최저 비용 n_keep개만 softmax 가중치 계산 → 나머지는 0
+ *
+ * alpha = 1.0: 모든 샘플 사용 (Vanilla 동일)
+ * alpha < 1.0: 최저 비용 샘플만 사용 (risk-averse)
+ */
+class RiskAwareMPPIWeights : public WeightComputation
+{
+public:
+  explicit RiskAwareMPPIWeights(double alpha = 0.5);
+  Eigen::VectorXd compute(const Eigen::VectorXd& costs, double lambda) const override;
+  std::string name() const override { return "RiskAwareMPPI"; }
+
+private:
+  double alpha_;
+};
+
 }  // namespace mpc_controller_ros2
 
 #endif  // MPC_CONTROLLER_ROS2__WEIGHT_COMPUTATION_HPP_

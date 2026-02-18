@@ -8,6 +8,9 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     # 커스텀 MPPI (기본)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py
 
+    # Headless 모드 (GUI 없이 시뮬레이션만)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py headless:=true
+
     # nav2 기본 MPPI
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=nav2
 
@@ -19,9 +22,18 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
         world:=corridor_world.world map:=corridor_map.yaml
 
+    # Tsallis-MPPI (q-exponential 가중치)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tsallis
+
+    # Risk-Aware MPPI (CVaR 가중치 절단)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=risk_aware
+
 컨트롤러 전환:
-    controller:=custom  → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
-    controller:=nav2    → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
+    controller:=custom      → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
+    controller:=log         → Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)
+    controller:=tsallis     → Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)
+    controller:=risk_aware  → Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)
+    controller:=nav2        → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
 """
 
 import os
@@ -47,8 +59,9 @@ def launch_setup(context, *args, **kwargs):
     # Package directory
     pkg_dir = get_package_share_directory('mpc_controller_ros2')
 
-    # Resolve controller argument
+    # Resolve arguments
     controller_type = LaunchConfiguration('controller').perform(context)
+    headless = LaunchConfiguration('headless').perform(context).lower() == 'true'
 
     # 컨트롤러별 파라미터 파일 선택
     if controller_type == 'nav2':
@@ -61,6 +74,16 @@ def launch_setup(context, *args, **kwargs):
             pkg_dir, 'config', 'nav2_params_log_mppi.yaml'
         )
         controller_label = 'Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)'
+    elif controller_type == 'tsallis':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_tsallis_mppi.yaml'
+        )
+        controller_label = 'Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)'
+    elif controller_type == 'risk_aware':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_risk_aware_mppi.yaml'
+        )
+        controller_label = 'Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)'
     else:
         controller_params_file = os.path.join(
             pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
@@ -90,13 +113,24 @@ def launch_setup(context, *args, **kwargs):
     gz_plugin_path = '/opt/ros/jazzy/lib'
 
     # ========== 1. Gazebo Harmonic ==========
+    gz_cmd = ['gz', 'sim', '-r', '-v4']
+    if headless:
+        gz_cmd.append('-s')  # Server only, no GUI
+    gz_cmd.append(world_file)
+
+    gz_env = {
+        'GZ_SIM_SYSTEM_PLUGIN_PATH': gz_plugin_path,
+        'GZ_SIM_RESOURCE_PATH': os.path.join(pkg_dir, 'models'),
+    }
+    if headless:
+        # Software rendering for headless sensor processing (LiDAR uses ogre2)
+        gz_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        gz_env['MESA_GL_VERSION_OVERRIDE'] = '3.3'
+
     gz_sim = ExecuteProcess(
-        cmd=['gz', 'sim', '-r', '-v4', world_file],
+        cmd=gz_cmd,
         output='screen',
-        additional_env={
-            'GZ_SIM_SYSTEM_PLUGIN_PATH': gz_plugin_path,
-            'GZ_SIM_RESOURCE_PATH': os.path.join(pkg_dir, 'models'),
-        }
+        additional_env=gz_env,
     )
 
     # ========== 2. Robot State Publisher ==========
@@ -288,8 +322,9 @@ rclpy.spin(TwistStamper())
     )
 
     # ========== Launch Nodes ==========
-    return [
+    nodes = [
         LogInfo(msg=f'[MPPI Controller] {controller_label}'),
+        LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
         LogInfo(msg=f'[MPPI Controller] params: {controller_params_file}'),
 
         # 1. Gazebo
@@ -361,15 +396,21 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 10. RVIZ (25s delay)
-        TimerAction(
-            period=25.0,
-            actions=[
-                LogInfo(msg='Starting RVIZ...'),
-                rviz
-            ]
-        ),
     ]
+
+    # 10. RVIZ (25s delay) - headless 모드에서는 비활성화
+    if not headless:
+        nodes.append(
+            TimerAction(
+                period=25.0,
+                actions=[
+                    LogInfo(msg='Starting RVIZ...'),
+                    rviz
+                ]
+            )
+        )
+
+    return nodes
 
 
 def generate_launch_description():
@@ -388,7 +429,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom", "log" (Log-MPPI), or "nav2" (nav2_mppi_controller)'
+            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", or "nav2"'
+        ),
+        DeclareLaunchArgument(
+            'headless',
+            default_value='false',
+            description='Run in headless mode (no Gazebo GUI, no RVIZ)'
         ),
 
         # Environment variables

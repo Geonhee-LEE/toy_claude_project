@@ -82,6 +82,13 @@ struct MPPIParams
   double k_lateral{0.5};   // 측면 오차 게인
   double k_angle{1.0};     // 각도 오차 게인
 
+  // ============================================================================
+  // SOTA 변형 파라미터 (Tsallis, Risk-Aware)
+  // ============================================================================
+
+  double tsallis_q{1.5};     // Tsallis q 파라미터 (q>1 heavy-tail, q<1 light-tail, q=1 Vanilla)
+  double cvar_alpha{0.5};    // CVaR alpha 파라미터 (1.0=risk-neutral, <1=risk-averse)
+
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
   bool visualize_best{true};              // 최적 궤적 표시

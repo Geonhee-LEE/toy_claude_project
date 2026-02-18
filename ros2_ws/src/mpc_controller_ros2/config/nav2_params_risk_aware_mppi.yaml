@@ -1,0 +1,96 @@
+# ============================================================
+# nav2 파라미터 - Risk-Aware (CVaR) MPPI (mpc_controller_ros2)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=risk_aware
+#
+# Risk-Aware MPPI는 CVaR (Conditional Value at Risk) 기반으로
+# 최저 비용 샘플만 선택하여 보수적인 경로를 생성합니다.
+# - alpha = 1.0: 모든 샘플 사용 (Vanilla 동일)
+# - alpha < 1.0: 최저 비용 ceil(alpha*K)개만 사용 (risk-averse)
+# - alpha = 0.1: 상위 10% 최저 비용 샘플만 반영 (매우 보수적)
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 10.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.5
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.3
+      movement_time_allowance: 30.0
+
+    # Goal checker
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    # ---- Risk-Aware (CVaR) MPPI Controller (mpc_controller_ros2) ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::RiskAwareMPPIControllerPlugin"
+
+      # CVaR 고유 파라미터
+      cvar_alpha: 0.5          # 상위 50% 최저 비용 샘플만 사용
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 1024
+      lambda: 10.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: -0.2
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.1
+      R_omega: 0.1
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # Forward preference (후진 페널티)
+      prefer_forward_weight: 15.0
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

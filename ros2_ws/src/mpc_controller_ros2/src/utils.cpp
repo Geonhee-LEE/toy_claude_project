@@ -101,4 +101,27 @@ Eigen::VectorXd colwiseMin(const Eigen::MatrixXd& matrix)
   return min_vals;
 }
 
+Eigen::VectorXd qExponential(const Eigen::VectorXd& x, double q)
+{
+  // q → 1 극한: 표준 exp
+  if (std::abs(q - 1.0) < 1e-8) {
+    return x.array().exp();
+  }
+
+  // exp_q(x) = [1 + (1-q)*x]_+^{1/(1-q)}
+  double one_minus_q = 1.0 - q;
+  double exponent = 1.0 / one_minus_q;
+
+  Eigen::VectorXd result(x.size());
+  for (int i = 0; i < x.size(); ++i) {
+    double base = 1.0 + one_minus_q * x(i);
+    if (base <= 0.0) {
+      result(i) = 0.0;  // [...]_+ = max(0, ...)
+    } else {
+      result(i) = std::pow(base, exponent);
+    }
+  }
+  return result;
+}
+
 }  // namespace mpc_controller_ros2
