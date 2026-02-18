@@ -71,7 +71,7 @@ controller_server:
         time_step: 3
 
       # Transform tolerance
-      transform_tolerance: 0.1
+      transform_tolerance: 1.0
 
       # Enforce path inversion (differential drive에서 후진 허용)
       enforce_path_inversion: false

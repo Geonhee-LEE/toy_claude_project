@@ -346,36 +346,39 @@ rclpy.spin(TwistStamper())
         LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
         LogInfo(msg=f'[MPPI Controller] params: {controller_params_file}'),
 
-        # 1. Gazebo
+        # 1. Gazebo + Bridge (sim time 소스를 먼저 확보)
         gz_sim,
-
-        # 2. Robot State Publisher
-        robot_state_publisher,
-
-        # 3. Bridge
         bridge,
 
-        # 4. Spawn robot (5s delay)
+        # 2. Robot State Publisher (2s delay — /clock 안정화 대기)
         TimerAction(
-            period=5.0,
+            period=2.0,
+            actions=[
+                LogInfo(msg='Starting robot_state_publisher (/clock stabilized)...'),
+                robot_state_publisher,
+            ]
+        ),
+
+        # 3. Spawn robot (6s delay — robot_state_pub 이후)
+        TimerAction(
+            period=6.0,
             actions=[
                 LogInfo(msg='Spawning robot...'),
                 spawn_robot
             ]
         ),
 
-        # 5. Controllers: gz_ros2_control이 자동 활성화하므로 spawner 불필요
-        # 컨트롤러 활성화 대기를 위해 로그만 출력
+        # 4. Controllers: gz_ros2_control이 자동 활성화하므로 spawner 불필요
         TimerAction(
-            period=8.0,
+            period=10.0,
             actions=[
                 LogInfo(msg='Controllers auto-started by gz_ros2_control plugin'),
             ]
         ),
 
-        # 6. Localization nodes (map_server, amcl) - 10s delay
+        # 6. Localization nodes (map_server, amcl) - 12s delay
         TimerAction(
-            period=10.0,
+            period=12.0,
             actions=[
                 LogInfo(msg='Starting localization nodes (map_server, amcl)...'),
                 map_server,
@@ -383,18 +386,18 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 7. Localization lifecycle manager - 13s delay
+        # 7. Localization lifecycle manager - 16s delay
         TimerAction(
-            period=13.0,
+            period=16.0,
             actions=[
                 LogInfo(msg='Activating localization lifecycle...'),
                 lifecycle_manager_localization,
             ]
         ),
 
-        # 8. Navigation nodes - 18s delay
+        # 8. Navigation nodes - 22s delay (localization 안정화 후)
         TimerAction(
-            period=18.0,
+            period=22.0,
             actions=[
                 LogInfo(msg=f'Starting navigation nodes ({controller_type} MPPI)...'),
                 twist_stamper,
@@ -405,9 +408,9 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 9. Navigation lifecycle manager - 21s delay
+        # 9. Navigation lifecycle manager - 26s delay
         TimerAction(
-            period=21.0,
+            period=26.0,
             actions=[
                 LogInfo(msg='Activating navigation lifecycle...'),
                 lifecycle_manager_navigation,
@@ -416,11 +419,11 @@ rclpy.spin(TwistStamper())
 
     ]
 
-    # 10. RVIZ (25s delay) - headless 모드에서는 비활성화
+    # 10. RVIZ (30s delay) - headless 모드에서는 비활성화
     if not headless:
         nodes.append(
             TimerAction(
-                period=25.0,
+                period=30.0,
                 actions=[
                     LogInfo(msg='Starting RVIZ...'),
                     rviz
