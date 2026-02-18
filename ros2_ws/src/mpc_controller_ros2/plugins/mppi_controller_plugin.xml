@@ -13,4 +13,18 @@
       Serves as a base for importance sampling extensions.
     </description>
   </class>
+  <class type="mpc_controller_ros2::TsallisMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Tsallis-MPPI controller plugin for nav2.
+      q-exponential weight computation for exploration/exploitation balance control.
+      q&gt;1: heavy-tail (more exploration), q&lt;1: light-tail (more exploitation).
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::RiskAwareMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Risk-Aware (CVaR) MPPI controller plugin for nav2.
+      Conditional Value at Risk based weight truncation for conservative path planning.
+      alpha&lt;1: risk-averse (uses only best alpha fraction of samples).
+    </description>
+  </class>
 </library>

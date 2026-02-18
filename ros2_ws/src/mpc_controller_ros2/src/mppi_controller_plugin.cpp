@@ -785,6 +785,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "k_lateral", params_.k_lateral);
   node_->declare_parameter(prefix + "k_angle", params_.k_angle);
 
+  // SOTA 변형 파라미터 (Tsallis, Risk-Aware)
+  node_->declare_parameter(prefix + "tsallis_q", params_.tsallis_q);
+  node_->declare_parameter(prefix + "cvar_alpha", params_.cvar_alpha);
+
   // Visualization
   node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
   node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
@@ -795,7 +799,7 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "visualize_tube", params_.visualize_tube);
   node_->declare_parameter(prefix + "max_visualized_samples", params_.max_visualized_samples);
 
-  RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared (M2 features included)");
+  RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared (M2+SOTA features included)");
 }
 
 void MPPIControllerPlugin::loadParameters()
@@ -860,6 +864,10 @@ void MPPIControllerPlugin::loadParameters()
   params_.k_forward = node_->get_parameter(prefix + "k_forward").as_double();
   params_.k_lateral = node_->get_parameter(prefix + "k_lateral").as_double();
   params_.k_angle = node_->get_parameter(prefix + "k_angle").as_double();
+
+  // SOTA 변형 파라미터 (Tsallis, Risk-Aware)
+  params_.tsallis_q = node_->get_parameter(prefix + "tsallis_q").as_double();
+  params_.cvar_alpha = node_->get_parameter(prefix + "cvar_alpha").as_double();
 
   // Visualization
   params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();

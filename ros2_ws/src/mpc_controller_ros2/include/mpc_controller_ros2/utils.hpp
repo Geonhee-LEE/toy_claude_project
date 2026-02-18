@@ -88,6 +88,18 @@ Eigen::VectorXd rowwiseMin(const Eigen::MatrixXd& matrix);
  */
 Eigen::VectorXd colwiseMin(const Eigen::MatrixXd& matrix);
 
+/**
+ * @brief q-Exponential 함수 (Tsallis 통계역학)
+ * @param x 입력 벡터
+ * @param q Tsallis 파라미터 (q→1이면 표준 exp)
+ * @return exp_q(x) = [1 + (1-q)*x]_+^{1/(1-q)}
+ *
+ * q > 1: heavy-tail (탐색 증가)
+ * q < 1: light-tail (집중 증가)
+ * q = 1: 표준 exp (Vanilla MPPI와 동일)
+ */
+Eigen::VectorXd qExponential(const Eigen::VectorXd& x, double q);
+
 }  // namespace mpc_controller_ros2
 
 #endif  // MPC_CONTROLLER_ROS2__UTILS_HPP_

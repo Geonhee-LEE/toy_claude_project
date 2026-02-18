@@ -53,6 +53,8 @@ ament_target_dependencies(mppi_utils
 add_library(mppi_controller_plugin SHARED
   src/mppi_controller_plugin.cpp
   src/log_mppi_controller_plugin.cpp
+  src/tsallis_mppi_controller_plugin.cpp
+  src/risk_aware_mppi_controller_plugin.cpp
   src/weight_computation.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
