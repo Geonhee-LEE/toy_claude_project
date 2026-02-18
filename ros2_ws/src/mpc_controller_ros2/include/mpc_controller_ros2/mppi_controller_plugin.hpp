@@ -17,6 +17,8 @@
 #include "mpc_controller_ros2/batch_dynamics_wrapper.hpp"
 #include "mpc_controller_ros2/cost_functions.hpp"
 #include "mpc_controller_ros2/sampling.hpp"
+#include "mpc_controller_ros2/adaptive_temperature.hpp"
+#include "mpc_controller_ros2/tube_mppi.hpp"
 #include "mpc_controller_ros2/weight_computation.hpp"
 
 namespace mpc_controller_ros2
@@ -34,6 +36,12 @@ struct MPPIInfo
   double temperature;
   double ess;
   Eigen::VectorXd costs;
+
+  // M2 확장 정보
+  bool colored_noise_used{false};
+  bool adaptive_temp_used{false};
+  bool tube_mppi_used{false};
+  TubeMPPIInfo tube_info;  // Tube-MPPI 정보
 };
 
 /**
@@ -111,13 +119,24 @@ private:
   std::unique_ptr<CompositeMPPICost> cost_function_;
   std::unique_ptr<BaseSampler> sampler_;
 
+  // M2 확장 컴포넌트
+  std::unique_ptr<AdaptiveTemperature> adaptive_temp_;
+  std::unique_ptr<TubeMPPI> tube_mppi_;
+
   // State
   nav_msgs::msg::Path global_plan_;
   Eigen::MatrixXd control_sequence_;  // N x 2
+  Eigen::MatrixXd nominal_trajectory_;  // N+1 x 3 (Tube-MPPI용)
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
 
   std::string plugin_name_;
+
+  // Tube 시각화
+  void publishTubeVisualization(
+    const TubeMPPIInfo& tube_info,
+    const Eigen::MatrixXd& nominal_trajectory
+  );
 };
 
 }  // namespace mpc_controller_ros2

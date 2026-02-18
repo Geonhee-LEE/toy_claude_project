@@ -33,7 +33,37 @@ void MPPIControllerPlugin::configure(
 
   // Initialize components
   dynamics_ = std::make_unique<BatchDynamicsWrapper>(params_);
-  sampler_ = std::make_unique<GaussianSampler>(params_.noise_sigma);
+
+  // 샘플러 선택: Colored Noise vs Gaussian
+  if (params_.colored_noise) {
+    sampler_ = std::make_unique<ColoredNoiseSampler>(
+      params_.noise_sigma,
+      params_.noise_beta
+    );
+    RCLCPP_INFO(node_->get_logger(), "Using ColoredNoiseSampler (beta=%.2f)", params_.noise_beta);
+  } else {
+    sampler_ = std::make_unique<GaussianSampler>(params_.noise_sigma);
+    RCLCPP_INFO(node_->get_logger(), "Using GaussianSampler");
+  }
+
+  // Adaptive Temperature 초기화
+  if (params_.adaptive_temperature) {
+    adaptive_temp_ = std::make_unique<AdaptiveTemperature>(
+      params_.lambda,
+      params_.target_ess_ratio,
+      params_.adaptation_rate,
+      params_.lambda_min,
+      params_.lambda_max
+    );
+    RCLCPP_INFO(node_->get_logger(), "Adaptive Temperature enabled (target ESS ratio=%.2f)",
+      params_.target_ess_ratio);
+  }
+
+  // Tube-MPPI 초기화
+  if (params_.tube_enabled) {
+    tube_mppi_ = std::make_unique<TubeMPPI>(params_);
+    RCLCPP_INFO(node_->get_logger(), "Tube-MPPI enabled (tube_width=%.2f)", params_.tube_width);
+  }
 
   // Initialize cost function
   cost_function_ = std::make_unique<CompositeMPPICost>();
@@ -148,9 +178,34 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     auto end_time = std::chrono::high_resolution_clock::now();
     double computation_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
+    // 4.5. Tube-MPPI 피드백 보정 (활성화된 경우)
+    Eigen::Vector2d final_control = u_opt;
+    if (params_.tube_enabled && tube_mppi_) {
+      auto [corrected_control, tube_info] = tube_mppi_->computeCorrectedControl(
+        u_opt,
+        info.weighted_avg_trajectory,
+        current_state
+      );
+      final_control = corrected_control;
+      info.tube_info = tube_info;
+      info.tube_mppi_used = true;
+
+      RCLCPP_DEBUG(
+        node_->get_logger(),
+        "Tube-MPPI: e_fwd=%.3f, e_lat=%.3f, e_ang=%.3f, dv=%.3f, dw=%.3f",
+        tube_info.body_error(0), tube_info.body_error(1), tube_info.body_error(2),
+        tube_info.feedback_correction(0), tube_info.feedback_correction(1)
+      );
+
+      // Tube 시각화
+      if (params_.visualize_tube) {
+        publishTubeVisualization(tube_info, info.weighted_avg_trajectory);
+      }
+    }
+
     // 5. Apply speed limit if set
-    double v_cmd = u_opt(0);
-    double omega_cmd = u_opt(1);
+    double v_cmd = final_control(0);
+    double omega_cmd = final_control(1);
 
     if (speed_limit_valid_) {
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
@@ -257,8 +312,20 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
     reference_trajectory
   );
 
-  // 6. Compute weights via strategy
-  Eigen::VectorXd weights = weight_computation_->compute(costs, params_.lambda);
+  // 6. Compute weights via strategy (Adaptive Temperature 적용)
+  double current_lambda = params_.lambda;
+  if (params_.adaptive_temperature && adaptive_temp_) {
+    Eigen::VectorXd temp_weights = weight_computation_->compute(costs, current_lambda);
+    double ess = computeESS(temp_weights);
+    current_lambda = adaptive_temp_->update(ess, K);
+
+    RCLCPP_DEBUG(
+      node_->get_logger(),
+      "Adaptive Temp: ESS=%.1f, λ=%.2f→%.2f",
+      ess, params_.lambda, current_lambda
+    );
+  }
+  Eigen::VectorXd weights = weight_computation_->compute(costs, current_lambda);
 
   // 7. Update control sequence with weighted average of noise
   Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
@@ -292,9 +359,15 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
   info.sample_weights = weights;
   info.best_trajectory = trajectories[best_idx];
   info.weighted_avg_trajectory = weighted_traj;
-  info.temperature = params_.lambda;
+  info.temperature = (params_.adaptive_temperature && adaptive_temp_) ?
+    adaptive_temp_->getLambda() : params_.lambda;
   info.ess = ess;
   info.costs = costs;
+
+  // M2 확장 정보
+  info.colored_noise_used = params_.colored_noise;
+  info.adaptive_temp_used = params_.adaptive_temperature;
+  info.tube_mppi_used = params_.tube_enabled;
 
   RCLCPP_DEBUG(
     node_->get_logger(),
@@ -694,6 +767,24 @@ void MPPIControllerPlugin::declareParameters()
   // Forward preference
   node_->declare_parameter(prefix + "prefer_forward_weight", params_.prefer_forward_weight);
 
+  // Phase 1: Colored Noise
+  node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
+  node_->declare_parameter(prefix + "noise_beta", params_.noise_beta);
+
+  // Phase 2: Adaptive Temperature
+  node_->declare_parameter(prefix + "adaptive_temperature", params_.adaptive_temperature);
+  node_->declare_parameter(prefix + "target_ess_ratio", params_.target_ess_ratio);
+  node_->declare_parameter(prefix + "adaptation_rate", params_.adaptation_rate);
+  node_->declare_parameter(prefix + "lambda_min", params_.lambda_min);
+  node_->declare_parameter(prefix + "lambda_max", params_.lambda_max);
+
+  // Phase 3: Tube-MPPI
+  node_->declare_parameter(prefix + "tube_enabled", params_.tube_enabled);
+  node_->declare_parameter(prefix + "tube_width", params_.tube_width);
+  node_->declare_parameter(prefix + "k_forward", params_.k_forward);
+  node_->declare_parameter(prefix + "k_lateral", params_.k_lateral);
+  node_->declare_parameter(prefix + "k_angle", params_.k_angle);
+
   // Visualization
   node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
   node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
@@ -701,9 +792,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "visualize_reference", params_.visualize_reference);
   node_->declare_parameter(prefix + "visualize_text_info", params_.visualize_text_info);
   node_->declare_parameter(prefix + "visualize_control_sequence", params_.visualize_control_sequence);
+  node_->declare_parameter(prefix + "visualize_tube", params_.visualize_tube);
   node_->declare_parameter(prefix + "max_visualized_samples", params_.max_visualized_samples);
 
-  RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared");
+  RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared (M2 features included)");
 }
 
 void MPPIControllerPlugin::loadParameters()
@@ -751,6 +843,24 @@ void MPPIControllerPlugin::loadParameters()
   // Forward preference
   params_.prefer_forward_weight = node_->get_parameter(prefix + "prefer_forward_weight").as_double();
 
+  // Phase 1: Colored Noise
+  params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();
+  params_.noise_beta = node_->get_parameter(prefix + "noise_beta").as_double();
+
+  // Phase 2: Adaptive Temperature
+  params_.adaptive_temperature = node_->get_parameter(prefix + "adaptive_temperature").as_bool();
+  params_.target_ess_ratio = node_->get_parameter(prefix + "target_ess_ratio").as_double();
+  params_.adaptation_rate = node_->get_parameter(prefix + "adaptation_rate").as_double();
+  params_.lambda_min = node_->get_parameter(prefix + "lambda_min").as_double();
+  params_.lambda_max = node_->get_parameter(prefix + "lambda_max").as_double();
+
+  // Phase 3: Tube-MPPI
+  params_.tube_enabled = node_->get_parameter(prefix + "tube_enabled").as_bool();
+  params_.tube_width = node_->get_parameter(prefix + "tube_width").as_double();
+  params_.k_forward = node_->get_parameter(prefix + "k_forward").as_double();
+  params_.k_lateral = node_->get_parameter(prefix + "k_lateral").as_double();
+  params_.k_angle = node_->get_parameter(prefix + "k_angle").as_double();
+
   // Visualization
   params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();
   params_.visualize_best = node_->get_parameter(prefix + "visualize_best").as_bool();
@@ -758,12 +868,20 @@ void MPPIControllerPlugin::loadParameters()
   params_.visualize_reference = node_->get_parameter(prefix + "visualize_reference").as_bool();
   params_.visualize_text_info = node_->get_parameter(prefix + "visualize_text_info").as_bool();
   params_.visualize_control_sequence = node_->get_parameter(prefix + "visualize_control_sequence").as_bool();
+  params_.visualize_tube = node_->get_parameter(prefix + "visualize_tube").as_bool();
   params_.max_visualized_samples = node_->get_parameter(prefix + "max_visualized_samples").as_int();
 
   RCLCPP_INFO(
     node_->get_logger(),
     "MPPI parameters loaded: N=%d, K=%d, dt=%.3f, lambda=%.1f",
     params_.N, params_.K, params_.dt, params_.lambda
+  );
+  RCLCPP_INFO(
+    node_->get_logger(),
+    "M2 features: colored_noise=%s, adaptive_temp=%s, tube_mppi=%s",
+    params_.colored_noise ? "ON" : "OFF",
+    params_.adaptive_temperature ? "ON" : "OFF",
+    params_.tube_enabled ? "ON" : "OFF"
   );
 }
 
@@ -1051,6 +1169,118 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
   }
 
   return result;
+}
+
+void MPPIControllerPlugin::publishTubeVisualization(
+  const TubeMPPIInfo& tube_info,
+  const Eigen::MatrixXd& nominal_trajectory
+)
+{
+  if (!marker_pub_ || marker_pub_->get_subscription_count() == 0) {
+    return;
+  }
+
+  visualization_msgs::msg::MarkerArray marker_array;
+  auto stamp = node_->now();
+  std::string frame_id = "map";
+
+  // Tube 경계 계산
+  auto boundaries = tube_mppi_->computeTubeBoundary(nominal_trajectory);
+
+  if (boundaries.empty()) {
+    return;
+  }
+
+  // 좌측 경계선
+  visualization_msgs::msg::Marker left_marker;
+  left_marker.header.stamp = stamp;
+  left_marker.header.frame_id = frame_id;
+  left_marker.ns = "mppi_tube_left";
+  left_marker.id = 0;
+  left_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  left_marker.action = visualization_msgs::msg::Marker::ADD;
+  left_marker.scale.x = 0.02;
+  left_marker.color.r = 1.0;
+  left_marker.color.g = 0.5;
+  left_marker.color.b = 0.0;
+  left_marker.color.a = 0.6;
+
+  // 우측 경계선
+  visualization_msgs::msg::Marker right_marker = left_marker;
+  right_marker.ns = "mppi_tube_right";
+
+  for (const auto& pair : boundaries) {
+    geometry_msgs::msg::Point left_pt, right_pt;
+    left_pt.x = pair.first(0);
+    left_pt.y = pair.first(1);
+    left_pt.z = 0.0;
+    right_pt.x = pair.second(0);
+    right_pt.y = pair.second(1);
+    right_pt.z = 0.0;
+
+    left_marker.points.push_back(left_pt);
+    right_marker.points.push_back(right_pt);
+  }
+
+  marker_array.markers.push_back(left_marker);
+  marker_array.markers.push_back(right_marker);
+
+  // Nominal 상태 마커 (Tube-MPPI가 추적하는 이상 위치)
+  visualization_msgs::msg::Marker nominal_marker;
+  nominal_marker.header.stamp = stamp;
+  nominal_marker.header.frame_id = frame_id;
+  nominal_marker.ns = "mppi_nominal_state";
+  nominal_marker.id = 0;
+  nominal_marker.type = visualization_msgs::msg::Marker::SPHERE;
+  nominal_marker.action = visualization_msgs::msg::Marker::ADD;
+  nominal_marker.pose.position.x = tube_info.nominal_state(0);
+  nominal_marker.pose.position.y = tube_info.nominal_state(1);
+  nominal_marker.pose.position.z = 0.05;
+  nominal_marker.pose.orientation.w = 1.0;
+  nominal_marker.scale.x = 0.15;
+  nominal_marker.scale.y = 0.15;
+  nominal_marker.scale.z = 0.15;
+  nominal_marker.color.r = 1.0;
+  nominal_marker.color.g = 0.8;
+  nominal_marker.color.b = 0.0;
+  nominal_marker.color.a = 0.9;
+  marker_array.markers.push_back(nominal_marker);
+
+  // 피드백 보정 벡터 화살표
+  if (tube_info.feedback_correction.norm() > 0.01) {
+    visualization_msgs::msg::Marker fb_arrow;
+    fb_arrow.header.stamp = stamp;
+    fb_arrow.header.frame_id = frame_id;
+    fb_arrow.ns = "mppi_feedback_correction";
+    fb_arrow.id = 0;
+    fb_arrow.type = visualization_msgs::msg::Marker::ARROW;
+    fb_arrow.action = visualization_msgs::msg::Marker::ADD;
+
+    geometry_msgs::msg::Point start, end;
+    start.x = tube_info.nominal_state(0);
+    start.y = tube_info.nominal_state(1);
+    start.z = 0.1;
+
+    // 피드백 보정 방향 표시
+    double theta = tube_info.nominal_state(2);
+    double correction_length = 0.5 * tube_info.feedback_correction(0);
+    end.x = start.x + correction_length * std::cos(theta);
+    end.y = start.y + correction_length * std::sin(theta);
+    end.z = 0.1;
+
+    fb_arrow.points.push_back(start);
+    fb_arrow.points.push_back(end);
+    fb_arrow.scale.x = 0.04;
+    fb_arrow.scale.y = 0.08;
+    fb_arrow.scale.z = 0.08;
+    fb_arrow.color.r = 1.0;
+    fb_arrow.color.g = 0.0;
+    fb_arrow.color.b = 1.0;
+    fb_arrow.color.a = 0.8;
+    marker_array.markers.push_back(fb_arrow);
+  }
+
+  marker_pub_->publish(marker_array);
 }
 
 }  // namespace mpc_controller_ros2
