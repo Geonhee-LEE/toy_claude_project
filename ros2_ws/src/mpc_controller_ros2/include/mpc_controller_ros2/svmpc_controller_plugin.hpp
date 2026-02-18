@@ -44,7 +44,7 @@ protected:
     const Eigen::MatrixXd& reference_trajectory
   ) override;
 
-private:
+protected:
   /**
    * @brief SVGD force 계산: attractive + repulsive
    *

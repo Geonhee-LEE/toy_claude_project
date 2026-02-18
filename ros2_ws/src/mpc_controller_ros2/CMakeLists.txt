@@ -56,6 +56,9 @@ add_library(mppi_controller_plugin SHARED
   src/tsallis_mppi_controller_plugin.cpp
   src/risk_aware_mppi_controller_plugin.cpp
   src/svmpc_controller_plugin.cpp
+  src/smooth_mppi_controller_plugin.cpp
+  src/spline_mppi_controller_plugin.cpp
+  src/svg_mppi_controller_plugin.cpp
   src/weight_computation.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
@@ -211,6 +214,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_svmpc test/unit/test_svmpc.cpp)
   if(TARGET test_svmpc)
     target_link_libraries(test_svmpc mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_m35_plugins test/unit/test_m35_plugins.cpp)
+  if(TARGET test_m35_plugins)
+    target_link_libraries(test_m35_plugins mppi_controller_plugin)
   endif()
 endif()
 
