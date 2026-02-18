@@ -148,6 +148,21 @@ def launch_setup(context, *args, **kwargs):
 
     gz_plugin_path = '/opt/ros/jazzy/lib'
 
+    # ========== 0. 이전 세션 잔여 프로세스 정리 ==========
+    # 이전 launch가 깨끗하게 종료되지 않으면 gz sim, ros_gz_bridge,
+    # nav2 노드 등이 살아남아 /scan, /clock 토픽 충돌을 일으킴.
+    cleanup_stale = ExecuteProcess(
+        cmd=['bash', '-c',
+             'pkill -9 -f "gz sim" 2>/dev/null; '
+             'pkill -9 -f "ros_gz_bridge" 2>/dev/null; '
+             'pkill -9 -f "controller_server" 2>/dev/null; '
+             'pkill -9 -f "robot_state_publisher" 2>/dev/null; '
+             'pkill -9 -f "nav2_" 2>/dev/null; '
+             'pkill -9 -f "twist_stamper" 2>/dev/null; '
+             'sleep 2; echo "[cleanup] Stale processes killed"'],
+        output='screen',
+    )
+
     # ========== 1. Gazebo Harmonic ==========
     gz_cmd = ['gz', 'sim', '-r', '-v4']
     if headless:
@@ -346,22 +361,31 @@ rclpy.spin(TwistStamper())
         LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
         LogInfo(msg=f'[MPPI Controller] params: {controller_params_file}'),
 
-        # 1. Gazebo + Bridge (sim time 소스를 먼저 확보)
-        gz_sim,
-        bridge,
+        # 0. 이전 세션 잔여 프로세스 정리
+        cleanup_stale,
 
-        # 2. Robot State Publisher (2s delay — /clock 안정화 대기)
+        # 1. Gazebo + Bridge (3s delay — cleanup 완료 대기)
         TimerAction(
-            period=2.0,
+            period=3.0,
+            actions=[
+                LogInfo(msg='Starting Gazebo + Bridge...'),
+                gz_sim,
+                bridge,
+            ]
+        ),
+
+        # 2. Robot State Publisher (6s delay — /clock 안정화 대기)
+        TimerAction(
+            period=6.0,
             actions=[
                 LogInfo(msg='Starting robot_state_publisher (/clock stabilized)...'),
                 robot_state_publisher,
             ]
         ),
 
-        # 3. Spawn robot (6s delay — robot_state_pub 이후)
+        # 3. Spawn robot (10s delay — robot_state_pub 이후)
         TimerAction(
-            period=6.0,
+            period=10.0,
             actions=[
                 LogInfo(msg='Spawning robot...'),
                 spawn_robot
@@ -370,15 +394,15 @@ rclpy.spin(TwistStamper())
 
         # 4. Controllers: gz_ros2_control이 자동 활성화하므로 spawner 불필요
         TimerAction(
-            period=10.0,
+            period=14.0,
             actions=[
                 LogInfo(msg='Controllers auto-started by gz_ros2_control plugin'),
             ]
         ),
 
-        # 6. Localization nodes (map_server, amcl) - 12s delay
+        # 5. Localization nodes (map_server, amcl) - 16s delay
         TimerAction(
-            period=12.0,
+            period=16.0,
             actions=[
                 LogInfo(msg='Starting localization nodes (map_server, amcl)...'),
                 map_server,
@@ -386,18 +410,18 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 7. Localization lifecycle manager - 16s delay
+        # 6. Localization lifecycle manager - 20s delay
         TimerAction(
-            period=16.0,
+            period=20.0,
             actions=[
                 LogInfo(msg='Activating localization lifecycle...'),
                 lifecycle_manager_localization,
             ]
         ),
 
-        # 8. Navigation nodes - 22s delay (localization 안정화 후)
+        # 7. Navigation nodes - 26s delay (localization 안정화 후)
         TimerAction(
-            period=22.0,
+            period=26.0,
             actions=[
                 LogInfo(msg=f'Starting navigation nodes ({controller_type} MPPI)...'),
                 twist_stamper,
@@ -408,9 +432,9 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 9. Navigation lifecycle manager - 26s delay
+        # 8. Navigation lifecycle manager - 30s delay
         TimerAction(
-            period=26.0,
+            period=30.0,
             actions=[
                 LogInfo(msg='Activating navigation lifecycle...'),
                 lifecycle_manager_navigation,
@@ -419,11 +443,11 @@ rclpy.spin(TwistStamper())
 
     ]
 
-    # 10. RVIZ (30s delay) - headless 모드에서는 비활성화
+    # 9. RVIZ (34s delay) - headless 모드에서는 비활성화
     if not headless:
         nodes.append(
             TimerAction(
-                period=30.0,
+                period=34.0,
                 actions=[
                     LogInfo(msg='Starting RVIZ...'),
                     rviz
