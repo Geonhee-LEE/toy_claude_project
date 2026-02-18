@@ -56,6 +56,11 @@ def launch_setup(context, *args, **kwargs):
             pkg_dir, 'config', 'nav2_params_nav2_mppi.yaml'
         )
         controller_label = 'nav2 기본 MPPI (nav2_mppi_controller::MPPIController)'
+    elif controller_type == 'log':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_log_mppi.yaml'
+        )
+        controller_label = 'Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)'
     else:
         controller_params_file = os.path.join(
             pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
@@ -383,7 +388,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom" (mpc_controller_ros2) or "nav2" (nav2_mppi_controller)'
+            description='MPPI controller type: "custom", "log" (Log-MPPI), or "nav2" (nav2_mppi_controller)'
         ),
 
         # Environment variables

@@ -6,4 +6,11 @@
       Supports differential drive robots with trajectory tracking and obstacle avoidance.
     </description>
   </class>
+  <class type="mpc_controller_ros2::LogMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Log-MPPI controller plugin for nav2.
+      Log-space weight computation variant of MPPI for improved numerical stability.
+      Serves as a base for importance sampling extensions.
+    </description>
+  </class>
 </library>

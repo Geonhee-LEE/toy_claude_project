@@ -17,6 +17,7 @@
 #include "mpc_controller_ros2/batch_dynamics_wrapper.hpp"
 #include "mpc_controller_ros2/cost_functions.hpp"
 #include "mpc_controller_ros2/sampling.hpp"
+#include "mpc_controller_ros2/weight_computation.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -41,7 +42,7 @@ struct MPPIInfo
 class MPPIControllerPlugin : public nav2_core::Controller
 {
 public:
-  MPPIControllerPlugin() = default;
+  MPPIControllerPlugin();
   ~MPPIControllerPlugin() override = default;
 
   // nav2_core::Controller 인터페이스
@@ -64,6 +65,10 @@ public:
 
   void setPlan(const nav_msgs::msg::Path& path) override;
   void setSpeedLimit(const double& speed_limit, const bool& percentage) override;
+
+protected:
+  // Weight computation strategy (서브클래스에서 교체 가능)
+  std::unique_ptr<WeightComputation> weight_computation_;
 
 private:
   // MPPI 핵심 알고리즘

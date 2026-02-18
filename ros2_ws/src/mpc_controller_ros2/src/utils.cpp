@@ -45,6 +45,12 @@ Eigen::VectorXd softmaxWeights(const Eigen::VectorXd& costs, double lambda)
   return exp_vals / sum;
 }
 
+double logSumExp(const Eigen::VectorXd& values)
+{
+  double max_val = values.maxCoeff();
+  return max_val + std::log((values.array() - max_val).exp().sum());
+}
+
 double quaternionToYaw(const geometry_msgs::msg::Quaternion& quat)
 {
   // Convert quaternion to yaw using atan2

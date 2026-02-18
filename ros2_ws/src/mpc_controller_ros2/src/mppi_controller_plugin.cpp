@@ -8,6 +8,11 @@ PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Con
 namespace mpc_controller_ros2
 {
 
+MPPIControllerPlugin::MPPIControllerPlugin()
+  : weight_computation_(std::make_unique<VanillaMPPIWeights>())
+{
+}
+
 void MPPIControllerPlugin::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent,
   std::string name,
@@ -56,7 +61,10 @@ void MPPIControllerPlugin::configure(
     std::bind(&MPPIControllerPlugin::onSetParametersCallback, this, std::placeholders::_1)
   );
 
-  RCLCPP_INFO(node_->get_logger(), "MPPI controller configured successfully");
+  RCLCPP_INFO(
+    node_->get_logger(), "MPPI controller configured successfully (weight strategy: %s)",
+    weight_computation_->name().c_str()
+  );
 }
 
 void MPPIControllerPlugin::cleanup()
@@ -249,8 +257,8 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
     reference_trajectory
   );
 
-  // 6. Compute softmax weights
-  Eigen::VectorXd weights = softmaxWeights(costs, params_.lambda);
+  // 6. Compute weights via strategy
+  Eigen::VectorXd weights = weight_computation_->compute(costs, params_.lambda);
 
   // 7. Update control sequence with weighted average of noise
   Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
