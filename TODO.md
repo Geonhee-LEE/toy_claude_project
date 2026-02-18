@@ -7,7 +7,6 @@
 ## 🔴 High Priority (P0)
 
 - [ ] 실제 로봇 인터페이스 — 하드웨어 연동 테스트
-- [ ] M3.5 C++ 포팅 — Smooth/Spline/SVG-MPPI nav2 플러그인
 
 ## 🟠 Medium Priority (P1)
 
@@ -20,6 +19,7 @@
 - [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
 - [ ] 속도 제약 고려 MPC — 가속도/저크 제한
 - [ ] CI/CD 파이프라인 개선 — 자동 테스트 및 배포
+- [ ] pybind11 Python 바인딩 — C++ ↔ Python 연동
 
 ## 🟢 Low Priority (P2)
 
@@ -41,7 +41,7 @@
 - [ ] API 문서 자동 생성 — Sphinx/MkDocs
 - [ ] 튜토리얼 작성 — 사용법 상세 가이드
 - [ ] 아키텍처 문서 작성 — 시스템 설계 문서
-- [ ] MPPI 기술 가이드 업데이트 — M3.5 변형 설명 추가
+- [x] MPPI 기술 가이드 업데이트 — M3.5 변형 설명 추가
 
 ## 🐛 Bug Fixes
 
@@ -54,6 +54,16 @@
 ## ✅ Completed
 
 ### 2026-02-18
+- [x] #87 M3.5 Smooth/Spline/SVG-MPPI C++ nav2 플러그인 구현 (PR #88)
+  * SmoothMPPIControllerPlugin: Δu space 최적화 + jerk cost (Kim et al. 2021)
+  * SplineMPPIControllerPlugin: B-spline basis 보간 P knots → N timesteps (ICRA 2024)
+  * SVGMPPIControllerPlugin: G guide SVGD + follower resampling (Kondo et al., ICRA 2024)
+  * 12개 파라미터 추가 (mppi_params.hpp)
+  * svmpc private→protected (SVG-MPPI SVGD 메서드 재사용)
+  * plugin XML + CMakeLists + YAML 설정 3개 + launch 분기 3개
+  * 단위 테스트 16개 통과, 기존 8개 회귀 없음
+  * launch: `controller:=smooth/spline/svg`
+  * **M3.5 C++ 포팅 완료** (M5a + M5b + M3.5 C++ 전체 완료)
 - [x] #85 SVMPC (Stein Variational MPC) C++ nav2 플러그인 구현 (PR #86)
   * SVMPCControllerPlugin: SVGD 커널 기반 샘플 다양성 유도
   * computeControl() virtual화 + private→protected 리팩터링
@@ -226,7 +236,7 @@
 ## 💡 Ideas / Backlog
 
 - 강화학습 기반 MPC 튜닝
-- ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~
+- ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~, ~~M3.5 C++ 완료~~
 - 실제 로봇 테스트 환경 구축
 - 슬립 모델 적용
 - 적응형 MPC 가중치 튜닝

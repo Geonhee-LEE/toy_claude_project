@@ -154,6 +154,16 @@ MPPI 알고리즘 흐름:
 - **FR-56**: C++ Adaptive Temperature (ESS 기반 λ 자동 조정)
 - **FR-57**: C++ Tube-MPPI (AncillaryController)
 
+#### M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
+- **FR-58**: SmoothMPPIControllerPlugin — Δu space 최적화 + cumsum 복원 + jerk cost
+- **FR-59**: SplineMPPIControllerPlugin — B-spline basis (de Boor 재귀) + P knot → N 보간
+- **FR-60**: SVGMPPIControllerPlugin — G guide SVGD + (K-G) follower resampling
+- **FR-61**: svmpc_controller_plugin.hpp private→protected (SVGD 메서드 재사용)
+- **FR-62**: mppi_params.hpp M3.5 전용 12개 파라미터 추가
+- **FR-63**: nav2_params_{smooth,spline,svg}_mppi.yaml 설정 파일
+- **FR-64**: launch 분기 3개 (controller:=smooth/spline/svg)
+- **FR-65**: 단위 테스트 16개 (B-spline basis, cumsum, jerk cost, guide selection 등)
+
 ### 2.7 비기능 요구사항
 
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
@@ -234,8 +244,11 @@ MPPIControllerPlugin (base)                                   │
   ├── LogMPPIControllerPlugin (상속 + LogMPPIWeights)         │
   ├── TsallisMPPIControllerPlugin (상속 + TsallisMPPIWeights) │
   ├── RiskAwareMPPIControllerPlugin (상속 + RiskAwareMPPIWeights)
+  ├── SmoothMPPIControllerPlugin (Δu space + jerk cost)      │
+  ├── SplineMPPIControllerPlugin (B-spline basis 보간)       │
   └── SVMPCControllerPlugin (상속 + computeControl override)  │
-        └─ SVGD Loop: RBF kernel, attractive+repulsive force │
+        ├─ SVGD Loop: RBF kernel, attractive+repulsive force │
+        └── SVGMPPIControllerPlugin (Guide SVGD + follower)  │
                                                               │
   WeightComputation (Strategy 인터페이스)                     │
   ├── VanillaMPPIWeights (softmax, max-shift)                 │
@@ -251,6 +264,9 @@ ros2_ws/src/mpc_controller_ros2/
 │   ├── tsallis_mppi_controller_plugin.hpp # Tsallis-MPPI 플러그인
 │   ├── risk_aware_mppi_controller_plugin.hpp # Risk-Aware MPPI 플러그인
 │   ├── svmpc_controller_plugin.hpp        # SVMPC 플러그인 (SVGD override)
+│   ├── smooth_mppi_controller_plugin.hpp  # Smooth-MPPI 플러그인 (Δu space)
+│   ├── spline_mppi_controller_plugin.hpp  # Spline-MPPI 플러그인 (B-spline)
+│   ├── svg_mppi_controller_plugin.hpp     # SVG-MPPI 플러그인 (Guide SVGD)
 │   ├── weight_computation.hpp             # Strategy 인터페이스 + 4종 구현
 │   ├── mppi_params.hpp                    # 파라미터 (M2+SOTA+SVGD)
 │   ├── batch_dynamics_wrapper.hpp         # 배치 동역학 (Eigen)
@@ -265,19 +281,26 @@ ros2_ws/src/mpc_controller_ros2/
 │   ├── tsallis_mppi_controller_plugin.cpp
 │   ├── risk_aware_mppi_controller_plugin.cpp
 │   ├── svmpc_controller_plugin.cpp
+│   ├── smooth_mppi_controller_plugin.cpp
+│   ├── spline_mppi_controller_plugin.cpp
+│   ├── svg_mppi_controller_plugin.cpp
 │   ├── weight_computation.cpp
 │   └── ...
 ├── plugins/
-│   └── mppi_controller_plugin.xml         # 5종 플러그인 등록
+│   └── mppi_controller_plugin.xml         # 8종 플러그인 등록
 ├── config/
 │   ├── nav2_params_custom_mppi.yaml       # Vanilla MPPI 설정
 │   ├── nav2_params_log_mppi.yaml          # Log-MPPI 설정
 │   ├── nav2_params_tsallis_mppi.yaml      # Tsallis-MPPI 설정
 │   ├── nav2_params_risk_aware_mppi.yaml   # Risk-Aware MPPI 설정
-│   └── nav2_params_svmpc.yaml             # SVMPC 설정
+│   ├── nav2_params_svmpc.yaml             # SVMPC 설정
+│   ├── nav2_params_smooth_mppi.yaml      # Smooth-MPPI 설정
+│   ├── nav2_params_spline_mppi.yaml      # Spline-MPPI 설정
+│   └── nav2_params_svg_mppi.yaml         # SVG-MPPI 설정
 └── test/unit/
     ├── test_weight_computation.cpp        # 30개 단위 테스트
-    └── test_svmpc.cpp                     # 13개 SVGD 테스트
+    ├── test_svmpc.cpp                     # 13개 SVGD 테스트
+    └── test_m35_plugins.cpp              # 16개 M3.5 테스트
 ```
 
 ### Python 파일 구조
@@ -388,10 +411,10 @@ M5b: C++ MPPI M2 고도화 ✅ 완료 (PR #74)
 ├── ✅ Adaptive Temperature (ESS 기반 λ)
 └── ✅ Tube-MPPI (AncillaryController)
 
-M6: C++ M3.5 변형 (예정)
-├── ⬜ Smooth-MPPI C++ 플러그인 (Δu input-lifting)
-├── ⬜ Spline-MPPI C++ 플러그인 (B-spline basis)
-└── ⬜ SVG-MPPI C++ 플러그인 (Guide particle SVGD)
+M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
+├── ✅ Smooth-MPPI C++ 플러그인 (Δu input-lifting + jerk cost)
+├── ✅ Spline-MPPI C++ 플러그인 (B-spline basis, de Boor 재귀)
+└── ✅ SVG-MPPI C++ 플러그인 (Guide particle SVGD + follower resampling)
 
 GPU 가속 (예정)
 ├── CuPy/JAX 기반 rollout + cost 병렬화
