@@ -513,7 +513,6 @@ python examples/mpc_benchmark.py               # 성능 벤치마크
 | M2 | Williams et al. (2018) "Robust Sampling Based MPPI" | Tube-MPPI, 외란 강건성 |
 | M3b | Yin et al. (2021) "Trajectory Distribution Control via Tsallis Entropy" | Tsallis q-exponential |
 | M3c | Yin et al. (2023) "Risk-Aware MPPI" | CVaR 기반 위험 인지 |
-| M3c | Yin et al. (2023) "Risk-Aware MPPI" | CVaR 기반 위험 인지 |
 | M3d | Lambert et al. (2020) "Stein Variational MPC" | 커널 기반 샘플 다양성 |
 | M3.5a | Kim et al. (2021) "Smooth MPPI" | Δu input-lifting, jerk cost |
 | M3.5b | Bhardwaj et al. (2024) "Spline-MPPI" (ICRA 2024) | B-spline basis 보간 |
