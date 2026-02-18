@@ -240,6 +240,62 @@ TEST(BSplineBasis, DifferentParameters)
 }
 
 // ============================================================================
+// Spline-MPPI Auto Sigma / Pseudo-Inverse 테스트
+// ============================================================================
+
+TEST(SplineMPPI, AutoSigmaAmplification)
+{
+  // Auto sigma: amp_factor = sqrt(1 / mean(row_sq_sum))
+  // B-spline basis의 각 행 L2 norm² < 1 이므로 amp_factor > 1
+  int N = 30;
+  int P = 12;
+  int degree = 3;
+
+  Eigen::MatrixXd basis = SplineMPPIControllerPlugin::computeBSplineBasis(N, P, degree);
+
+  double mean_row_sq_sum = 0.0;
+  for (int i = 0; i < N; ++i) {
+    mean_row_sq_sum += basis.row(i).squaredNorm();
+  }
+  mean_row_sq_sum /= N;
+
+  double amp_factor = std::sqrt(1.0 / mean_row_sq_sum);
+
+  // amp_factor > 1 (basis 감쇠 보정)
+  EXPECT_GT(amp_factor, 1.0) << "amp_factor=" << amp_factor;
+  // 합리적 범위 (1, 10)
+  EXPECT_LT(amp_factor, 10.0) << "amp_factor=" << amp_factor;
+}
+
+TEST(SplineMPPI, PseudoInverseReconstruct)
+{
+  // pinv(B) @ B @ knots ≈ knots (P < N 이면 완벽하지 않지만 근사)
+  int N = 30;
+  int P = 12;
+  int degree = 3;
+
+  Eigen::MatrixXd basis = SplineMPPIControllerPlugin::computeBSplineBasis(N, P, degree);
+  Eigen::MatrixXd pinv = basis.completeOrthogonalDecomposition().pseudoInverse();
+
+  // 임의의 knots 생성
+  std::mt19937 rng(42);
+  std::normal_distribution<double> dist(0.0, 0.3);
+  Eigen::MatrixXd knots(P, 2);
+  for (int p = 0; p < P; ++p) {
+    knots(p, 0) = dist(rng);
+    knots(p, 1) = dist(rng);
+  }
+
+  // U = B * knots → knots_reproj = pinv * U
+  Eigen::MatrixXd U = basis * knots;
+  Eigen::MatrixXd knots_reproj = pinv * U;
+
+  // 재투영 오차가 작아야 함
+  double max_err = (knots - knots_reproj).cwiseAbs().maxCoeff();
+  EXPECT_LT(max_err, 1e-6) << "max reconstruction error=" << max_err;
+}
+
+// ============================================================================
 // SVG-MPPI 테스트
 // ============================================================================
 
@@ -399,8 +455,9 @@ TEST(MPPIParams, M35Defaults)
   EXPECT_DOUBLE_EQ(params.smooth_action_cost_weight, 1.0);
 
   // Spline-MPPI 기본값
-  EXPECT_EQ(params.spline_num_knots, 8);
+  EXPECT_EQ(params.spline_num_knots, 12);
   EXPECT_EQ(params.spline_degree, 3);
+  EXPECT_TRUE(params.spline_auto_knot_sigma);
 
   // SVG-MPPI 기본값
   EXPECT_EQ(params.svg_num_guide_particles, 10);

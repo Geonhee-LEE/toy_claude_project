@@ -113,7 +113,7 @@ MPPI 알고리즘 흐름:
 #### M3.5b: Spline-MPPI ✅ 완료
 - **FR-29**: SplineMPPIController — P개 knot 노이즈 → B-spline basis(N,P) 보간
 - **FR-30**: _bspline_basis() — 순수 NumPy de Boor 재귀 (scipy 미사용, NFR-1 준수)
-- **FR-31**: spline_num_knots, spline_degree, spline_knot_sigma 파라미터
+- **FR-31**: spline_num_knots, spline_degree, spline_knot_sigma, spline_auto_knot_sigma 파라미터
 
 #### M3.5c: SVG-MPPI ✅ 완료
 - **FR-32**: SVGMPPIController — G개 guide particle SVGD + (K-G)개 follower resampling

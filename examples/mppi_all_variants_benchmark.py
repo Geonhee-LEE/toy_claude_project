@@ -181,7 +181,7 @@ def create_controller(
             robot_params, MPPIParams(**bp), seed=seed, obstacles=obstacles,
         )
     elif variant == "Spline":
-        bp["spline_num_knots"] = 8
+        bp["spline_num_knots"] = 12
         bp["spline_degree"] = 3
         return SplineMPPIController(
             robot_params, MPPIParams(**bp), seed=seed, obstacles=obstacles,
@@ -765,7 +765,7 @@ def main():
   CVaR      — Risk-Aware (α=0.7, 보수적)
   SVMPC     — Stein Variational (SVGD L=3)
   Smooth    — Δu input-lifting (jerk cost)
-  Spline    — B-spline basis (P=8 knots)
+  Spline    — B-spline basis (P=12 knots)
   SVG       — Guide particle SVGD (G=16)
 """,
     )
@@ -808,7 +808,7 @@ def main():
         "CVaR":    "Risk-Aware (α=0.7) 보수적",
         "SVMPC":   "SVGD 커널 다양성 (L=3)",
         "Smooth":  "Δu input-lifting smooth",
-        "Spline":  "B-spline basis (P=8)",
+        "Spline":  "B-spline basis (P=12)",
         "SVG":     "Guide SVGD (G=12) 다중모드",
     }
     for v in variants:

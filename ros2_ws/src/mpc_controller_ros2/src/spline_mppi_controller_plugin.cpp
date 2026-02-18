@@ -130,18 +130,38 @@ void SplineMPPIControllerPlugin::configure(
   P_ = params_.spline_num_knots;
   degree_ = params_.spline_degree;
 
-  // B-spline basis 사전 계산 — configure() 시 1회만 (N, P 고정이므로)
-  // Python: self._basis = _bspline_basis(self.params.N, self._P, self._degree)
+  // 1. B-spline basis 사전 계산 — configure() 시 1회만 (N, P 고정이므로)
   basis_ = computeBSplineBasis(params_.N, P_, degree_);
 
-  // Knot warm-start (Python: self.U_knots = np.zeros((P, nu)))
+  // 2. Pseudo-inverse 사전 계산 (LS warm-start용)
+  // pinv(B) = (B^T B)^{-1} B^T — Eigen SVD 기반
+  basis_pinv_ = basis_.completeOrthogonalDecomposition().pseudoInverse();
+
+  // 3. Knot sigma 결정 (basis 감쇠 자동 보정)
+  // B-spline 보간 시 Var(control) = σ² × Σ basis[t,p]² < σ²
+  // → 유효 σ가 원본의 ~35%로 감쇠 → amp_factor로 보정
+  knot_sigma_ = params_.noise_sigma;
+  if (params_.spline_auto_knot_sigma) {
+    double mean_row_sq_sum = 0.0;
+    for (int i = 0; i < params_.N; ++i) {
+      mean_row_sq_sum += basis_.row(i).squaredNorm();
+    }
+    mean_row_sq_sum /= params_.N;
+    double amp_factor = std::sqrt(1.0 / mean_row_sq_sum);
+    knot_sigma_ = params_.noise_sigma * amp_factor;
+  }
+
+  // Knot warm-start
   u_knots_ = Eigen::MatrixXd::Zero(P_, 2);
 
   auto node = parent.lock();
   RCLCPP_INFO(
     node->get_logger(),
-    "Spline-MPPI plugin configured: num_knots=%d, degree=%d, basis=(%dx%d)",
-    P_, degree_, static_cast<int>(basis_.rows()), static_cast<int>(basis_.cols()));
+    "Spline-MPPI plugin configured: num_knots=%d, degree=%d, basis=(%dx%d), "
+    "auto_sigma=%s, knot_sigma=[%.3f, %.3f]",
+    P_, degree_, static_cast<int>(basis_.rows()), static_cast<int>(basis_.cols()),
+    params_.spline_auto_knot_sigma ? "true" : "false",
+    knot_sigma_(0), knot_sigma_(1));
 }
 
 std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
@@ -152,19 +172,19 @@ std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
   int K = params_.K;
   int nu = 2;
 
-  // ──── Step 1: Knot 시퀀스 shift (warm start) ────
-  // Python: self.U_knots[:-1] = self.U_knots[1:]; self.U_knots[-1] = 0.0
-  for (int p = 0; p < P_ - 1; ++p) {
-    u_knots_.row(p) = u_knots_.row(p + 1);
+  // ──── Step 1: Warm-start — LS 재투영 ────
+  // 기존 shift는 knot index ↔ 시간축 불일치 (B-spline 비선형 매핑)
+  // → U를 1-step shift 후 knot space에 재투영하여 시간 정렬 보정
+  Eigen::MatrixXd u_shifted = control_sequence_;
+  for (int t = 0; t < N - 1; ++t) {
+    u_shifted.row(t) = u_shifted.row(t + 1);
   }
-  u_knots_.row(P_ - 1).setZero();
+  u_shifted.row(N - 1).setZero();
+  u_knots_ = basis_pinv_ * u_shifted;
 
   // ──── Step 2: Knot space에서 노이즈 샘플링 ────
   // 수식 (2): ε_k ~ N(0, Σ),  ε_k ∈ R^{P×nu}
-  // Python: knot_noise = rng.standard_normal((K, P, nu)) * knot_sigma
-  // C++ 차이점: Python은 np.random.default_rng(seed)를 사용하나,
-  //           C++은 static std::mt19937로 재현성 있는 난수 생성.
-  //           또한 Python은 별도 spline_knot_sigma를 사용하나 C++은 noise_sigma 재사용.
+  // knot_sigma_: auto 보정 적용된 σ (basis 감쇠 보정)
   static std::mt19937 rng(42);
   std::normal_distribution<double> dist(0.0, 1.0);
 
@@ -173,8 +193,8 @@ std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
   for (int k = 0; k < K; ++k) {
     Eigen::MatrixXd noise(P_, nu);
     for (int p = 0; p < P_; ++p) {
-      noise(p, 0) = dist(rng) * params_.noise_sigma(0);
-      noise(p, 1) = dist(rng) * params_.noise_sigma(1);
+      noise(p, 0) = dist(rng) * knot_sigma_(0);
+      noise(p, 1) = dist(rng) * knot_sigma_(1);
     }
     knot_noise.push_back(noise);
   }

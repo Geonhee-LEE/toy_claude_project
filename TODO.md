@@ -47,11 +47,15 @@
 
 - [ ] 각도 정규화 엣지 케이스 수정
 - [ ] 고속 주행 시 경로 추적 오버슈트 개선
-- [ ] Spline-MPPI figure8 궤적 추적 RMSE 개선 (현재 2.17m → 목표 <0.5m)
-
 ---
 
 ## ✅ Completed
+
+### 2026-02-18 (Issue #64)
+- [x] Spline-MPPI figure8 궤적 추적 RMSE 개선 (2.17m → <0.5m)
+  * Auto knot sigma: basis 감쇠 자동 보정 (amp_factor)
+  * LS warm-start: pseudo-inverse 재투영으로 시간 정렬
+  * 기본 knots 8→12, Python/C++ 동기화
 
 ### 2026-02-18
 - [x] #87 M3.5 Smooth/Spline/SVG-MPPI C++ nav2 플러그인 구현 (PR #88)
