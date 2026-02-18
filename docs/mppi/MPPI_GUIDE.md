@@ -207,26 +207,173 @@ Tsallis q-exponential 가중치:
 
 **실용적 q 범위**: 0.5 ~ 1.5 (q≥2는 polynomial decay가 너무 완만)
 
+### 2.5 M3c: Risk-Aware MPPI (CVaR)
+
+**논문**: Yin et al. (2023) "Risk-Aware MPPI"
+
+```
+Conditional Value at Risk (CVaR):
+
+  1. K개 비용 정렬 → 하위 ceil(α·K)개만 선택
+  2. 선택된 샘플만 softmax → 가중치
+
+  α = 1.0 → risk-neutral (Vanilla 동등)
+  α = 0.3 → 상위 30%만 사용 (보수적 경로)
+  α = 0.1 → 최저 비용 10%만 (매우 보수적)
+
+  ┌───────────────────────────────────────────┐
+  │  비용 분포에서 CVaR 절단                    │
+  │                                           │
+  │  ╱╲                                       │
+  │ ╱  ╲    ←── 이 영역(α 비율)만 사용         │
+  │╱    ╲──────────────── 나머지 무시          │
+  │      ┊                                    │
+  │      α·K                                  │
+  └───────────────────────────────────────────┘
+```
+
+### 2.6 M3d: Stein Variational MPPI (SVMPC)
+
+**논문**: Lambert et al. (2020) "Stein Variational Model Predictive Control"
+
+```
+SVGD로 샘플 간 상호작용 유도:
+
+  1. Vanilla 동일: shift → sample → rollout → cost
+  2. SVGD Loop (L회):
+     ├── flatten: (K, N, nu) → (K, D)
+     ├── RBF kernel: k(x_i, x_j) = exp(-||x_i-x_j||²/2h²)
+     ├── attractive force: w_j · k(x_j,x_i) · (x_j-x_i)
+     ├── repulsive force: k(x_j,x_i) · (x_j-x_i) / h²
+     └── particles += step_size × (attractive + repulsive)
+  3. 가중 평균 업데이트
+
+  svgd_iterations=0 → Vanilla 동등 (backward compatible)
+```
+
+### 2.7 M3.5a: Smooth-MPPI (구조적 부드러움)
+
+**논문**: Kim et al. (2021) "Smooth MPPI"
+
+```
+Δu space 최적화로 구조적 부드러움:
+
+  Vanilla:  u[0] u[1] u[2] ... u[N-1]     ← 각 스텝 독립
+  Smooth:   Δu[0] Δu[1] Δu[2] ... Δu[N-1]  ← 변화량 공간
+
+  u[t] = u_prev + Σ_{i=0}^{t} Δu[i]     (cumsum 복원)
+
+  추가 비용: jerk cost = R_jerk · ‖ΔΔu‖²  (2차 변화율)
+
+  ┌──────────────────────────────────────────┐
+  │  Vanilla vs Smooth 제어 비교              │
+  │                                          │
+  │  Vanilla: ╱╲╱╲╱╲  ← 진동 가능            │
+  │  Smooth:  ╱─────╲  ← 구조적으로 부드러움   │
+  │           (cumsum이 저역 통과 필터 역할)   │
+  └──────────────────────────────────────────┘
+```
+
+**핵심 파라미터**:
+| 파라미터 | 역할 | 기본값 |
+|---------|------|--------|
+| smooth_R_jerk_v | v방향 jerk 가중치 | 0.1 |
+| smooth_R_jerk_omega | omega방향 jerk 가중치 | 0.1 |
+| smooth_action_cost_weight | jerk cost 전체 스케일 | 1.0 |
+
+### 2.8 M3.5b: Spline-MPPI (B-spline 보간)
+
+**논문**: Bhardwaj et al. (2024) "Spline-MPPI" (ICRA 2024)
+
+```
+P개 knot에만 노이즈 → B-spline basis로 N개 보간:
+
+  noise: (K, P, nu)  ← P ≈ 8 << N = 30
+  basis: (N, P)      ← de Boor 재귀, clamped uniform
+  controls = basis @ knots → (K, N, nu)  ← 구조적 smooth
+
+  ┌──────────────────────────────────────────┐
+  │  B-spline 보간 개념                       │
+  │                                          │
+  │  knots:    *     *     *     *     *     │
+  │            P=5 개 제어점                  │
+  │                                          │
+  │  보간:  ─*─────*─────*─────*─────*──     │
+  │         N=30 개 부드러운 제어 시점         │
+  │                                          │
+  │  장점: 노이즈 차원 P/N 배 축소            │
+  │        → 구조적 smooth + 탐색 효율        │
+  └──────────────────────────────────────────┘
+```
+
+**핵심 파라미터**:
+| 파라미터 | 역할 | 기본값 |
+|---------|------|--------|
+| spline_num_knots | B-spline 제어점 수 (P) | 8 |
+| spline_degree | B-spline 차수 | 3 (cubic) |
+
+### 2.9 M3.5c: SVG-MPPI (Guide Particle)
+
+**논문**: Kondo et al. (2024) "SVG-MPPI" (ICRA 2024)
+
+```
+G개 guide particle만 SVGD → 나머지 K-G개는 follower:
+
+  Phase 1: K개 전체 rollout → cost
+  Phase 2: 비용 최저 G개 → guide 선택
+  Phase 3: SVGD(G×G) L회 반복 (G << K)
+  Phase 4: 각 guide 주변 (K-G)/G개 follower 리샘플링
+  Phase 5: 전체 K개 rollout → weight → U 업데이트
+
+  ┌──────────────────────────────────────────┐
+  │  SVMPC vs SVG-MPPI 비교                   │
+  │                                          │
+  │  SVMPC:    K×K SVGD  → O(K²D)  (느림)    │
+  │  SVG-MPPI: G×G SVGD  → O(G²D)  (빠름)    │
+  │            + follower resample            │
+  │                                          │
+  │  G=10, K=512 → 계산량 2600배 감소         │
+  │  다중 모드 탐색 능력은 유지               │
+  └──────────────────────────────────────────┘
+```
+
+**핵심 파라미터**:
+| 파라미터 | 역할 | 기본값 |
+|---------|------|--------|
+| svg_num_guide_particles | guide 수 (G) | 10 |
+| svg_guide_iterations | SVGD 반복 횟수 | 3 |
+| svg_guide_step_size | SVGD step size | 0.1 |
+| svg_resample_std | follower 노이즈 표준편차 | 0.3 |
+
 ---
 
 ## 3. 클래스 계층 구조
 
 ```
+Python 클래스 계층:
+
 MPPIController (base_mppi.py) ── M1 Vanilla
+│  오버라이드: _compute_weights(costs) → weights
 │
-│  오버라이드 포인트:
-│  ├── _get_current_lambda() → float
-│  └── _compute_weights(costs) → weights
-│
-├── TubeMPPIController (tube_mppi.py) ── M2
-│   └── compute_control() 오버라이드
-│       u_applied = u_nominal + K_fb·(x_nom - x_act)
-│
-├── LogMPPIController (log_mppi.py) ── M3a
-│   └── _compute_weights(): log-space softmax
-│
-└── TsallisMPPIController (tsallis_mppi.py) ── M3b
-    └── _compute_weights(): min-centered q-exponential
+├── TubeMPPIController ── M2
+├── LogMPPIController ── M3a (log-space softmax)
+├── TsallisMPPIController ── M3b (q-exponential)
+├── RiskAwareMPPIController ── M3c (CVaR 절단)
+├── SteinVariationalMPPIController ── M3d (SVGD)
+│   └── SVGMPPIController ── M3.5c (Guide SVGD)
+├── SmoothMPPIController ── M3.5a (Δu space)
+└── SplineMPPIController ── M3.5b (B-spline basis)
+
+C++ nav2 플러그인 계층:
+
+MPPIControllerPlugin (base, virtual computeControl)
+├── LogMPPIControllerPlugin (WeightComputation 교체)
+├── TsallisMPPIControllerPlugin (WeightComputation 교체)
+├── RiskAwareMPPIControllerPlugin (WeightComputation 교체)
+├── SmoothMPPIControllerPlugin (computeControl: Δu space)
+├── SplineMPPIControllerPlugin (computeControl: B-spline)
+└── SVMPCControllerPlugin (computeControl: SVGD loop)
+    └── SVGMPPIControllerPlugin (computeControl: Guide SVGD)
 ```
 
 ---
@@ -312,7 +459,42 @@ python examples/tsallis_mppi_demo.py --trajectory circle --live
 python examples/tsallis_mppi_demo.py --q 0.5 1.0 1.5  # 커스텀 q값
 ```
 
-### 6.3 MPC 기본 데모
+### 6.3 C++ nav2 플러그인 (ROS2)
+
+```bash
+# 빌드
+cd ros2_ws && source /opt/ros/jazzy/setup.bash
+colcon build --packages-select mpc_controller_ros2
+
+# Vanilla MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=custom
+
+# Log-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=log
+
+# Tsallis-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tsallis
+
+# Risk-Aware MPPI (CVaR)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=risk_aware
+
+# SVMPC (Stein Variational MPC)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc
+
+# Smooth-MPPI (Δu space 최적화)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=smooth
+
+# Spline-MPPI (B-spline 보간)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline
+
+# SVG-MPPI (Guide particle SVGD)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svg
+
+# nav2 기본 MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=nav2
+```
+
+### 6.4 MPC 기본 데모
 
 ```bash
 python examples/path_tracking_demo.py          # MPC 경로 추종
@@ -331,4 +513,8 @@ python examples/mpc_benchmark.py               # 성능 벤치마크
 | M2 | Williams et al. (2018) "Robust Sampling Based MPPI" | Tube-MPPI, 외란 강건성 |
 | M3b | Yin et al. (2021) "Trajectory Distribution Control via Tsallis Entropy" | Tsallis q-exponential |
 | M3c | Yin et al. (2023) "Risk-Aware MPPI" | CVaR 기반 위험 인지 |
+| M3c | Yin et al. (2023) "Risk-Aware MPPI" | CVaR 기반 위험 인지 |
 | M3d | Lambert et al. (2020) "Stein Variational MPC" | 커널 기반 샘플 다양성 |
+| M3.5a | Kim et al. (2021) "Smooth MPPI" | Δu input-lifting, jerk cost |
+| M3.5b | Bhardwaj et al. (2024) "Spline-MPPI" (ICRA 2024) | B-spline basis 보간 |
+| M3.5c | Kondo et al. (2024) "SVG-MPPI" (ICRA 2024) | Guide particle SVGD |

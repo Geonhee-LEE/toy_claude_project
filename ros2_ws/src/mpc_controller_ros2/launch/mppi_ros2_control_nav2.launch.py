@@ -31,12 +31,24 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     # SVMPC (Stein Variational MPC)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc
 
+    # Smooth-MPPI (Δu space 최적화)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=smooth
+
+    # Spline-MPPI (B-spline 보간)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline
+
+    # SVG-MPPI (Guide particle SVGD)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svg
+
 컨트롤러 전환:
     controller:=custom      → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
     controller:=log         → Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)
     controller:=tsallis     → Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)
     controller:=risk_aware  → Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)
     controller:=svmpc       → SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)
+    controller:=smooth      → Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)
+    controller:=spline      → Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)
+    controller:=svg         → SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)
     controller:=nav2        → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
 """
 
@@ -93,6 +105,21 @@ def launch_setup(context, *args, **kwargs):
             pkg_dir, 'config', 'nav2_params_svmpc.yaml'
         )
         controller_label = 'SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)'
+    elif controller_type == 'smooth':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_smooth_mppi.yaml'
+        )
+        controller_label = 'Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)'
+    elif controller_type == 'spline':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_spline_mppi.yaml'
+        )
+        controller_label = 'Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)'
+    elif controller_type == 'svg':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_svg_mppi.yaml'
+        )
+        controller_label = 'SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)'
     else:
         controller_params_file = os.path.join(
             pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
@@ -434,7 +461,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", or "nav2"'
+            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", "smooth", "spline", "svg", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

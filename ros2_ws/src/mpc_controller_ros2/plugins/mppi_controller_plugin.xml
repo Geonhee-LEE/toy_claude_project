@@ -34,4 +34,25 @@
       svgd_num_iterations=0: Vanilla equivalent, &gt;0: SVGD loop enabled.
     </description>
   </class>
+  <class type="mpc_controller_ros2::SmoothMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Smooth-MPPI controller plugin for nav2.
+      Kim et al. (2021) delta-u input-lifting for structurally smooth control.
+      Optimizes in delta-u space with cumsum restoration and jerk cost penalty.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::SplineMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Spline-MPPI controller plugin for nav2.
+      ICRA 2024 B-spline basis interpolation from P knots to N timesteps.
+      P knots (P &lt;&lt; N) with de Boor recursive basis for smooth sampling.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::SVGMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      SVG-MPPI (Stein Variational Guided MPPI) controller plugin for nav2.
+      Kondo et al. ICRA 2024. G guide particles with SVGD + follower resampling.
+      Efficient multi-modal exploration with G &lt;&lt; K.
+    </description>
+  </class>
 </library>

@@ -47,6 +47,11 @@ struct MPPIInfo
   int svgd_iterations{0};
   double sample_diversity_before{0.0};
   double sample_diversity_after{0.0};
+
+  // SVG-MPPI 전용 정보
+  int num_guides{0};
+  int num_followers{0};
+  int guide_iterations{0};
 };
 
 /**

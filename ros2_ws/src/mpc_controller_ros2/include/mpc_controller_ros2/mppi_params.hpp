@@ -94,6 +94,25 @@ struct MPPIParams
   double svgd_step_size{0.1};        // SVGD update step size
   double svgd_bandwidth{-1.0};       // RBF bandwidth (-1=median heuristic)
 
+  // ============================================================================
+  // M3.5 Smooth/Spline/SVG-MPPI 파라미터
+  // ============================================================================
+
+  // Smooth-MPPI (Kim et al. 2021)
+  double smooth_R_jerk_v{0.1};           // jerk weight (v 방향)
+  double smooth_R_jerk_omega{0.1};       // jerk weight (omega 방향)
+  double smooth_action_cost_weight{1.0}; // jerk cost 전체 가중치
+
+  // Spline-MPPI (ICRA 2024)
+  int spline_num_knots{8};              // B-spline 제어점 수 (P << N)
+  int spline_degree{3};                 // B-spline 차수 (cubic)
+
+  // SVG-MPPI (Kondo et al., ICRA 2024)
+  int svg_num_guide_particles{10};      // guide particle 수 (G << K)
+  int svg_guide_iterations{3};          // guide SVGD 반복 횟수
+  double svg_guide_step_size{0.1};      // guide SVGD step size
+  double svg_resample_std{0.3};         // follower 리샘플링 표준편차
+
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
   bool visualize_best{true};              // 최적 궤적 표시

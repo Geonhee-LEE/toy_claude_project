@@ -794,6 +794,21 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "svgd_step_size", params_.svgd_step_size);
   node_->declare_parameter(prefix + "svgd_bandwidth", params_.svgd_bandwidth);
 
+  // M3.5 Smooth-MPPI
+  node_->declare_parameter(prefix + "smooth_R_jerk_v", params_.smooth_R_jerk_v);
+  node_->declare_parameter(prefix + "smooth_R_jerk_omega", params_.smooth_R_jerk_omega);
+  node_->declare_parameter(prefix + "smooth_action_cost_weight", params_.smooth_action_cost_weight);
+
+  // M3.5 Spline-MPPI
+  node_->declare_parameter(prefix + "spline_num_knots", params_.spline_num_knots);
+  node_->declare_parameter(prefix + "spline_degree", params_.spline_degree);
+
+  // M3.5 SVG-MPPI
+  node_->declare_parameter(prefix + "svg_num_guide_particles", params_.svg_num_guide_particles);
+  node_->declare_parameter(prefix + "svg_guide_iterations", params_.svg_guide_iterations);
+  node_->declare_parameter(prefix + "svg_guide_step_size", params_.svg_guide_step_size);
+  node_->declare_parameter(prefix + "svg_resample_std", params_.svg_resample_std);
+
   // Visualization
   node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
   node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
@@ -878,6 +893,21 @@ void MPPIControllerPlugin::loadParameters()
   params_.svgd_num_iterations = node_->get_parameter(prefix + "svgd_num_iterations").as_int();
   params_.svgd_step_size = node_->get_parameter(prefix + "svgd_step_size").as_double();
   params_.svgd_bandwidth = node_->get_parameter(prefix + "svgd_bandwidth").as_double();
+
+  // M3.5 Smooth-MPPI
+  params_.smooth_R_jerk_v = node_->get_parameter(prefix + "smooth_R_jerk_v").as_double();
+  params_.smooth_R_jerk_omega = node_->get_parameter(prefix + "smooth_R_jerk_omega").as_double();
+  params_.smooth_action_cost_weight = node_->get_parameter(prefix + "smooth_action_cost_weight").as_double();
+
+  // M3.5 Spline-MPPI
+  params_.spline_num_knots = node_->get_parameter(prefix + "spline_num_knots").as_int();
+  params_.spline_degree = node_->get_parameter(prefix + "spline_degree").as_int();
+
+  // M3.5 SVG-MPPI
+  params_.svg_num_guide_particles = node_->get_parameter(prefix + "svg_num_guide_particles").as_int();
+  params_.svg_guide_iterations = node_->get_parameter(prefix + "svg_guide_iterations").as_int();
+  params_.svg_guide_step_size = node_->get_parameter(prefix + "svg_guide_step_size").as_double();
+  params_.svg_resample_std = node_->get_parameter(prefix + "svg_resample_std").as_double();
 
   // Visualization
   params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();
