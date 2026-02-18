@@ -75,7 +75,7 @@ void MPPIControllerPlugin::configure(
     std::make_unique<ObstacleCost>(params_.obstacle_weight, params_.safety_distance)
   );
   cost_function_->addCost(
-    std::make_unique<PreferForwardCost>(params_.prefer_forward_weight)
+    std::make_unique<PreferForwardCost>(params_.prefer_forward_weight, params_.prefer_forward_linear_ratio)
   );
 
   // Initialize control sequence
@@ -159,7 +159,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
 
       cost_function_->addCost(
-        std::make_unique<PreferForwardCost>(params_.prefer_forward_weight)
+        std::make_unique<PreferForwardCost>(params_.prefer_forward_weight, params_.prefer_forward_linear_ratio)
       );
 
       if (!obstacles.empty()) {
@@ -209,6 +209,28 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 
     if (speed_limit_valid_) {
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
+    }
+
+    // 5.5. 후방 안전 검사: v_cmd < 0 시 costmap 후방 충돌 체크
+    if (v_cmd < 0.0 && costmap_ros_) {
+      auto costmap = costmap_ros_->getCostmap();
+      if (costmap) {
+        double theta = current_state(2);
+        // 로봇 후방 safety_distance 위치
+        double rear_x = current_state(0) - params_.safety_distance * std::cos(theta);
+        double rear_y = current_state(1) - params_.safety_distance * std::sin(theta);
+
+        unsigned int mx, my;
+        if (costmap->worldToMap(rear_x, rear_y, mx, my)) {
+          unsigned char rear_cost = costmap->getCost(mx, my);
+          if (rear_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+            RCLCPP_WARN_THROTTLE(
+              node_->get_logger(), *node_->get_clock(), 500,
+              "Rear obstacle detected (cost=%d), blocking backward motion", rear_cost);
+            v_cmd = 0.0;
+          }
+        }
+      }
     }
 
     // 6. Build Twist message
@@ -766,6 +788,7 @@ void MPPIControllerPlugin::declareParameters()
 
   // Forward preference
   node_->declare_parameter(prefix + "prefer_forward_weight", params_.prefer_forward_weight);
+  node_->declare_parameter(prefix + "prefer_forward_linear_ratio", params_.prefer_forward_linear_ratio);
 
   // Phase 1: Colored Noise
   node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
@@ -866,6 +889,7 @@ void MPPIControllerPlugin::loadParameters()
 
   // Forward preference
   params_.prefer_forward_weight = node_->get_parameter(prefix + "prefer_forward_weight").as_double();
+  params_.prefer_forward_linear_ratio = node_->get_parameter(prefix + "prefer_forward_linear_ratio").as_double();
 
   // Phase 1: Colored Noise
   params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();
@@ -1193,6 +1217,17 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         params_.prefer_forward_weight = value;
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated prefer_forward_weight: %.3f", value);
+      }
+      else if (short_name == "prefer_forward_linear_ratio") {
+        double value = param.as_double();
+        if (value < 0.0 || value > 1.0) {
+          result.successful = false;
+          result.reason = "prefer_forward_linear_ratio must be in [0.0, 1.0]";
+          return result;
+        }
+        params_.prefer_forward_linear_ratio = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated prefer_forward_linear_ratio: %.3f", value);
       }
 
     } catch (const rclcpp::ParameterTypeException& e) {

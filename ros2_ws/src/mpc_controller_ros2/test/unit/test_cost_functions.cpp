@@ -335,6 +335,84 @@ TEST_F(CostFunctionsTest, CompositeCostMultipleComponents)
   );
 }
 
+// ============================================================================
+// PreferForwardCost 테스트
+// ============================================================================
+
+TEST_F(CostFunctionsTest, PreferForwardCostForwardNoCost)
+{
+  // v >= 0 시 비용 0
+  PreferForwardCost cost(50.0, 0.5);
+
+  // 양의 속도만 포함하는 controls 사용 (controls_ 에서 v>=0)
+  auto costs = cost.compute(trajectories_, controls_, reference_);
+
+  // controls_ 의 두 샘플 모두 v >= 0 이므로 비용 0
+  EXPECT_NEAR(costs(0), 0.0, 1e-9);
+  EXPECT_NEAR(costs(1), 0.0, 1e-9);
+}
+
+TEST_F(CostFunctionsTest, PreferForwardCostBackwardPenalty)
+{
+  // v < 0 시 비용 > 0
+  double weight = 50.0;
+  PreferForwardCost cost(weight, 0.5);
+
+  // 후진 속도를 포함하는 controls 생성
+  std::vector<Eigen::MatrixXd> backward_controls;
+  Eigen::MatrixXd ctrl(3, 2);
+  ctrl << -0.2, 0.0,
+          -0.2, 0.0,
+          -0.2, 0.0;
+  backward_controls.push_back(ctrl);
+
+  auto costs = cost.compute(trajectories_, backward_controls, reference_);
+
+  // v=-0.2, ratio=0.5: cost_per_step = 50 * (0.5*0.2 + 0.5*0.04) = 50 * 0.12 = 6.0
+  // total = 3 * 6.0 = 18.0
+  EXPECT_GT(costs(0), 0.0);
+  EXPECT_NEAR(costs(0), 18.0, 1e-9);
+}
+
+TEST_F(CostFunctionsTest, PreferForwardCostLinearMixed)
+{
+  // linear_ratio=0.5 비용 검증
+  double weight = 100.0;
+  double linear_ratio = 0.5;
+  PreferForwardCost cost(weight, linear_ratio);
+
+  std::vector<Eigen::MatrixXd> test_controls;
+  Eigen::MatrixXd ctrl(1, 2);
+  ctrl << -0.5, 0.0;  // v = -0.5
+  test_controls.push_back(ctrl);
+
+  auto costs = cost.compute(trajectories_, test_controls, reference_);
+
+  // cost = weight * (ratio * |v| + (1-ratio) * v²)
+  //      = 100 * (0.5 * 0.5 + 0.5 * 0.25)
+  //      = 100 * (0.25 + 0.125) = 37.5
+  EXPECT_NEAR(costs(0), 37.5, 1e-9);
+}
+
+TEST_F(CostFunctionsTest, PreferForwardCostQuadraticOnly)
+{
+  // linear_ratio=0.0 → 기존 이차 비용과 동일
+  double weight = 15.0;
+  PreferForwardCost cost_new(weight, 0.0);  // 혼합 비용 (이차만)
+
+  std::vector<Eigen::MatrixXd> test_controls;
+  Eigen::MatrixXd ctrl(3, 2);
+  ctrl << -0.2, 0.0,
+          -0.3, 0.0,
+           0.5, 0.0;  // 전진은 무비용
+  test_controls.push_back(ctrl);
+
+  auto costs = cost_new.compute(trajectories_, test_controls, reference_);
+
+  // cost = weight * (v1² + v2²) = 15 * (0.04 + 0.09) = 15 * 0.13 = 1.95
+  EXPECT_NEAR(costs(0), 15.0 * (0.2 * 0.2 + 0.3 * 0.3), 1e-9);
+}
+
 }  // namespace mpc_controller_ros2
 
 int main(int argc, char** argv)

@@ -39,7 +39,7 @@ struct MPPIParams
 
   // Control limits
   double v_max{1.0};      // 최대 선속도 (m/s)
-  double v_min{-0.5};     // 최소 선속도 (m/s)
+  double v_min{0.0};      // 최소 선속도 (m/s), 0.0=후진 차단
   double omega_max{1.0};  // 최대 각속도 (rad/s)
   double omega_min{-1.0}; // 최소 각속도 (rad/s)
 
@@ -48,7 +48,8 @@ struct MPPIParams
   double safety_distance{0.5};      // 안전 거리 (m)
 
   // Forward preference
-  double prefer_forward_weight{5.0}; // 전진 선호 가중치 (후진 페널티)
+  double prefer_forward_weight{5.0};         // 전진 선호 가중치 (후진 페널티)
+  double prefer_forward_linear_ratio{0.5};   // 선형 비용 비율 (0=이차만, 1=선형만, 0.5=혼합)
 
   // ============================================================================
   // Phase 1: Colored Noise 파라미터

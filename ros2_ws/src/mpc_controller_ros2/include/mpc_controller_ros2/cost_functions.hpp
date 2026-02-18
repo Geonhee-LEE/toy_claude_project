@@ -86,12 +86,13 @@ private:
 
 /**
  * @brief 전진 선호 비용 (후진 시 페널티)
- * cost = weight * Σ max(-v_t, 0)²
+ * cost = weight * Σ (ratio * |v| + (1-ratio) * v²)  for v < 0
+ * linear_ratio=0.0 → 기존 이차 비용, linear_ratio=0.5 → 선형+이차 혼합
  */
 class PreferForwardCost : public MPPICostFunction
 {
 public:
-  explicit PreferForwardCost(double weight);
+  explicit PreferForwardCost(double weight, double linear_ratio = 0.0);
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,
     const std::vector<Eigen::MatrixXd>& controls,
@@ -99,6 +100,7 @@ public:
   ) const override;
 private:
   double weight_;
+  double linear_ratio_;
 };
 
 class ObstacleCost : public MPPICostFunction

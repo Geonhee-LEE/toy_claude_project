@@ -52,7 +52,7 @@ controller_server:
 
       # Control limits (커스텀과 동일)
       vx_max: 0.5
-      vx_min: -0.2
+      vx_min: 0.0
       vy_max: 0.0
       wz_max: 1.0
 

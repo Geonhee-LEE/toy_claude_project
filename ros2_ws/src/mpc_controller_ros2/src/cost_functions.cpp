@@ -108,7 +108,8 @@ Eigen::VectorXd ControlRateCost::compute(
 }
 
 // PreferForwardCost
-PreferForwardCost::PreferForwardCost(double weight) : weight_(weight) {}
+PreferForwardCost::PreferForwardCost(double weight, double linear_ratio)
+: weight_(weight), linear_ratio_(std::clamp(linear_ratio, 0.0, 1.0)) {}
 
 Eigen::VectorXd PreferForwardCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -127,8 +128,9 @@ Eigen::VectorXd PreferForwardCost::compute(
     for (int t = 0; t < N; ++t) {
       double v = controls[k](t, 0);
       if (v < 0.0) {
-        // 후진 시 이차 페널티: weight * v²
-        costs(k) += weight_ * v * v;
+        // 선형+이차 혼합 페널티: weight * (ratio*|v| + (1-ratio)*v²)
+        double abs_v = std::abs(v);
+        costs(k) += weight_ * (linear_ratio_ * abs_v + (1.0 - linear_ratio_) * v * v);
       }
     }
   }

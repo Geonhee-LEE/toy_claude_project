@@ -51,7 +51,7 @@ controller_server:
 
       # Control limits
       v_max: 0.5
-      v_min: -0.2
+      v_min: 0.0
       omega_max: 1.0
       omega_min: -1.0
 
@@ -78,7 +78,8 @@ controller_server:
       safety_distance: 0.5
 
       # Forward preference (후진 페널티)
-      prefer_forward_weight: 15.0
+      prefer_forward_weight: 50.0
+      prefer_forward_linear_ratio: 0.5
 
       # SVMPC 전용 파라미터
       svgd_num_iterations: 3       # SVGD 반복 횟수 (0=Vanilla, 권장: 1~5)
