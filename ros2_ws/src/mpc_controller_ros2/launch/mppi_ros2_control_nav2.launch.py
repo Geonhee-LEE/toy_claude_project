@@ -206,23 +206,10 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ========== 5. Controller Spawners ==========
-    joint_state_broadcaster_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['joint_state_broadcaster', '--controller-manager', '/controller_manager'],
-        output='screen',
-    )
-
-    diff_drive_controller_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=[
-            'diff_drive_controller',
-            '--controller-manager', '/controller_manager',
-            '--param-file', controller_config
-        ],
-        output='screen',
-    )
+    # gz_ros2_control 플러그인이 URDF의 <parameters> 경로에서
+    # diff_drive_controller.yaml을 읽어 joint_state_broadcaster와
+    # diff_drive_controller를 자동 로드/설정/활성화합니다.
+    # 별도 spawner 없이 gz_ros2_control에 위임합니다.
 
     # ========== 6. Map Server ==========
     map_server = Node(
@@ -377,13 +364,12 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 5. Controllers (8s delay)
+        # 5. Controllers: gz_ros2_control이 자동 활성화하므로 spawner 불필요
+        # 컨트롤러 활성화 대기를 위해 로그만 출력
         TimerAction(
             period=8.0,
             actions=[
-                LogInfo(msg='Starting controllers...'),
-                joint_state_broadcaster_spawner,
-                diff_drive_controller_spawner,
+                LogInfo(msg='Controllers auto-started by gz_ros2_control plugin'),
             ]
         ),
 
