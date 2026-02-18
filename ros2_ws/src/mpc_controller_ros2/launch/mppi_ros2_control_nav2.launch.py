@@ -148,24 +148,6 @@ def launch_setup(context, *args, **kwargs):
 
     gz_plugin_path = '/opt/ros/jazzy/lib'
 
-    # ========== 0. 이전 세션 잔여 프로세스 정리 ==========
-    # 이전 launch가 깨끗하게 종료되지 않으면 gz sim, ros_gz_bridge,
-    # nav2 노드 등이 살아남아 /scan, /clock 토픽 충돌을 일으킴.
-    # 주의: pkill -f "[x]yz" 패턴을 사용하여 자기 자신을 kill하지 않도록 함
-    #   - "[g]z sim" regex는 "gz sim"을 매칭하지만,
-    #     이 스크립트 커맨드라인의 "[g]z sim" 문자열은 매칭하지 않음
-    cleanup_stale = ExecuteProcess(
-        cmd=['bash', '-c',
-             'pkill -9 -f "[g]z sim" 2>/dev/null; '
-             'pkill -9 -f "[r]os_gz_bridge" 2>/dev/null; '
-             'pkill -9 -f "[c]ontroller_server" 2>/dev/null; '
-             'pkill -9 -f "[r]obot_state_pub" 2>/dev/null; '
-             'pkill -9 -f "[n]av2_" 2>/dev/null; '
-             'pkill -9 -f "[t]wist_stamper" 2>/dev/null; '
-             'sleep 2; echo "[cleanup] Stale processes killed"'],
-        output='screen',
-    )
-
     # ========== 1. Gazebo Harmonic ==========
     gz_cmd = ['gz', 'sim', '-r', '-v4']
     if headless:
@@ -223,31 +205,22 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
-    # ========== 5. Controller Activation ==========
-    # gz_ros2_control이 컨트롤러를 로드/설정하지만 활성화는 보장되지 않음.
-    # spawner로 활성화 시도, 이미 설정된 경우 switch_controllers로 폴백.
-    activate_controllers = ExecuteProcess(
-        cmd=['bash', '-c', ' '.join([
-            'echo "[controllers] Waiting for controller_manager...";',
-            'for i in $(seq 1 30); do',
-            '  if ros2 service list 2>/dev/null | grep -q "/controller_manager/list_controllers"; then',
-            '    echo "[controllers] controller_manager found"; break;',
-            '  fi;',
-            '  sleep 1;',
-            'done;',
-            # spawner 시도 (unconfigured → active)
-            'ros2 run controller_manager spawner joint_state_broadcaster'
-            ' -c /controller_manager --controller-manager-timeout 30 2>&1 ||',
-            # 폴백: 이미 configured 상태면 switch로 활성화
-            'ros2 control switch_controllers'
-            ' --activate joint_state_broadcaster -c /controller_manager 2>&1 || true;',
-            'ros2 run controller_manager spawner diff_drive_controller'
-            ' -c /controller_manager --controller-manager-timeout 30 2>&1 ||',
-            'ros2 control switch_controllers'
-            ' --activate diff_drive_controller -c /controller_manager 2>&1 || true;',
-            'echo "[controllers] Activation complete";',
-            'ros2 control list_controllers -c /controller_manager 2>&1 || true',
-        ])],
+    # ========== 5. Controller Spawners ==========
+    joint_state_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_state_broadcaster', '--controller-manager', '/controller_manager'],
+        output='screen',
+    )
+
+    diff_drive_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=[
+            'diff_drive_controller',
+            '--controller-manager', '/controller_manager',
+            '--param-file', controller_config
+        ],
         output='screen',
     )
 
@@ -386,49 +359,37 @@ rclpy.spin(TwistStamper())
         LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
         LogInfo(msg=f'[MPPI Controller] params: {controller_params_file}'),
 
-        # 0. 이전 세션 잔여 프로세스 정리
-        cleanup_stale,
+        # 1. Gazebo
+        gz_sim,
 
-        # 1. Gazebo + Bridge (3s delay — cleanup 완료 대기)
-        TimerAction(
-            period=3.0,
-            actions=[
-                LogInfo(msg='Starting Gazebo + Bridge...'),
-                gz_sim,
-                bridge,
-            ]
-        ),
+        # 2. Robot State Publisher
+        robot_state_publisher,
 
-        # 2. Robot State Publisher (6s delay — /clock 안정화 대기)
-        TimerAction(
-            period=6.0,
-            actions=[
-                LogInfo(msg='Starting robot_state_publisher (/clock stabilized)...'),
-                robot_state_publisher,
-            ]
-        ),
+        # 3. Bridge
+        bridge,
 
-        # 3. Spawn robot (10s delay — robot_state_pub 이후)
+        # 4. Spawn robot (5s delay)
         TimerAction(
-            period=10.0,
+            period=5.0,
             actions=[
                 LogInfo(msg='Spawning robot...'),
                 spawn_robot
             ]
         ),
 
-        # 4. Controller activation (14s delay — spawn 후 gz_ros2_control 안정화 대기)
+        # 5. Controllers (8s delay)
         TimerAction(
-            period=14.0,
+            period=8.0,
             actions=[
-                LogInfo(msg='Activating ros2_control controllers...'),
-                activate_controllers,
+                LogInfo(msg='Starting controllers...'),
+                joint_state_broadcaster_spawner,
+                diff_drive_controller_spawner,
             ]
         ),
 
-        # 5. Localization nodes (map_server, amcl) - 16s delay
+        # 6. Localization nodes (map_server, amcl) - 10s delay
         TimerAction(
-            period=16.0,
+            period=10.0,
             actions=[
                 LogInfo(msg='Starting localization nodes (map_server, amcl)...'),
                 map_server,
@@ -436,18 +397,18 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 6. Localization lifecycle manager - 20s delay
+        # 7. Localization lifecycle manager - 13s delay
         TimerAction(
-            period=20.0,
+            period=13.0,
             actions=[
                 LogInfo(msg='Activating localization lifecycle...'),
                 lifecycle_manager_localization,
             ]
         ),
 
-        # 7. Navigation nodes - 26s delay (localization 안정화 후)
+        # 8. Navigation nodes - 18s delay
         TimerAction(
-            period=26.0,
+            period=18.0,
             actions=[
                 LogInfo(msg=f'Starting navigation nodes ({controller_type} MPPI)...'),
                 twist_stamper,
@@ -458,9 +419,9 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 8. Navigation lifecycle manager - 30s delay
+        # 9. Navigation lifecycle manager - 21s delay
         TimerAction(
-            period=30.0,
+            period=21.0,
             actions=[
                 LogInfo(msg='Activating navigation lifecycle...'),
                 lifecycle_manager_navigation,
@@ -469,11 +430,11 @@ rclpy.spin(TwistStamper())
 
     ]
 
-    # 9. RVIZ (34s delay) - headless 모드에서는 비활성화
+    # 10. RVIZ (25s delay) - headless 모드에서는 비활성화
     if not headless:
         nodes.append(
             TimerAction(
-                period=34.0,
+                period=25.0,
                 actions=[
                     LogInfo(msg='Starting RVIZ...'),
                     rviz
