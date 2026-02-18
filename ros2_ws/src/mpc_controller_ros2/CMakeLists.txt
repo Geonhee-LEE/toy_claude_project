@@ -52,6 +52,8 @@ ament_target_dependencies(mppi_utils
 # C++ library: MPPI controller plugin (M2 features included)
 add_library(mppi_controller_plugin SHARED
   src/mppi_controller_plugin.cpp
+  src/log_mppi_controller_plugin.cpp
+  src/weight_computation.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
   src/sampling.cpp
@@ -196,6 +198,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_tube_mppi test/unit/test_tube_mppi.cpp)
   if(TARGET test_tube_mppi)
     target_link_libraries(test_tube_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_weight_computation test/unit/test_weight_computation.cpp)
+  if(TARGET test_weight_computation)
+    target_link_libraries(test_weight_computation mppi_controller_plugin)
   endif()
 endif()
 

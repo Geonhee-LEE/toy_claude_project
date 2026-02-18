@@ -8,6 +8,11 @@ PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Con
 namespace mpc_controller_ros2
 {
 
+MPPIControllerPlugin::MPPIControllerPlugin()
+  : weight_computation_(std::make_unique<VanillaMPPIWeights>())
+{
+}
+
 void MPPIControllerPlugin::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent,
   std::string name,
@@ -69,6 +74,9 @@ void MPPIControllerPlugin::configure(
   cost_function_->addCost(
     std::make_unique<ObstacleCost>(params_.obstacle_weight, params_.safety_distance)
   );
+  cost_function_->addCost(
+    std::make_unique<PreferForwardCost>(params_.prefer_forward_weight)
+  );
 
   // Initialize control sequence
   control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
@@ -83,7 +91,10 @@ void MPPIControllerPlugin::configure(
     std::bind(&MPPIControllerPlugin::onSetParametersCallback, this, std::placeholders::_1)
   );
 
-  RCLCPP_INFO(node_->get_logger(), "MPPI controller configured successfully");
+  RCLCPP_INFO(
+    node_->get_logger(), "MPPI controller configured successfully (weight strategy: %s)",
+    weight_computation_->name().c_str()
+  );
 }
 
 void MPPIControllerPlugin::cleanup()
@@ -146,6 +157,10 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       cost_function_->addCost(std::make_unique<TerminalCost>(params_.Qf));
       cost_function_->addCost(std::make_unique<ControlEffortCost>(params_.R));
       cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
+
+      cost_function_->addCost(
+        std::make_unique<PreferForwardCost>(params_.prefer_forward_weight)
+      );
 
       if (!obstacles.empty()) {
         auto obstacle_cost = std::make_unique<ObstacleCost>(
@@ -297,14 +312,11 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
     reference_trajectory
   );
 
-  // 6. Compute softmax weights (Adaptive Temperature 적용)
+  // 6. Compute weights via strategy (Adaptive Temperature 적용)
   double current_lambda = params_.lambda;
   if (params_.adaptive_temperature && adaptive_temp_) {
-    // ESS 계산을 위해 현재 lambda로 weights 먼저 계산
-    Eigen::VectorXd temp_weights = softmaxWeights(costs, current_lambda);
+    Eigen::VectorXd temp_weights = weight_computation_->compute(costs, current_lambda);
     double ess = computeESS(temp_weights);
-
-    // λ 업데이트
     current_lambda = adaptive_temp_->update(ess, K);
 
     RCLCPP_DEBUG(
@@ -313,7 +325,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
       ess, params_.lambda, current_lambda
     );
   }
-  Eigen::VectorXd weights = softmaxWeights(costs, current_lambda);
+  Eigen::VectorXd weights = weight_computation_->compute(costs, current_lambda);
 
   // 7. Update control sequence with weighted average of noise
   Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
@@ -430,6 +442,13 @@ std::vector<Eigen::Vector3d> MPPIControllerPlugin::extractObstaclesFromCostmap()
   }
 
   auto costmap = costmap_ros_->getCostmap();
+  if (!costmap) {
+    RCLCPP_WARN_THROTTLE(
+      node_->get_logger(), *node_->get_clock(), 2000,
+      "Costmap not yet available, skipping obstacle extraction"
+    );
+    return obstacles;
+  }
   unsigned int size_x = costmap->getSizeInCellsX();
   unsigned int size_y = costmap->getSizeInCellsY();
   double resolution = costmap->getResolution();
@@ -745,6 +764,9 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "obstacle_weight", params_.obstacle_weight);
   node_->declare_parameter(prefix + "safety_distance", params_.safety_distance);
 
+  // Forward preference
+  node_->declare_parameter(prefix + "prefer_forward_weight", params_.prefer_forward_weight);
+
   // Phase 1: Colored Noise
   node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
   node_->declare_parameter(prefix + "noise_beta", params_.noise_beta);
@@ -817,6 +839,9 @@ void MPPIControllerPlugin::loadParameters()
   // Obstacle avoidance
   params_.obstacle_weight = node_->get_parameter(prefix + "obstacle_weight").as_double();
   params_.safety_distance = node_->get_parameter(prefix + "safety_distance").as_double();
+
+  // Forward preference
+  params_.prefer_forward_weight = node_->get_parameter(prefix + "prefer_forward_weight").as_double();
 
   // Phase 1: Colored Noise
   params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();
@@ -1108,6 +1133,18 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         params_.safety_distance = value;
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated safety_distance: %.3f", value);
+      }
+      // Forward preference
+      else if (short_name == "prefer_forward_weight") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "prefer_forward_weight must be >= 0.0";
+          return result;
+        }
+        params_.prefer_forward_weight = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated prefer_forward_weight: %.3f", value);
       }
 
     } catch (const rclcpp::ParameterTypeException& e) {

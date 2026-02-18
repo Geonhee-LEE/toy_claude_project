@@ -47,6 +47,9 @@ struct MPPIParams
   double obstacle_weight{100.0};    // 장애물 회피 가중치
   double safety_distance{0.5};      // 안전 거리 (m)
 
+  // Forward preference
+  double prefer_forward_weight{5.0}; // 전진 선호 가중치 (후진 페널티)
+
   // ============================================================================
   // Phase 1: Colored Noise 파라미터
   // ============================================================================
@@ -79,10 +82,7 @@ struct MPPIParams
   double k_lateral{0.5};   // 측면 오차 게인
   double k_angle{1.0};     // 각도 오차 게인
 
-  // ============================================================================
-  // 시각화 파라미터
-  // ============================================================================
-
+  // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
   bool visualize_best{true};              // 최적 궤적 표시
   bool visualize_weighted_avg{true};      // 가중 평균 궤적 표시

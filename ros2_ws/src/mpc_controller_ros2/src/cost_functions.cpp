@@ -107,6 +107,35 @@ Eigen::VectorXd ControlRateCost::compute(
   return costs;
 }
 
+// PreferForwardCost
+PreferForwardCost::PreferForwardCost(double weight) : weight_(weight) {}
+
+Eigen::VectorXd PreferForwardCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)trajectories;
+  (void)reference;
+
+  int K = controls.size();
+  int N = controls[0].rows();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  for (int k = 0; k < K; ++k) {
+    for (int t = 0; t < N; ++t) {
+      double v = controls[k](t, 0);
+      if (v < 0.0) {
+        // 후진 시 이차 페널티: weight * v²
+        costs(k) += weight_ * v * v;
+      }
+    }
+  }
+
+  return costs;
+}
+
 // ObstacleCost
 ObstacleCost::ObstacleCost(double weight, double safety_distance)
 : weight_(weight), safety_distance_(safety_distance)
