@@ -2,6 +2,7 @@
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
 #include <tf2/utils.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <chrono>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Controller)
@@ -153,10 +154,33 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
   }
 
   try {
-    // 1. Convert current pose to state
-    Eigen::Vector3d current_state = poseToState(pose);
+    // 1. pose를 plan 프레임("map")으로 변환 — 프레임 일관성 보장
+    //    nav2 controller_server는 pose를 costmap 프레임("odom")으로 전달하지만,
+    //    global_plan_은 planner 프레임("map")이므로 변환 필수
+    std::string plan_frame = global_plan_.header.frame_id;
+    if (plan_frame.empty()) { plan_frame = "map"; }
 
-    // 2. Prune plan (이미 지나간 waypoint 제거)
+    geometry_msgs::msg::PoseStamped pose_in_plan_frame;
+    Eigen::Vector3d odom_state = poseToState(pose);  // odom 프레임 (후방 체크용)
+
+    if (pose.header.frame_id != plan_frame) {
+      try {
+        pose_in_plan_frame = tf_buffer_->transform(
+          pose, plan_frame, tf2::durationFromSec(0.1));
+      } catch (const tf2::TransformException& ex) {
+        RCLCPP_WARN_THROTTLE(
+          node_->get_logger(), *node_->get_clock(), 1000,
+          "Failed to transform pose to %s: %s", plan_frame.c_str(), ex.what());
+        // 폴백: 변환 없이 원본 pose 사용
+        pose_in_plan_frame = pose;
+      }
+    } else {
+      pose_in_plan_frame = pose;
+    }
+
+    Eigen::Vector3d current_state = poseToState(pose_in_plan_frame);
+
+    // 2. Prune plan (이미 지나간 waypoint 제거) — map 프레임에서 수행
     prunePlan(current_state);
 
     // 3. Convert pruned path to reference trajectory (lookahead 기반)
@@ -173,7 +197,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     auto end_time = std::chrono::high_resolution_clock::now();
     double computation_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
-    // 4.5. Tube-MPPI 피드백 보정 (활성화된 경우)
+    // 5.5. Tube-MPPI 피드백 보정 (활성화된 경우)
     Eigen::Vector2d final_control = u_opt;
     if (params_.tube_enabled && tube_mppi_) {
       auto [corrected_control, tube_info] = tube_mppi_->computeCorrectedControl(
@@ -198,7 +222,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 5. Apply speed limit if set
+    // 6. Apply speed limit if set
     double v_cmd = final_control(0);
     double omega_cmd = final_control(1);
 
@@ -206,14 +230,13 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
     }
 
-    // 5.5. 후방 안전 검사: v_cmd < 0 시 costmap 후방 충돌 체크
+    // 6.5. 후방 안전 검사: odom 프레임 좌표로 costmap 조회
     if (v_cmd < 0.0 && costmap_ros_) {
       auto costmap = costmap_ros_->getCostmap();
       if (costmap) {
-        double theta = current_state(2);
-        // 로봇 후방 safety_distance 위치
-        double rear_x = current_state(0) - params_.safety_distance * std::cos(theta);
-        double rear_y = current_state(1) - params_.safety_distance * std::sin(theta);
+        double theta = odom_state(2);
+        double rear_x = odom_state(0) - params_.safety_distance * std::cos(theta);
+        double rear_y = odom_state(1) - params_.safety_distance * std::sin(theta);
 
         unsigned int mx, my;
         if (costmap->worldToMap(rear_x, rear_y, mx, my)) {
@@ -228,7 +251,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 6. Build Twist message
+    // 7. Build Twist message
     cmd_vel.twist.linear.x = v_cmd;
     cmd_vel.twist.linear.y = 0.0;
     cmd_vel.twist.linear.z = 0.0;
@@ -236,7 +259,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     cmd_vel.twist.angular.y = 0.0;
     cmd_vel.twist.angular.z = omega_cmd;
 
-    // 7. Publish visualization
+    // 8. Publish visualization (plan 프레임에서)
     publishVisualization(info, current_state, reference_trajectory, info.weighted_avg_trajectory, computation_time_ms);
 
     RCLCPP_DEBUG(
@@ -557,7 +580,8 @@ void MPPIControllerPlugin::publishVisualization(
 
   visualization_msgs::msg::MarkerArray marker_array;
   auto stamp = node_->now();
-  std::string frame_id = "map";  // TODO: get from costmap
+  std::string frame_id = global_plan_.header.frame_id.empty() ?
+    "map" : global_plan_.header.frame_id;
 
   // 1. Reference trajectory (yellow dashed line)
   if (params_.visualize_reference && reference_trajectory.rows() > 0) {
@@ -1312,7 +1336,8 @@ void MPPIControllerPlugin::publishTubeVisualization(
 
   visualization_msgs::msg::MarkerArray marker_array;
   auto stamp = node_->now();
-  std::string frame_id = "map";
+  std::string frame_id = global_plan_.header.frame_id.empty() ?
+    "map" : global_plan_.header.frame_id;
 
   // Tube 경계 계산
   auto boundaries = tube_mppi_->computeTubeBoundary(nominal_trajectory);
