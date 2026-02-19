@@ -108,7 +108,8 @@ Eigen::VectorXd ControlRateCost::compute(
 }
 
 // PreferForwardCost
-PreferForwardCost::PreferForwardCost(double weight) : weight_(weight) {}
+PreferForwardCost::PreferForwardCost(double weight, double linear_ratio)
+: weight_(weight), linear_ratio_(std::clamp(linear_ratio, 0.0, 1.0)) {}
 
 Eigen::VectorXd PreferForwardCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -127,8 +128,9 @@ Eigen::VectorXd PreferForwardCost::compute(
     for (int t = 0; t < N; ++t) {
       double v = controls[k](t, 0);
       if (v < 0.0) {
-        // 후진 시 이차 페널티: weight * v²
-        costs(k) += weight_ * v * v;
+        // 선형+이차 혼합 페널티: weight * (ratio*|v| + (1-ratio)*v²)
+        double abs_v = std::abs(v);
+        costs(k) += weight_ * (linear_ratio_ * abs_v + (1.0 - linear_ratio_) * v * v);
       }
     }
   }
@@ -182,10 +184,96 @@ Eigen::VectorXd ObstacleCost::compute(
   return costs;
 }
 
+// CostmapObstacleCost
+CostmapObstacleCost::CostmapObstacleCost(double weight, double lethal_cost,
+                                           double critical_cost)
+: weight_(weight), lethal_cost_(lethal_cost), critical_cost_(critical_cost)
+{
+}
+
+void CostmapObstacleCost::setCostmap(nav2_costmap_2d::Costmap2D* costmap)
+{
+  costmap_ = costmap;
+}
+
+void CostmapObstacleCost::setMapToOdomTransform(double tx, double ty,
+                                                 double cos_th, double sin_th,
+                                                 bool use_tf)
+{
+  tx_ = tx;
+  ty_ = ty;
+  cos_th_ = cos_th;
+  sin_th_ = sin_th;
+  use_tf_ = use_tf;
+}
+
+Eigen::VectorXd CostmapObstacleCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)controls;
+  (void)reference;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (!costmap_) {
+    return costs;
+  }
+
+  for (int k = 0; k < K; ++k) {
+    const auto& traj = trajectories[k];
+    int num_points = traj.rows();
+
+    for (int t = 0; t < num_points; ++t) {
+      double map_x = traj(t, 0);
+      double map_y = traj(t, 1);
+
+      // map→odom 좌표 변환 (costmap은 odom 프레임)
+      double query_x, query_y;
+      if (use_tf_) {
+        query_x = cos_th_ * map_x - sin_th_ * map_y + tx_;
+        query_y = sin_th_ * map_x + cos_th_ * map_y + ty_;
+      } else {
+        query_x = map_x;
+        query_y = map_y;
+      }
+
+      unsigned int mx, my;
+      if (!costmap_->worldToMap(query_x, query_y, mx, my)) {
+        // 범위 밖 → lethal 비용
+        costs(k) += lethal_cost_;
+        continue;
+      }
+
+      unsigned char cell_cost = costmap_->getCost(mx, my);
+
+      if (cell_cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        costs(k) += lethal_cost_;
+      } else if (cell_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+        costs(k) += critical_cost_;
+      } else if (cell_cost > nav2_costmap_2d::FREE_SPACE) {
+        // inflation gradient: smooth quadratic cost
+        double normalized = static_cast<double>(cell_cost) / 252.0;
+        costs(k) += weight_ * normalized * normalized;
+      }
+    }
+  }
+
+  return costs;
+}
+
 // CompositeMPPICost
 void CompositeMPPICost::addCost(std::unique_ptr<MPPICostFunction> cost)
 {
   costs_.push_back(std::move(cost));
+}
+
+void CompositeMPPICost::clearCosts()
+{
+  costs_.clear();
 }
 
 Eigen::VectorXd CompositeMPPICost::compute(

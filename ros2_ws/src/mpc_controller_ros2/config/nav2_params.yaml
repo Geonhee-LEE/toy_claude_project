@@ -30,7 +30,7 @@ amcl:
     save_pose_rate: 0.5
     sigma_hit: 0.1
     tf_broadcast: true
-    transform_tolerance: 0.5
+    transform_tolerance: 1.0
     update_min_a: 0.1
     update_min_d: 0.1
     z_hit: 0.7
@@ -178,7 +178,7 @@ behavior_server:
     local_frame: odom
     global_frame: map
     robot_base_frame: base_link
-    transform_tolerance: 0.1
+    transform_tolerance: 1.0
 
 velocity_smoother:
   ros__parameters:

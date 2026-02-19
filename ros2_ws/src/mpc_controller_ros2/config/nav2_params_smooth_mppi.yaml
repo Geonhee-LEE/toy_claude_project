@@ -15,6 +15,7 @@ controller_server:
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.5
+    transform_tolerance: 1.0
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -50,7 +51,7 @@ controller_server:
 
       # Control limits
       v_max: 0.5
-      v_min: -0.2
+      v_min: 0.0
       omega_max: 1.0
       omega_min: -1.0
 
@@ -76,8 +77,15 @@ controller_server:
       obstacle_weight: 100.0
       safety_distance: 0.5
 
-      # Forward preference
-      prefer_forward_weight: 15.0
+      # Costmap obstacle cost
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+      lookahead_dist: 0.0
+
+      # Forward preference (후진 페널티)
+      prefer_forward_weight: 50.0
+      prefer_forward_linear_ratio: 0.5
 
       # Smooth-MPPI 전용 파라미터
       smooth_R_jerk_v: 0.1            # jerk weight (v 방향)
