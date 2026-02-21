@@ -1,4 +1,5 @@
 #include "mpc_controller_ros2/mppi_controller_plugin.hpp"
+#include "mpc_controller_ros2/motion_model_factory.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
 #include <tf2/utils.h>
@@ -33,8 +34,9 @@ void MPPIControllerPlugin::configure(
   declareParameters();
   loadParameters();
 
-  // Initialize components
-  dynamics_ = std::make_unique<BatchDynamicsWrapper>(params_);
+  // Initialize components (MotionModel 기반)
+  auto model = MotionModelFactory::create(params_.motion_model, params_);
+  dynamics_ = std::make_unique<BatchDynamicsWrapper>(params_, std::move(model));
 
   // 샘플러 선택: Colored Noise vs Gaussian
   if (params_.colored_noise) {
@@ -92,8 +94,10 @@ void MPPIControllerPlugin::configure(
     );
   }
 
-  // Initialize control sequence
-  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
+  // Initialize control sequence (nu from model)
+  int nu = dynamics_->model().controlDim();
+  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
+  current_velocity_ = Eigen::VectorXd::Zero(nu);
 
   // Create marker publisher
   marker_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -138,8 +142,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
   (void)goal_checker;  // Unused parameter
 
   // 현재 속도 저장 (동적 lookahead, goal approach에 활용)
-  current_velocity_(0) = velocity.linear.x;
-  current_velocity_(1) = velocity.angular.z;
+  current_velocity_ = dynamics_->model().twistToControl(velocity);
 
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.stamp = node_->now();
@@ -164,7 +167,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     if (plan_frame.empty()) { plan_frame = "map"; }
 
     geometry_msgs::msg::PoseStamped pose_in_plan_frame;
-    Eigen::Vector3d odom_state = poseToState(pose);  // odom 프레임 (후방 체크용)
+    Eigen::VectorXd odom_state = poseToState(pose);  // odom 프레임 (후방 체크용)
 
     if (pose.header.frame_id != plan_frame) {
       try {
@@ -181,7 +184,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       pose_in_plan_frame = pose;
     }
 
-    Eigen::Vector3d current_state = poseToState(pose_in_plan_frame);
+    Eigen::VectorXd current_state = poseToState(pose_in_plan_frame);
 
     // 2. Prune plan (이미 지나간 waypoint 제거) — map 프레임에서 수행
     prunePlan(current_state);
@@ -199,6 +202,14 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 3. Convert pruned path to reference trajectory (lookahead 기반)
     Eigen::MatrixXd reference_trajectory = pathToReferenceTrajectory(pruned_plan_, current_state);
 
+    // 3.5. Goal distance 갱신 (goal approach 감속에 사용)
+    if (!pruned_plan_.poses.empty()) {
+      const auto& goal_pose = pruned_plan_.poses.back().pose.position;
+      double dx = goal_pose.x - current_state(0);
+      double dy = goal_pose.y - current_state(1);
+      goal_dist_ = std::sqrt(dx * dx + dy * dy);
+    }
+
     // 4. Update costmap TF (cost_function_ 재생성 없이 TF만 갱신)
     if (params_.use_costmap_cost) {
       updateCostmapObstacles();
@@ -208,7 +219,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     double goal_scale = 1.0;
     if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
       goal_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
-      Eigen::Vector2d scaled_sigma = params_.noise_sigma * goal_scale;
+      Eigen::VectorXd scaled_sigma = params_.noise_sigma * goal_scale;
       if (params_.colored_noise) {
         sampler_ = std::make_unique<ColoredNoiseSampler>(scaled_sigma, params_.noise_beta);
       } else {
@@ -230,7 +241,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     double computation_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
     // 5.5. Tube-MPPI 피드백 보정 (활성화된 경우)
-    Eigen::Vector2d final_control = u_opt;
+    Eigen::VectorXd final_control = u_opt;
     if (params_.tube_enabled && tube_mppi_) {
       auto [corrected_control, tube_info] = tube_mppi_->computeCorrectedControl(
         u_opt,
@@ -256,7 +267,15 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 
     // 6. Apply speed limit if set
     double v_cmd = final_control(0);
-    double omega_cmd = final_control(1);
+
+    // Goal approach 감속: 거리 비례로 v_max 스케일링
+    if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
+      double v_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
+      double effective_v_max = params_.v_max * v_scale;
+      v_cmd = std::clamp(v_cmd, params_.v_min, effective_v_max);
+      final_control(0) = v_cmd;
+    }
+
 
     // Goal approach 감속: 거리 비례로 v_max 스케일링
     if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
@@ -267,6 +286,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 
     if (speed_limit_valid_) {
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
+      final_control(0) = v_cmd;
     }
 
     // 6.5. 후방 안전 검사: odom 프레임 좌표로 costmap 조회
@@ -284,27 +304,22 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
             RCLCPP_WARN_THROTTLE(
               node_->get_logger(), *node_->get_clock(), 500,
               "Rear obstacle detected (cost=%d), blocking backward motion", rear_cost);
-            v_cmd = 0.0;
+            final_control(0) = 0.0;
           }
         }
       }
     }
 
-    // 7. Build Twist message
-    cmd_vel.twist.linear.x = v_cmd;
-    cmd_vel.twist.linear.y = 0.0;
-    cmd_vel.twist.linear.z = 0.0;
-    cmd_vel.twist.angular.x = 0.0;
-    cmd_vel.twist.angular.y = 0.0;
-    cmd_vel.twist.angular.z = omega_cmd;
+    // 7. Build Twist message (MotionModel 기반 변환)
+    cmd_vel.twist = dynamics_->model().controlToTwist(final_control);
 
     // 8. Publish visualization (plan 프레임에서)
     publishVisualization(info, current_state, reference_trajectory, info.weighted_avg_trajectory, computation_time_ms);
 
     RCLCPP_DEBUG(
       node_->get_logger(),
-      "MPPI: v=%.3f, omega=%.3f, min_cost=%.4f, ESS=%.1f/%d",
-      v_cmd, omega_cmd,
+      "MPPI: twist.linear.x=%.3f, twist.angular.z=%.3f, min_cost=%.4f, ESS=%.1f/%d",
+      cmd_vel.twist.linear.x, cmd_vel.twist.angular.z,
       info.costs.minCoeff(), info.ess, params_.K
     );
 
@@ -326,7 +341,8 @@ void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
   prune_start_idx_ = 0;
 
   // Reset control sequence for new plan (warm start from zero)
-  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
+  int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
+  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
 
   RCLCPP_INFO(
     node_->get_logger(),
@@ -350,14 +366,15 @@ void MPPIControllerPlugin::setSpeedLimit(const double& speed_limit, const bool& 
   );
 }
 
-std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
-  const Eigen::Vector3d& current_state,
+std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory
 )
 {
   int N = params_.N;
   int K = params_.K;
-  int nu = 2;  // [v, omega]
+  int nu = dynamics_->model().controlDim();
+  int nx = dynamics_->model().stateDim();
 
   // 1. Shift previous control sequence (warm start)
   for (int t = 0; t < N - 1; ++t) {
@@ -419,10 +436,10 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
   // 8. Extract optimal control (first timestep)
-  Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
+  Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
 
   // Compute weighted average trajectory
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, 3);
+  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
   for (int k = 0; k < K; ++k) {
     weighted_traj += weights(k) * trajectories[k];
   }
@@ -459,16 +476,20 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
   return {u_opt, info};
 }
 
-Eigen::Vector3d MPPIControllerPlugin::poseToState(const geometry_msgs::msg::PoseStamped& pose)
+Eigen::VectorXd MPPIControllerPlugin::poseToState(const geometry_msgs::msg::PoseStamped& pose)
 {
-  Eigen::Vector3d state;
+  int nx = dynamics_ ? dynamics_->model().stateDim() : 3;
+  Eigen::VectorXd state = Eigen::VectorXd::Zero(nx);
   state(0) = pose.pose.position.x;
   state(1) = pose.pose.position.y;
-  state(2) = quaternionToYaw(pose.pose.orientation);
+  if (nx >= 3) {
+    state(2) = quaternionToYaw(pose.pose.orientation);
+  }
+  // NonCoaxialSwerve (nx=4): state(3)=δ — pose에서 추출 불가, 0으로 유지
   return state;
 }
 
-void MPPIControllerPlugin::prunePlan(const Eigen::Vector3d& current_state)
+void MPPIControllerPlugin::prunePlan(const Eigen::VectorXd& current_state)
 {
   if (global_plan_.poses.empty()) {
     pruned_plan_ = global_plan_;
@@ -502,15 +523,17 @@ void MPPIControllerPlugin::prunePlan(const Eigen::Vector3d& current_state)
 }
 
 Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
-  const nav_msgs::msg::Path& path, const Eigen::Vector3d& /*current_state*/)
+  const nav_msgs::msg::Path& path, const Eigen::VectorXd& /*current_state*/)
 {
   if (path.poses.empty()) {
     RCLCPP_WARN(node_->get_logger(), "Empty path provided");
-    return Eigen::MatrixXd::Zero(params_.N + 1, 3);
+    int nx = dynamics_ ? dynamics_->model().stateDim() : 3;
+    return Eigen::MatrixXd::Zero(params_.N + 1, nx);
   }
 
+  int nx = dynamics_ ? dynamics_->model().stateDim() : 3;
   int path_size = path.poses.size();
-  Eigen::MatrixXd reference = Eigen::MatrixXd::Zero(params_.N + 1, 3);
+  Eigen::MatrixXd reference = Eigen::MatrixXd::Zero(params_.N + 1, nx);
 
   // 동적 lookahead: 현재 속도 비례 (정지 시 min_lookahead, 고속 시 v_max*N*dt)
   double max_lookahead = params_.v_max * params_.N * params_.dt;
@@ -626,7 +649,7 @@ void MPPIControllerPlugin::updateCostmapObstacles()
 
 void MPPIControllerPlugin::publishVisualization(
   const MPPIInfo& info,
-  const Eigen::Vector3d& current_state,
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory,
   const Eigen::MatrixXd& weighted_avg_trajectory,
   double computation_time_ms
@@ -865,6 +888,9 @@ void MPPIControllerPlugin::declareParameters()
 {
   std::string prefix = plugin_name_ + ".";
 
+  // Motion model
+  node_->declare_parameter(prefix + "motion_model", params_.motion_model);
+
   // MPPI parameters
   node_->declare_parameter(prefix + "N", params_.N);
   node_->declare_parameter(prefix + "dt", params_.dt);
@@ -973,6 +999,9 @@ void MPPIControllerPlugin::declareParameters()
 void MPPIControllerPlugin::loadParameters()
 {
   std::string prefix = plugin_name_ + ".";
+
+  // Motion model
+  params_.motion_model = node_->get_parameter(prefix + "motion_model").as_string();
 
   // MPPI parameters
   params_.N = node_->get_parameter(prefix + "N").as_int();

@@ -39,8 +39,8 @@ public:
   ) override;
 
 protected:
-  std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
-    const Eigen::Vector3d& current_state,
+  std::pair<Eigen::VectorXd, MPPIInfo> computeControl(
+    const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory
   ) override;
 

@@ -9,6 +9,9 @@ namespace mpc_controller_ros2
 /**
  * @brief MPPI 컨트롤러 파라미터 구조체
  *
+ * 동적 차원 지원: MatrixXd/VectorXd로 nx, nu에 따라 크기가 결정됩니다.
+ * 기본 생성자는 DiffDrive (nx=3, nu=2) 기본값을 유지합니다.
+ *
  * M2 고도화 기능 포함:
  * - Colored Noise (OU 프로세스)
  * - Adaptive Temperature (ESS 기반)
@@ -28,14 +31,14 @@ struct MPPIParams
   int K{1024};            // 샘플 궤적 수
   double lambda{10.0};    // Temperature 파라미터
 
-  // Noise parameters
-  Eigen::Vector2d noise_sigma{0.5, 0.5};  // [v, omega] 노이즈 표준편차
+  // Noise parameters (동적 차원)
+  Eigen::VectorXd noise_sigma;  // (nu,) 노이즈 표준편차
 
-  // Cost weights
-  Eigen::Matrix3d Q;      // State tracking weight
-  Eigen::Matrix3d Qf;     // Terminal state weight
-  Eigen::Matrix2d R;      // Control effort weight
-  Eigen::Matrix2d R_rate; // Control rate weight
+  // Cost weights (동적 차원)
+  Eigen::MatrixXd Q;      // (nx x nx) State tracking weight
+  Eigen::MatrixXd Qf;     // (nx x nx) Terminal state weight
+  Eigen::MatrixXd R;      // (nu x nu) Control effort weight
+  Eigen::MatrixXd R_rate;  // (nu x nu) Control rate weight
 
   // Control limits
   double v_max{1.0};      // 최대 선속도 (m/s)
@@ -75,7 +78,8 @@ struct MPPIParams
   bool tube_enabled{false};      // Tube-MPPI 활성화 여부
   double tube_width{0.5};        // Tube 폭 (m)
 
-  // Ancillary controller 피드백 게인 (2x3 행렬)
+  // Ancillary controller 피드백 게인 (nu x nx 행렬)
+  // DiffDrive 기본:
   // [dv]   [k_forward   0          0      ] [e_forward]
   // [dω] = [0           k_lateral  k_angle] [e_lateral]
   //                                         [e_angle  ]
@@ -116,6 +120,11 @@ struct MPPIParams
   double svg_resample_std{0.3};         // follower 리샘플링 표준편차
 
   // ============================================================================
+  // Motion Model 선택
+  // ============================================================================
+  std::string motion_model{"diff_drive"};  // "diff_drive", "swerve", "non_coaxial_swerve"
+
+  // ============================================================================
   // Costmap 기반 장애물 비용 파라미터
   // ============================================================================
   bool use_costmap_cost{true};          // CostmapObstacleCost 사용
@@ -139,8 +148,12 @@ struct MPPIParams
   // 생성자
   // ============================================================================
 
+  /** @brief 기본 생성자 — DiffDrive (nx=3, nu=2) 기본값 */
   MPPIParams()
   {
+    // Noise sigma: [v, omega]
+    noise_sigma = Eigen::Vector2d(0.5, 0.5);
+
     // State tracking weight: [x, y, theta]
     Q = Eigen::Matrix3d::Zero();
     Q(0, 0) = 10.0;  // x
@@ -162,13 +175,20 @@ struct MPPIParams
   }
 
   /**
-   * @brief 피드백 게인 매트릭스 생성 (2x3)
+   * @brief 피드백 게인 매트릭스 생성 (nu x nx)
+   * DiffDrive 기본: 2x3
    */
-  Eigen::Matrix<double, 2, 3> getFeedbackGainMatrix() const
+  Eigen::MatrixXd getFeedbackGainMatrix() const
   {
-    Eigen::Matrix<double, 2, 3> K_fb;
-    K_fb << k_forward, 0.0,       0.0,
-            0.0,       k_lateral, k_angle;
+    int nu = R.rows();
+    int nx = Q.rows();
+    Eigen::MatrixXd K_fb = Eigen::MatrixXd::Zero(nu, nx);
+    // 기본 게인 매핑 (DiffDrive 호환)
+    if (nu >= 2 && nx >= 3) {
+      K_fb(0, 0) = k_forward;
+      K_fb(1, 1) = k_lateral;
+      K_fb(1, 2) = k_angle;
+    }
     return K_fb;
   }
 };

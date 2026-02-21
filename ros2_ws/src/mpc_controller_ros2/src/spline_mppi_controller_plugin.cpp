@@ -152,7 +152,8 @@ void SplineMPPIControllerPlugin::configure(
   }
 
   // Knot warm-start
-  u_knots_ = Eigen::MatrixXd::Zero(P_, 2);
+  int spline_nu = dynamics_->model().controlDim();
+  u_knots_ = Eigen::MatrixXd::Zero(P_, spline_nu);
 
   auto node = parent.lock();
   RCLCPP_INFO(
@@ -164,13 +165,14 @@ void SplineMPPIControllerPlugin::configure(
     knot_sigma_(0), knot_sigma_(1));
 }
 
-std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
-  const Eigen::Vector3d& current_state,
+std::pair<Eigen::VectorXd, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory)
 {
   int N = params_.N;
   int K = params_.K;
-  int nu = 2;
+  int nu = dynamics_->model().controlDim();
+  int nx = dynamics_->model().stateDim();
 
   // ──── Step 1: Warm-start — LS 재투영 ────
   // 기존 shift는 knot index ↔ 시간축 불일치 (B-spline 비선형 매핑)
@@ -193,8 +195,9 @@ std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
   for (int k = 0; k < K; ++k) {
     Eigen::MatrixXd noise(P_, nu);
     for (int p = 0; p < P_; ++p) {
-      noise(p, 0) = dist(rng) * knot_sigma_(0);
-      noise(p, 1) = dist(rng) * knot_sigma_(1);
+      for (int d = 0; d < nu; ++d) {
+        noise(p, d) = dist(rng) * knot_sigma_(d);
+      }
     }
     knot_noise.push_back(noise);
   }
@@ -245,10 +248,10 @@ std::pair<Eigen::Vector2d, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
   // ──── Step 9: 최적 제어 추출 ────
-  Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
+  Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
 
   // Weighted average trajectory
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, 3);
+  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
   for (int k = 0; k < K; ++k) {
     weighted_traj += weights(k) * trajectories[k];
   }

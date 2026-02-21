@@ -36,9 +36,10 @@ void SmoothMPPIControllerPlugin::configure(
   MPPIControllerPlugin::configure(parent, name, tf, costmap_ros);
 
   // Δu warm-start 시퀀스 초기화 (Python: self.DU = np.zeros((N, nu)))
-  delta_u_sequence_ = Eigen::MatrixXd::Zero(params_.N, 2);
+  int nu = dynamics_->model().controlDim();
+  delta_u_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
   // 이전 스텝의 마지막 적용 제어 — cumsum 기준점 (Python: self._u_prev)
-  u_prev_ = Eigen::Vector2d::Zero();
+  u_prev_ = Eigen::VectorXd::Zero(nu);
 
   auto node = parent.lock();
   RCLCPP_INFO(
@@ -49,13 +50,14 @@ void SmoothMPPIControllerPlugin::configure(
     params_.smooth_action_cost_weight);
 }
 
-std::pair<Eigen::Vector2d, MPPIInfo> SmoothMPPIControllerPlugin::computeControl(
-  const Eigen::Vector3d& current_state,
+std::pair<Eigen::VectorXd, MPPIInfo> SmoothMPPIControllerPlugin::computeControl(
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory)
 {
   int N = params_.N;
   int K = params_.K;
-  int nu = 2;  // [v, omega]
+  int nu = dynamics_->model().controlDim();
+  int nx = dynamics_->model().stateDim();
 
   // ──── Step 1: Shift ΔU (warm start) ────
   // Python: self.DU[:-1] = self.DU[1:]; self.DU[-1] = 0.0
@@ -87,7 +89,7 @@ std::pair<Eigen::Vector2d, MPPIInfo> SmoothMPPIControllerPlugin::computeControl(
   perturbed_controls.reserve(K);
   for (int k = 0; k < K; ++k) {
     Eigen::MatrixXd u_seq(N, nu);
-    Eigen::Vector2d cumulative = u_prev_;
+    Eigen::VectorXd cumulative = u_prev_;
     for (int t = 0; t < N; ++t) {
       cumulative += perturbed_du[k].row(t).transpose();
       u_seq.row(t) = cumulative.transpose();
@@ -111,16 +113,19 @@ std::pair<Eigen::Vector2d, MPPIInfo> SmoothMPPIControllerPlugin::computeControl(
   // Python: ddu = perturbed_du[:, 1:, :] - perturbed_du[:, :-1, :] (vectorized)
   // C++ 차이점: 중첩 for-loop으로 element-wise 계산
   if (params_.smooth_action_cost_weight > 0.0 && N > 1) {
-    Eigen::Vector2d R_jerk(params_.smooth_R_jerk_v, params_.smooth_R_jerk_omega);
+    // Jerk weight 벡터 (nu 차원)
+    Eigen::VectorXd R_jerk = Eigen::VectorXd::Zero(nu);
+    if (nu >= 1) R_jerk(0) = params_.smooth_R_jerk_v;
+    if (nu >= 2) R_jerk(1) = params_.smooth_R_jerk_omega;
 
     for (int k = 0; k < K; ++k) {
       double jerk_cost = 0.0;
       for (int t = 0; t < N - 1; ++t) {
-        // ΔΔu[t] = Δu[t+1] - Δu[t]
-        Eigen::Vector2d ddu = perturbed_du[k].row(t + 1).transpose()
+        Eigen::VectorXd ddu = perturbed_du[k].row(t + 1).transpose()
                             - perturbed_du[k].row(t).transpose();
-        // ‖ΔΔu‖²_R = ΔΔu^T · R · ΔΔu (대각 가중)
-        jerk_cost += ddu(0) * ddu(0) * R_jerk(0) + ddu(1) * ddu(1) * R_jerk(1);
+        for (int d = 0; d < nu; ++d) {
+          jerk_cost += ddu(d) * ddu(d) * R_jerk(d);
+        }
       }
       costs(k) += params_.smooth_action_cost_weight * jerk_cost;
     }
@@ -150,19 +155,19 @@ std::pair<Eigen::Vector2d, MPPIInfo> SmoothMPPIControllerPlugin::computeControl(
   // ──── Step 10: 최적 U 복원 (ΔU → U via cumsum) ────
   // U* = u_prev + cumsum(ΔU*)
   control_sequence_ = Eigen::MatrixXd::Zero(N, nu);
-  Eigen::Vector2d cumulative = u_prev_;
+  Eigen::VectorXd cumulative2 = u_prev_;
   for (int t = 0; t < N; ++t) {
-    cumulative += delta_u_sequence_.row(t).transpose();
-    control_sequence_.row(t) = cumulative.transpose();
+    cumulative2 += delta_u_sequence_.row(t).transpose();
+    control_sequence_.row(t) = cumulative2.transpose();
   }
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
   // ──── Step 11: 최적 제어 추출 & u_prev 업데이트 ────
-  Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
+  Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
   u_prev_ = u_opt;  // 다음 스텝의 cumsum 기준점
 
   // Weighted average trajectory
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, 3);
+  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
   for (int k = 0; k < K; ++k) {
     weighted_traj += weights(k) * trajectories[k];
   }

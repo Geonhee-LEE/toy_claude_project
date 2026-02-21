@@ -37,14 +37,14 @@ public:
   ) override;
 
 protected:
-  std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
-    const Eigen::Vector3d& current_state,
+  std::pair<Eigen::VectorXd, MPPIInfo> computeControl(
+    const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory
   ) override;
 
 private:
-  Eigen::MatrixXd delta_u_sequence_;   // (N, 2) Δu warm-start
-  Eigen::Vector2d u_prev_;             // 이전 제어 (cumsum 기준점)
+  Eigen::MatrixXd delta_u_sequence_;   // (N, nu) Δu warm-start
+  Eigen::VectorXd u_prev_;             // (nu,) 이전 제어 (cumsum 기준점)
 };
 
 }  // namespace mpc_controller_ros2

@@ -37,53 +37,53 @@ public:
 class StateTrackingCost : public MPPICostFunction
 {
 public:
-  explicit StateTrackingCost(const Eigen::Matrix3d& Q);
+  explicit StateTrackingCost(const Eigen::MatrixXd& Q);
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,
     const std::vector<Eigen::MatrixXd>& controls,
     const Eigen::MatrixXd& reference
   ) const override;
 private:
-  Eigen::Matrix3d Q_;
+  Eigen::MatrixXd Q_;
 };
 
 class TerminalCost : public MPPICostFunction
 {
 public:
-  explicit TerminalCost(const Eigen::Matrix3d& Qf);
+  explicit TerminalCost(const Eigen::MatrixXd& Qf);
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,
     const std::vector<Eigen::MatrixXd>& controls,
     const Eigen::MatrixXd& reference
   ) const override;
 private:
-  Eigen::Matrix3d Qf_;
+  Eigen::MatrixXd Qf_;
 };
 
 class ControlEffortCost : public MPPICostFunction
 {
 public:
-  explicit ControlEffortCost(const Eigen::Matrix2d& R);
+  explicit ControlEffortCost(const Eigen::MatrixXd& R);
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,
     const std::vector<Eigen::MatrixXd>& controls,
     const Eigen::MatrixXd& reference
   ) const override;
 private:
-  Eigen::Matrix2d R_;
+  Eigen::MatrixXd R_;
 };
 
 class ControlRateCost : public MPPICostFunction
 {
 public:
-  explicit ControlRateCost(const Eigen::Matrix2d& R_rate);
+  explicit ControlRateCost(const Eigen::MatrixXd& R_rate);
   Eigen::VectorXd compute(
     const std::vector<Eigen::MatrixXd>& trajectories,
     const std::vector<Eigen::MatrixXd>& controls,
     const Eigen::MatrixXd& reference
   ) const override;
 private:
-  Eigen::Matrix2d R_rate_;
+  Eigen::MatrixXd R_rate_;
 };
 
 /**

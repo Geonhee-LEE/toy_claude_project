@@ -1,0 +1,259 @@
+<?xml version="1.0"?>
+<!--
+  Swerve Drive Robot URDF
+  4개 스티어링 + 4개 휠 (홀로노믹 이동 가능)
+
+  구조:
+    base_link
+    ├── fl_steer_link → fl_wheel_link  (Front Left)
+    ├── fr_steer_link → fr_wheel_link  (Front Right)
+    ├── rl_steer_link → rl_wheel_link  (Rear Left)
+    ├── rr_steer_link → rr_wheel_link  (Rear Right)
+    └── lidar_link
+-->
+<robot name="swerve_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="controller_config" default=""/>
+
+  <!-- Robot dimensions -->
+  <xacro:property name="base_width" value="0.5"/>
+  <xacro:property name="base_length" value="0.6"/>
+  <xacro:property name="base_height" value="0.15"/>
+  <xacro:property name="wheel_radius" value="0.08"/>
+  <xacro:property name="wheel_width" value="0.04"/>
+  <xacro:property name="steer_height" value="0.05"/>
+
+  <!-- Wheel positions (from base_link center) -->
+  <xacro:property name="wheel_x" value="0.25"/>
+  <xacro:property name="wheel_y" value="0.22"/>
+
+  <!-- ========== Swerve module macro ========== -->
+  <xacro:macro name="swerve_module" params="prefix x y">
+
+    <!-- Steer link (vertical axis rotation) -->
+    <link name="${prefix}_steer_link">
+      <visual>
+        <geometry>
+          <cylinder radius="0.03" length="${steer_height}"/>
+        </geometry>
+        <material name="gray">
+          <color rgba="0.5 0.5 0.5 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="0.03" length="${steer_height}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.5"/>
+        <inertia ixx="0.0002" ixy="0.0" ixz="0.0"
+                 iyy="0.0002" iyz="0.0"
+                 izz="0.0002"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_steer_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_steer_link"/>
+      <origin xyz="${x} ${y} ${-base_height/2}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <dynamics damping="0.05" friction="0.05"/>
+    </joint>
+
+    <!-- Wheel link -->
+    <link name="${prefix}_wheel_link">
+      <visual>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black">
+          <color rgba="0.1 0.1 0.1 1.0"/>
+        </material>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <mass value="1.0"/>
+        <inertia ixx="0.002" ixy="0.0" ixz="0.0"
+                 iyy="0.002" iyz="0.0"
+                 izz="0.003"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="${prefix}_steer_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="0 0 ${-steer_height/2 - wheel_radius}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.1" friction="0.1"/>
+    </joint>
+
+    <!-- Gazebo surface properties -->
+    <gazebo reference="${prefix}_wheel_link">
+      <mu1>1.2</mu1>
+      <mu2>0.5</mu2>
+      <kp>1000000</kp>
+      <kd>100</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- ========== Base link ========== -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+      <material name="green">
+        <color rgba="0.2 0.7 0.3 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="20.0"/>
+      <inertia ixx="0.5" ixy="0.0" ixz="0.0"
+               iyy="0.7" iyz="0.0"
+               izz="0.9"/>
+    </inertial>
+  </link>
+
+  <!-- ========== 4 Swerve modules ========== -->
+  <xacro:swerve_module prefix="fl" x="${wheel_x}" y="${wheel_y}"/>
+  <xacro:swerve_module prefix="fr" x="${wheel_x}" y="${-wheel_y}"/>
+  <xacro:swerve_module prefix="rl" x="${-wheel_x}" y="${wheel_y}"/>
+  <xacro:swerve_module prefix="rr" x="${-wheel_x}" y="${-wheel_y}"/>
+
+  <!-- ========== Lidar ========== -->
+  <link name="lidar_link">
+    <visual>
+      <geometry>
+        <cylinder radius="0.05" length="0.05"/>
+      </geometry>
+      <material name="red">
+        <color rgba="0.8 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.05" length="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.0001" ixy="0.0" ixz="0.0"
+               iyy="0.0001" iyz="0.0"
+               izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0.2 0 ${base_height/2 + 0.05}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========== ros2_control ========== -->
+  <ros2_control name="IgnitionSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+
+    <!-- 4x Steer joints (position command) -->
+    <joint name="fl_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="fr_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rl_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rr_steer_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <!-- 4x Wheel joints (velocity command) -->
+    <joint name="fl_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="fr_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rl_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rr_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!-- Gazebo ros2_control plugin -->
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg controller_config)</parameters>
+    </plugin>
+  </gazebo>
+
+  <!-- Lidar sensor -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>/scan</topic>
+      <update_rate>10</update_rate>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.0</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>10.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+</robot>

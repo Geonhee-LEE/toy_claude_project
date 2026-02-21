@@ -36,6 +36,7 @@ controller_server:
     # ---- SVG-MPPI Controller ----
     FollowPath:
       plugin: "mpc_controller_ros2::SVGMPPIControllerPlugin"
+      motion_model: "diff_drive"
 
       # Prediction horizon
       N: 30
