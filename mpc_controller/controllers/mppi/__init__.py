@@ -12,8 +12,12 @@ from mpc_controller.controllers.mppi.spline_mppi import SplineMPPIController
 from mpc_controller.controllers.mppi.svg_mppi import SVGMPPIController
 from mpc_controller.controllers.mppi.ancillary_controller import AncillaryController
 from mpc_controller.controllers.mppi.adaptive_temperature import AdaptiveTemperature
-from mpc_controller.controllers.mppi.cost_functions import ControlRateCost, TubeAwareCost
+from mpc_controller.controllers.mppi.cost_functions import ControlRateCost, TubeAwareCost, CBFCost
 from mpc_controller.controllers.mppi.sampling import ColoredNoiseSampler
+from mpc_controller.controllers.mppi.cbf_mppi import CBFMPPIController
+from mpc_controller.controllers.mppi.mppi_params import CBFParams
+from mpc_controller.controllers.mppi.barrier_function import CircleBarrier, BarrierFunctionSet
+from mpc_controller.controllers.mppi.cbf_safety_filter import CBFSafetyFilter
 
 __all__ = [
     "MPPIController",
@@ -25,10 +29,16 @@ __all__ = [
     "SmoothMPPIController",
     "SplineMPPIController",
     "SVGMPPIController",
+    "CBFMPPIController",
     "AncillaryController",
     "MPPIParams",
+    "CBFParams",
     "AdaptiveTemperature",
     "ControlRateCost",
     "TubeAwareCost",
+    "CBFCost",
+    "CircleBarrier",
+    "BarrierFunctionSet",
+    "CBFSafetyFilter",
     "ColoredNoiseSampler",
 ]

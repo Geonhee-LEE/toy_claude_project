@@ -244,6 +244,64 @@ class TubeAwareCost(MPPICostFunction):
         return total_cost
 
 
+class CBFCost(MPPICostFunction):
+    """Discrete CBF (DCBF) 조건 위반 기반 soft cost.
+
+    DCBF 조건: h(x_{t+1}) ≥ (1 - γ·dt) · h(x_t)
+    위반 시 제곱 페널티:
+      cost = weight · Σ_t Σ_i max(0, (1-γdt)·h_i(x_t) - h_i(x_{t+1}))²
+
+    rollout된 궤적에서 h(x_t) 직접 평가 (Taylor 근사 불필요).
+    """
+
+    def __init__(
+        self,
+        barrier_set: "BarrierFunctionSet",
+        weight: float = 500.0,
+        gamma: float = 1.0,
+        dt: float = 0.05,
+    ):
+        """
+        Args:
+            barrier_set: BarrierFunctionSet 인스턴스
+            weight: CBF 위반 비용 가중치
+            gamma: class-K 함수 계수
+            dt: 시간 간격 [s]
+        """
+        self.barrier_set = barrier_set
+        self.weight = weight
+        self.gamma = gamma
+        self.dt = dt
+        self._decay = 1.0 - gamma * dt
+
+    def compute(
+        self,
+        trajectories: np.ndarray,
+        controls: np.ndarray,
+        reference: np.ndarray,
+    ) -> np.ndarray:
+        if len(self.barrier_set.barriers) == 0:
+            return np.zeros(trajectories.shape[0])
+
+        K, N_plus_1, _ = trajectories.shape
+        total_cost = np.zeros(K)
+
+        for barrier in self.barrier_set.barriers:
+            # (K, N+1) barrier 값 — 각 시간 스텝
+            h_all = barrier.evaluate_batch(
+                trajectories.reshape(-1, trajectories.shape[-1])
+            ).reshape(K, N_plus_1)
+
+            h_t = h_all[:, :-1]      # (K, N) h(x_t)
+            h_t1 = h_all[:, 1:]      # (K, N) h(x_{t+1})
+
+            # DCBF 위반: max(0, (1-γdt)·h(x_t) - h(x_{t+1}))²
+            violation = np.maximum(0.0, self._decay * h_t - h_t1)
+            total_cost += self.weight * np.sum(violation ** 2, axis=1)
+
+        return total_cost
+
+
 class CompositeMPPICost:
     """여러 비용 함수를 합산하는 복합 비용."""
 

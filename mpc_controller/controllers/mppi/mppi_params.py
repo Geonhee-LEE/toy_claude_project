@@ -97,3 +97,26 @@ class MPPIParams:
             self.R = np.diag([0.01, 0.01])
         if self.Qf is None:
             self.Qf = np.diag([50.0, 50.0, 5.0])
+
+
+@dataclass
+class CBFParams:
+    """CBF (Control Barrier Function) 파라미터.
+
+    Attributes:
+        enabled: CBF 기능 활성화 여부 (False이면 Vanilla MPPI 동일)
+        gamma: class-K 함수 계수 — CBF 감쇠율
+        safety_margin: 추가 안전 마진 [m]
+        robot_radius: 로봇 반경 [m]
+        activation_distance: CBF 활성화 거리 [m]
+        cost_weight: Soft CBF cost 가중치
+        use_safety_filter: Post-hoc QP safety filter 활성화
+    """
+
+    enabled: bool = False
+    gamma: float = 1.0
+    safety_margin: float = 0.3
+    robot_radius: float = 0.2
+    activation_distance: float = 3.0
+    cost_weight: float = 500.0
+    use_safety_filter: bool = True
