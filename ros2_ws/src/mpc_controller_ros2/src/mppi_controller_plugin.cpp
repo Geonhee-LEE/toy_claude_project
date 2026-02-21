@@ -76,7 +76,8 @@ void MPPIControllerPlugin::configure(
   cost_function_->addCost(std::make_unique<ControlEffortCost>(params_.R));
   cost_function_->addCost(std::make_unique<ControlRateCost>(params_.R_rate));
   cost_function_->addCost(
-    std::make_unique<PreferForwardCost>(params_.prefer_forward_weight, params_.prefer_forward_linear_ratio)
+    std::make_unique<PreferForwardCost>(params_.prefer_forward_weight,
+      params_.prefer_forward_linear_ratio, params_.prefer_forward_velocity_incentive)
   );
 
   // CostmapObstacleCost 추가 (비소유 포인터 저장)
@@ -92,6 +93,39 @@ void MPPIControllerPlugin::configure(
     cost_function_->addCost(
       std::make_unique<ObstacleCost>(params_.obstacle_weight, params_.safety_distance)
     );
+  }
+
+  // CBF 초기화
+  if (params_.cbf_enabled) {
+    barrier_set_ = BarrierFunctionSet(
+      params_.cbf_robot_radius, params_.cbf_safety_margin,
+      params_.cbf_activation_distance);
+
+    // CBFCost를 비용 함수에 추가 (soft 유도)
+    cost_function_->addCost(std::make_unique<CBFCost>(
+      &barrier_set_, params_.cbf_cost_weight, params_.cbf_gamma, params_.dt));
+
+    // CBF Safety Filter 초기화 (hard 보장)
+    if (params_.cbf_use_safety_filter) {
+      int nu_dim = dynamics_->model().controlDim();
+      Eigen::VectorXd u_min(nu_dim), u_max(nu_dim);
+      // DiffDrive: [v, omega], Swerve: [vx, vy, omega]
+      u_min(0) = params_.v_min;
+      u_max(0) = params_.v_max;
+      u_min(nu_dim - 1) = params_.omega_min;
+      u_max(nu_dim - 1) = params_.omega_max;
+      if (nu_dim >= 3) {
+        u_min(1) = -params_.v_max;  // vy
+        u_max(1) = params_.v_max;
+      }
+      cbf_safety_filter_ = std::make_unique<CBFSafetyFilter>(
+        &barrier_set_, params_.cbf_gamma, params_.dt, u_min, u_max);
+    }
+
+    RCLCPP_INFO(node_->get_logger(),
+      "CBF enabled (gamma=%.2f, safety_margin=%.2f, cost_weight=%.0f, safety_filter=%s)",
+      params_.cbf_gamma, params_.cbf_safety_margin, params_.cbf_cost_weight,
+      params_.cbf_use_safety_filter ? "ON" : "OFF");
   }
 
   // Initialize control sequence (nu from model)
@@ -205,25 +239,10 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       updateCostmapObstacles();
     }
 
-    // 4.5. Goal approach: 목표 근처에서 noise sigma 스케일링 (정밀 제어)
-    double goal_scale = 1.0;
-    if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
-      goal_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
-      Eigen::VectorXd scaled_sigma = params_.noise_sigma * goal_scale;
-      if (params_.colored_noise) {
-        sampler_ = std::make_unique<ColoredNoiseSampler>(scaled_sigma, params_.noise_beta);
-      } else {
-        sampler_ = std::make_unique<GaussianSampler>(scaled_sigma);
-      }
-    } else if (goal_scale < 1.0) {
-      // goal에서 멀어지면 원래 sigma 복원
-      if (params_.colored_noise) {
-        sampler_ = std::make_unique<ColoredNoiseSampler>(params_.noise_sigma, params_.noise_beta);
-      } else {
-        sampler_ = std::make_unique<GaussianSampler>(params_.noise_sigma);
-      }
+    // 4.5. CBF 장애물 갱신 (costmap lethal 셀 → point obstacles)
+    if (params_.cbf_enabled) {
+      updateCBFObstacles();
     }
-
 
     // 5. Compute optimal control (measure computation time)
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -231,8 +250,25 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     auto end_time = std::chrono::high_resolution_clock::now();
     double computation_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
 
-    // 5.5. Tube-MPPI 피드백 보정 (활성화된 경우)
+    // 5.3. CBF Safety Filter (활성화된 경우)
     Eigen::VectorXd final_control = u_opt;
+    if (params_.cbf_enabled && params_.cbf_use_safety_filter && cbf_safety_filter_) {
+      auto [u_safe, filter_info] = cbf_safety_filter_->filter(
+        current_state, u_opt, *dynamics_);
+      final_control = u_safe;
+      info.cbf_used = true;
+      info.cbf_filter_info = filter_info;
+
+      if (filter_info.filter_applied) {
+        RCLCPP_DEBUG(node_->get_logger(),
+          "CBF filter: %d active barriers, qp_success=%s, ||u_diff||=%.4f",
+          filter_info.num_active_barriers,
+          filter_info.qp_success ? "true" : "false",
+          (u_safe - u_opt).norm());
+      }
+    }
+
+    // 5.5. Tube-MPPI 피드백 보정 (활성화된 경우)
     if (params_.tube_enabled && tube_mppi_) {
       auto [corrected_control, tube_info] = tube_mppi_->computeCorrectedControl(
         u_opt,
@@ -256,24 +292,32 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 6. Apply speed limit if set
+    // 6. EMA 출력 필터 (안전 규제 전에 적용 — rear check가 EMA를 우회하지 않도록)
+    if (prev_cmd_valid_ && params_.control_smoothing_alpha < 1.0) {
+      double a = params_.control_smoothing_alpha;
+      final_control = a * final_control + (1.0 - a) * prev_cmd_;
+    }
+    prev_cmd_ = final_control;
+    prev_cmd_valid_ = true;
+
+    // 6.2. Apply speed limit & goal slowdown
     double v_cmd = final_control(0);
 
-    // Goal approach 감속: 거리 비례로 v_max 스케일링
+    // Goal approach 감속: sqrt 거리 비례로 v_max 스케일링 (부드러운 감속)
     if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
-      double v_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
+      double ratio = goal_dist_ / params_.goal_slowdown_dist;
+      double v_scale = std::clamp(std::sqrt(ratio), 0.2, 1.0);
       double effective_v_max = params_.v_max * v_scale;
       v_cmd = std::clamp(v_cmd, params_.v_min, effective_v_max);
       final_control(0) = v_cmd;
     }
-
 
     if (speed_limit_valid_) {
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
       final_control(0) = v_cmd;
     }
 
-    // 6.5. 후방 안전 검사: odom 프레임 좌표로 costmap 조회
+    // 6.5. 후방 안전 검사: odom 프레임 좌표로 costmap 조회 (EMA 후에 적용 → 우회 불가)
     if (v_cmd < 0.0 && costmap_ros_) {
       auto costmap = costmap_ros_->getCostmap();
       if (costmap) {
@@ -300,6 +344,11 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 8. Publish visualization (plan 프레임에서)
     publishVisualization(info, current_state, reference_trajectory, info.weighted_avg_trajectory, computation_time_ms);
 
+    // 8.5. Collision debug visualization (debug_collision_viz=true일 때만)
+    if (params_.debug_collision_viz) {
+      publishCollisionDebugVisualization(info, current_state, reference_trajectory, info.weighted_avg_trajectory);
+    }
+
     RCLCPP_DEBUG(
       node_->get_logger(),
       "MPPI: twist.linear.x=%.3f, twist.angular.z=%.3f, min_cost=%.4f, ESS=%.1f/%d",
@@ -323,6 +372,7 @@ void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
 {
   global_plan_ = path;
   prune_start_idx_ = 0;
+  prev_cmd_valid_ = false;
 
   // Reset control sequence for new plan (warm start from zero)
   int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
@@ -364,10 +414,19 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   for (int t = 0; t < N - 1; ++t) {
     control_sequence_.row(t) = control_sequence_.row(t + 1);
   }
-  control_sequence_.row(N - 1).setZero();
+  control_sequence_.row(N - 1) = control_sequence_.row(N - 2);
 
   // 2. Sample noise
   auto noise_samples = sampler_->sample(K, N, nu);
+
+  // 2.5. Goal 근처 noise 스케일링 (sampler 재생성 없이 정밀 제어)
+  if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
+    double ratio = goal_dist_ / params_.goal_slowdown_dist;
+    double noise_scale = std::clamp(std::sqrt(ratio), 0.2, 1.0);
+    for (int k = 0; k < K; ++k) {
+      noise_samples[k] *= noise_scale;
+    }
+  }
 
   // 3. Add noise to control sequence and clip
   std::vector<Eigen::MatrixXd> perturbed_controls;
@@ -386,12 +445,17 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
     params_.dt
   );
 
-  // 5. Compute costs
-  Eigen::VectorXd costs = cost_function_->compute(
-    trajectories,
-    perturbed_controls,
-    reference_trajectory
-  );
+  // 5. Compute costs (디버그 모드: 비용 분해 포함)
+  Eigen::VectorXd costs;
+  CostBreakdown cost_breakdown;
+  if (params_.debug_collision_viz) {
+    cost_breakdown = cost_function_->computeDetailed(
+      trajectories, perturbed_controls, reference_trajectory);
+    costs = cost_breakdown.total_costs;
+  } else {
+    costs = cost_function_->compute(
+      trajectories, perturbed_controls, reference_trajectory);
+  }
 
   // 6. Compute weights via strategy (Adaptive Temperature 적용)
   double current_lambda = params_.lambda;
@@ -444,6 +508,11 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
     adaptive_temp_->getLambda() : params_.lambda;
   info.ess = ess;
   info.costs = costs;
+
+  // 디버그 비용 분해
+  if (params_.debug_collision_viz) {
+    info.cost_breakdown = cost_breakdown;
+  }
 
   // M2 확장 정보
   info.colored_noise_used = params_.colored_noise;
@@ -533,7 +602,10 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
   }
 
   double total_path_length = arc_lengths.back();
-  double effective_lookahead = std::min(lookahead, total_path_length);
+  double effective_lookahead = std::max(
+    params_.min_lookahead,
+    std::min(lookahead, total_path_length)
+  );
   double step_distance = effective_lookahead / params_.N;
 
   // arc-length stepping으로 참조 궤적 생성
@@ -608,6 +680,39 @@ void MPPIControllerPlugin::updateCostmapObstacles()
       "map→odom TF not available (%s), using identity", ex.what());
     costmap_obstacle_cost_ptr_->setMapToOdomTransform(0.0, 0.0, 1.0, 0.0, false);
   }
+}
+
+void MPPIControllerPlugin::updateCBFObstacles()
+{
+  if (!costmap_ros_) {
+    return;
+  }
+
+  auto costmap = costmap_ros_->getCostmap();
+  if (!costmap) {
+    return;
+  }
+
+  // Costmap lethal 셀을 point obstacles로 변환
+  std::vector<Eigen::Vector3d> obstacles;
+  double resolution = costmap->getResolution();
+  unsigned int size_x = costmap->getSizeInCellsX();
+  unsigned int size_y = costmap->getSizeInCellsY();
+
+  for (unsigned int mx = 0; mx < size_x; ++mx) {
+    for (unsigned int my = 0; my < size_y; ++my) {
+      unsigned char cost = costmap->getCost(mx, my);
+      if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        double wx, wy;
+        costmap->mapToWorld(mx, my, wx, wy);
+        // odom→map 변환이 필요할 수 있으나, CBF는 map 프레임에서 동작
+        // 현재 구현은 costmap 프레임 직접 사용 (odom 프레임)
+        obstacles.emplace_back(wx, wy, resolution * 0.5);
+      }
+    }
+  }
+
+  barrier_set_.setObstacles(obstacles);
 }
 
 void MPPIControllerPlugin::publishVisualization(
@@ -860,8 +965,9 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "K", params_.K);
   node_->declare_parameter(prefix + "lambda", params_.lambda);
 
-  // Noise parameters
+  // Noise parameters (vy는 swerve/non_coaxial에서 사용, diff_drive에서는 무시)
   node_->declare_parameter(prefix + "noise_sigma_v", params_.noise_sigma(0));
+  node_->declare_parameter(prefix + "noise_sigma_vy", 0.5);
   node_->declare_parameter(prefix + "noise_sigma_omega", params_.noise_sigma(1));
 
   // Control limits
@@ -880,12 +986,14 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "Qf_y", params_.Qf(1, 1));
   node_->declare_parameter(prefix + "Qf_theta", params_.Qf(2, 2));
 
-  // Cost weights - R
+  // Cost weights - R (vy는 swerve/non_coaxial에서 사용)
   node_->declare_parameter(prefix + "R_v", params_.R(0, 0));
+  node_->declare_parameter(prefix + "R_vy", 0.1);
   node_->declare_parameter(prefix + "R_omega", params_.R(1, 1));
 
-  // Cost weights - R_rate
+  // Cost weights - R_rate (vy는 swerve/non_coaxial에서 사용)
   node_->declare_parameter(prefix + "R_rate_v", params_.R_rate(0, 0));
+  node_->declare_parameter(prefix + "R_rate_vy", 1.0);
   node_->declare_parameter(prefix + "R_rate_omega", params_.R_rate(1, 1));
 
   // Obstacle avoidance
@@ -895,12 +1003,17 @@ void MPPIControllerPlugin::declareParameters()
   // Forward preference
   node_->declare_parameter(prefix + "prefer_forward_weight", params_.prefer_forward_weight);
   node_->declare_parameter(prefix + "prefer_forward_linear_ratio", params_.prefer_forward_linear_ratio);
+  node_->declare_parameter(prefix + "prefer_forward_velocity_incentive", params_.prefer_forward_velocity_incentive);
+
+  // Control smoothing
+  node_->declare_parameter(prefix + "control_smoothing_alpha", params_.control_smoothing_alpha);
 
   // Costmap obstacle cost
   node_->declare_parameter(prefix + "use_costmap_cost", params_.use_costmap_cost);
   node_->declare_parameter(prefix + "costmap_lethal_cost", params_.costmap_lethal_cost);
   node_->declare_parameter(prefix + "costmap_critical_cost", params_.costmap_critical_cost);
   node_->declare_parameter(prefix + "lookahead_dist", params_.lookahead_dist);
+  node_->declare_parameter(prefix + "min_lookahead", params_.min_lookahead);
   node_->declare_parameter(prefix + "goal_slowdown_dist", params_.goal_slowdown_dist);
 
   // Phase 1: Colored Noise
@@ -945,6 +1058,24 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "svg_guide_step_size", params_.svg_guide_step_size);
   node_->declare_parameter(prefix + "svg_resample_std", params_.svg_resample_std);
 
+  // CBF (Control Barrier Function)
+  node_->declare_parameter(prefix + "cbf_enabled", params_.cbf_enabled);
+  node_->declare_parameter(prefix + "cbf_gamma", params_.cbf_gamma);
+  node_->declare_parameter(prefix + "cbf_safety_margin", params_.cbf_safety_margin);
+  node_->declare_parameter(prefix + "cbf_robot_radius", params_.cbf_robot_radius);
+  node_->declare_parameter(prefix + "cbf_activation_distance", params_.cbf_activation_distance);
+  node_->declare_parameter(prefix + "cbf_cost_weight", params_.cbf_cost_weight);
+  node_->declare_parameter(prefix + "cbf_use_safety_filter", params_.cbf_use_safety_filter);
+
+  // Collision Debug Visualization
+  node_->declare_parameter(prefix + "debug_collision_viz", params_.debug_collision_viz);
+  node_->declare_parameter(prefix + "debug_cost_breakdown", params_.debug_cost_breakdown);
+  node_->declare_parameter(prefix + "debug_collision_points", params_.debug_collision_points);
+  node_->declare_parameter(prefix + "debug_safety_footprint", params_.debug_safety_footprint);
+  node_->declare_parameter(prefix + "debug_cost_heatmap", params_.debug_cost_heatmap);
+  node_->declare_parameter(prefix + "debug_footprint_radius", params_.debug_footprint_radius);
+  node_->declare_parameter(prefix + "debug_heatmap_stride", params_.debug_heatmap_stride);
+
   // Visualization
   node_->declare_parameter(prefix + "visualize_samples", params_.visualize_samples);
   node_->declare_parameter(prefix + "visualize_best", params_.visualize_best);
@@ -965,15 +1096,27 @@ void MPPIControllerPlugin::loadParameters()
   // Motion model
   params_.motion_model = node_->get_parameter(prefix + "motion_model").as_string();
 
+  // nu 결정 및 noise_sigma/R/R_rate 동적 리사이즈
+  int nu = (params_.motion_model == "diff_drive") ? 2 : 3;
+  if (nu > static_cast<int>(params_.noise_sigma.size())) {
+    params_.noise_sigma = Eigen::VectorXd::Zero(nu);
+    params_.R = Eigen::MatrixXd::Zero(nu, nu);
+    params_.R_rate = Eigen::MatrixXd::Zero(nu, nu);
+  }
+  int omega_idx = nu - 1;
+
   // MPPI parameters
   params_.N = node_->get_parameter(prefix + "N").as_int();
   params_.dt = node_->get_parameter(prefix + "dt").as_double();
   params_.K = node_->get_parameter(prefix + "K").as_int();
   params_.lambda = node_->get_parameter(prefix + "lambda").as_double();
 
-  // Noise parameters
+  // Noise parameters (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
   params_.noise_sigma(0) = node_->get_parameter(prefix + "noise_sigma_v").as_double();
-  params_.noise_sigma(1) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
+  params_.noise_sigma(omega_idx) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
+  if (nu >= 3) {
+    params_.noise_sigma(1) = node_->get_parameter(prefix + "noise_sigma_vy").as_double();
+  }
 
   // Control limits
   params_.v_max = node_->get_parameter(prefix + "v_max").as_double();
@@ -991,13 +1134,19 @@ void MPPIControllerPlugin::loadParameters()
   params_.Qf(1, 1) = node_->get_parameter(prefix + "Qf_y").as_double();
   params_.Qf(2, 2) = node_->get_parameter(prefix + "Qf_theta").as_double();
 
-  // Cost weights - R
+  // Cost weights - R (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
   params_.R(0, 0) = node_->get_parameter(prefix + "R_v").as_double();
-  params_.R(1, 1) = node_->get_parameter(prefix + "R_omega").as_double();
+  params_.R(omega_idx, omega_idx) = node_->get_parameter(prefix + "R_omega").as_double();
+  if (nu >= 3) {
+    params_.R(1, 1) = node_->get_parameter(prefix + "R_vy").as_double();
+  }
 
-  // Cost weights - R_rate
+  // Cost weights - R_rate (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
   params_.R_rate(0, 0) = node_->get_parameter(prefix + "R_rate_v").as_double();
-  params_.R_rate(1, 1) = node_->get_parameter(prefix + "R_rate_omega").as_double();
+  params_.R_rate(omega_idx, omega_idx) = node_->get_parameter(prefix + "R_rate_omega").as_double();
+  if (nu >= 3) {
+    params_.R_rate(1, 1) = node_->get_parameter(prefix + "R_rate_vy").as_double();
+  }
 
   // Obstacle avoidance
   params_.obstacle_weight = node_->get_parameter(prefix + "obstacle_weight").as_double();
@@ -1006,12 +1155,17 @@ void MPPIControllerPlugin::loadParameters()
   // Forward preference
   params_.prefer_forward_weight = node_->get_parameter(prefix + "prefer_forward_weight").as_double();
   params_.prefer_forward_linear_ratio = node_->get_parameter(prefix + "prefer_forward_linear_ratio").as_double();
+  params_.prefer_forward_velocity_incentive = node_->get_parameter(prefix + "prefer_forward_velocity_incentive").as_double();
+
+  // Control smoothing
+  params_.control_smoothing_alpha = node_->get_parameter(prefix + "control_smoothing_alpha").as_double();
 
   // Costmap obstacle cost
   params_.use_costmap_cost = node_->get_parameter(prefix + "use_costmap_cost").as_bool();
   params_.costmap_lethal_cost = node_->get_parameter(prefix + "costmap_lethal_cost").as_double();
   params_.costmap_critical_cost = node_->get_parameter(prefix + "costmap_critical_cost").as_double();
   params_.lookahead_dist = node_->get_parameter(prefix + "lookahead_dist").as_double();
+  params_.min_lookahead = node_->get_parameter(prefix + "min_lookahead").as_double();
   params_.goal_slowdown_dist = node_->get_parameter(prefix + "goal_slowdown_dist").as_double();
 
   // Phase 1: Colored Noise
@@ -1055,6 +1209,24 @@ void MPPIControllerPlugin::loadParameters()
   params_.svg_guide_iterations = node_->get_parameter(prefix + "svg_guide_iterations").as_int();
   params_.svg_guide_step_size = node_->get_parameter(prefix + "svg_guide_step_size").as_double();
   params_.svg_resample_std = node_->get_parameter(prefix + "svg_resample_std").as_double();
+
+  // CBF (Control Barrier Function)
+  params_.cbf_enabled = node_->get_parameter(prefix + "cbf_enabled").as_bool();
+  params_.cbf_gamma = node_->get_parameter(prefix + "cbf_gamma").as_double();
+  params_.cbf_safety_margin = node_->get_parameter(prefix + "cbf_safety_margin").as_double();
+  params_.cbf_robot_radius = node_->get_parameter(prefix + "cbf_robot_radius").as_double();
+  params_.cbf_activation_distance = node_->get_parameter(prefix + "cbf_activation_distance").as_double();
+  params_.cbf_cost_weight = node_->get_parameter(prefix + "cbf_cost_weight").as_double();
+  params_.cbf_use_safety_filter = node_->get_parameter(prefix + "cbf_use_safety_filter").as_bool();
+
+  // Collision Debug Visualization
+  params_.debug_collision_viz = node_->get_parameter(prefix + "debug_collision_viz").as_bool();
+  params_.debug_cost_breakdown = node_->get_parameter(prefix + "debug_cost_breakdown").as_bool();
+  params_.debug_collision_points = node_->get_parameter(prefix + "debug_collision_points").as_bool();
+  params_.debug_safety_footprint = node_->get_parameter(prefix + "debug_safety_footprint").as_bool();
+  params_.debug_cost_heatmap = node_->get_parameter(prefix + "debug_cost_heatmap").as_bool();
+  params_.debug_footprint_radius = node_->get_parameter(prefix + "debug_footprint_radius").as_double();
+  params_.debug_heatmap_stride = node_->get_parameter(prefix + "debug_heatmap_stride").as_int();
 
   // Visualization
   params_.visualize_samples = node_->get_parameter(prefix + "visualize_samples").as_bool();
@@ -1140,6 +1312,19 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         need_recreate_sampler = true;
         RCLCPP_INFO(node_->get_logger(), "Updated noise_sigma_v: %.3f", value);
       }
+      else if (short_name == "noise_sigma_vy") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "noise_sigma_vy must be >= 0.0";
+          return result;
+        }
+        if (params_.noise_sigma.size() >= 3) {
+          params_.noise_sigma(1) = value;
+          need_recreate_sampler = true;
+          RCLCPP_INFO(node_->get_logger(), "Updated noise_sigma_vy: %.3f", value);
+        }
+      }
       else if (short_name == "noise_sigma_omega") {
         double value = param.as_double();
         if (value < 0.0) {
@@ -1147,7 +1332,8 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
           result.reason = "noise_sigma_omega must be >= 0.0";
           return result;
         }
-        params_.noise_sigma(1) = value;
+        int omega_idx = params_.noise_sigma.size() - 1;
+        params_.noise_sigma(omega_idx) = value;
         need_recreate_sampler = true;
         RCLCPP_INFO(node_->get_logger(), "Updated noise_sigma_omega: %.3f", value);
       }
@@ -1272,6 +1458,19 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated R_v: %.3f", value);
       }
+      else if (short_name == "R_vy") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_vy must be >= 0.0";
+          return result;
+        }
+        if (params_.R.rows() >= 3) {
+          params_.R(1, 1) = value;
+          need_recreate_cost_function = true;
+          RCLCPP_INFO(node_->get_logger(), "Updated R_vy: %.3f", value);
+        }
+      }
       else if (short_name == "R_omega") {
         double value = param.as_double();
         if (value < 0.0) {
@@ -1279,7 +1478,8 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
           result.reason = "R_omega must be >= 0.0";
           return result;
         }
-        params_.R(1, 1) = value;
+        int omega_idx = params_.R.rows() - 1;
+        params_.R(omega_idx, omega_idx) = value;
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated R_omega: %.3f", value);
       }
@@ -1295,6 +1495,19 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated R_rate_v: %.3f", value);
       }
+      else if (short_name == "R_rate_vy") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "R_rate_vy must be >= 0.0";
+          return result;
+        }
+        if (params_.R_rate.rows() >= 3) {
+          params_.R_rate(1, 1) = value;
+          need_recreate_cost_function = true;
+          RCLCPP_INFO(node_->get_logger(), "Updated R_rate_vy: %.3f", value);
+        }
+      }
       else if (short_name == "R_rate_omega") {
         double value = param.as_double();
         if (value < 0.0) {
@@ -1302,7 +1515,8 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
           result.reason = "R_rate_omega must be >= 0.0";
           return result;
         }
-        params_.R_rate(1, 1) = value;
+        int omega_idx = params_.R_rate.rows() - 1;
+        params_.R_rate(omega_idx, omega_idx) = value;
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated R_rate_omega: %.3f", value);
       }
@@ -1329,6 +1543,30 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated safety_distance: %.3f", value);
       }
+      // Collision Debug Visualization (런타임 ON/OFF)
+      else if (short_name == "debug_collision_viz") {
+        params_.debug_collision_viz = param.as_bool();
+        RCLCPP_INFO(node_->get_logger(), "Updated debug_collision_viz: %s",
+          params_.debug_collision_viz ? "ON" : "OFF");
+      }
+      else if (short_name == "debug_cost_breakdown") {
+        params_.debug_cost_breakdown = param.as_bool();
+      }
+      else if (short_name == "debug_collision_points") {
+        params_.debug_collision_points = param.as_bool();
+      }
+      else if (short_name == "debug_safety_footprint") {
+        params_.debug_safety_footprint = param.as_bool();
+      }
+      else if (short_name == "debug_cost_heatmap") {
+        params_.debug_cost_heatmap = param.as_bool();
+      }
+      else if (short_name == "debug_footprint_radius") {
+        params_.debug_footprint_radius = param.as_double();
+      }
+      else if (short_name == "debug_heatmap_stride") {
+        params_.debug_heatmap_stride = param.as_int();
+      }
       // Forward preference
       else if (short_name == "prefer_forward_weight") {
         double value = param.as_double();
@@ -1351,6 +1589,77 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         params_.prefer_forward_linear_ratio = value;
         need_recreate_cost_function = true;
         RCLCPP_INFO(node_->get_logger(), "Updated prefer_forward_linear_ratio: %.3f", value);
+      }
+      else if (short_name == "prefer_forward_velocity_incentive") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "prefer_forward_velocity_incentive must be >= 0.0";
+          return result;
+        }
+        params_.prefer_forward_velocity_incentive = value;
+        need_recreate_cost_function = true;
+        RCLCPP_INFO(node_->get_logger(), "Updated prefer_forward_velocity_incentive: %.3f", value);
+      }
+      else if (short_name == "control_smoothing_alpha") {
+        double value = param.as_double();
+        if (value < 0.0 || value > 1.0) {
+          result.successful = false;
+          result.reason = "control_smoothing_alpha must be in [0.0, 1.0]";
+          return result;
+        }
+        params_.control_smoothing_alpha = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated control_smoothing_alpha: %.3f", value);
+      }
+      // min_lookahead
+      else if (short_name == "min_lookahead") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "min_lookahead must be >= 0.0";
+          return result;
+        }
+        params_.min_lookahead = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated min_lookahead: %.3f", value);
+      }
+      // goal_slowdown_dist
+      else if (short_name == "goal_slowdown_dist") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "goal_slowdown_dist must be >= 0.0";
+          return result;
+        }
+        params_.goal_slowdown_dist = value;
+        RCLCPP_INFO(node_->get_logger(), "Updated goal_slowdown_dist: %.3f", value);
+      }
+      // costmap_lethal_cost
+      else if (short_name == "costmap_lethal_cost") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "costmap_lethal_cost must be >= 0.0";
+          return result;
+        }
+        params_.costmap_lethal_cost = value;
+        if (costmap_obstacle_cost_ptr_) {
+          costmap_obstacle_cost_ptr_->setLethalCost(value);
+        }
+        RCLCPP_INFO(node_->get_logger(), "Updated costmap_lethal_cost: %.1f", value);
+      }
+      // costmap_critical_cost
+      else if (short_name == "costmap_critical_cost") {
+        double value = param.as_double();
+        if (value < 0.0) {
+          result.successful = false;
+          result.reason = "costmap_critical_cost must be >= 0.0";
+          return result;
+        }
+        params_.costmap_critical_cost = value;
+        if (costmap_obstacle_cost_ptr_) {
+          costmap_obstacle_cost_ptr_->setCriticalCost(value);
+        }
+        RCLCPP_INFO(node_->get_logger(), "Updated costmap_critical_cost: %.1f", value);
       }
 
     } catch (const rclcpp::ParameterTypeException& e) {
@@ -1375,6 +1684,206 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
   }
 
   return result;
+}
+
+void MPPIControllerPlugin::publishCollisionDebugVisualization(
+  const MPPIInfo& info,
+  const Eigen::VectorXd& current_state,
+  const Eigen::MatrixXd& /*reference_trajectory*/,
+  const Eigen::MatrixXd& weighted_avg_trajectory
+)
+{
+  if (!marker_pub_ || marker_pub_->get_subscription_count() == 0) {
+    return;
+  }
+
+  visualization_msgs::msg::MarkerArray marker_array;
+  auto stamp = node_->now();
+  std::string frame_id = global_plan_.header.frame_id.empty() ?
+    "map" : global_plan_.header.frame_id;
+  double marker_lifetime = 0.3;
+
+  // (1) 비용 분해 텍스트 (로봇 위 1.5m)
+  if (params_.debug_cost_breakdown && !info.cost_breakdown.component_costs.empty()) {
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.header.stamp = stamp;
+    text_marker.header.frame_id = frame_id;
+    text_marker.ns = "mppi_debug_cost_text";
+    text_marker.id = 0;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+    text_marker.lifetime = rclcpp::Duration::from_seconds(marker_lifetime);
+
+    text_marker.pose.position.x = current_state(0);
+    text_marker.pose.position.y = current_state(1);
+    text_marker.pose.position.z = 1.5;
+    text_marker.pose.orientation.w = 1.0;
+
+    std::string text;
+    for (const auto& [name, costs] : info.cost_breakdown.component_costs) {
+      double min_c = costs.minCoeff();
+      double mean_c = costs.mean();
+      double max_c = costs.maxCoeff();
+      char buf[128];
+      snprintf(buf, sizeof(buf), "%-16s %7.1f / %7.1f / %7.1f\n",
+        name.c_str(), min_c, mean_c, max_c);
+      text += buf;
+    }
+
+    text_marker.text = text;
+    text_marker.scale.z = 0.15;
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 0.0;
+    text_marker.color.a = 1.0;
+
+    marker_array.markers.push_back(text_marker);
+  }
+
+  // (2) 충돌 지점 구체 (weighted_avg 궤적에서 costmap 쿼리)
+  if (params_.debug_collision_points && costmap_obstacle_cost_ptr_ && costmap_ros_) {
+    auto costmap = costmap_ros_->getCostmap();
+    if (costmap && weighted_avg_trajectory.rows() > 0) {
+      visualization_msgs::msg::Marker collision_marker;
+      collision_marker.header.stamp = stamp;
+      collision_marker.header.frame_id = frame_id;
+      collision_marker.ns = "mppi_debug_collision";
+      collision_marker.id = 0;
+      collision_marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+      collision_marker.action = visualization_msgs::msg::Marker::ADD;
+      collision_marker.lifetime = rclcpp::Duration::from_seconds(marker_lifetime);
+      collision_marker.pose.orientation.w = 1.0;
+      collision_marker.scale.x = 0.12;
+      collision_marker.scale.y = 0.12;
+      collision_marker.scale.z = 0.12;
+
+      // weighted_avg를 단일 궤적으로 computePerPoint
+      std::vector<Eigen::MatrixXd> single_traj = {weighted_avg_trajectory};
+      Eigen::MatrixXd per_point = costmap_obstacle_cost_ptr_->computePerPoint(single_traj);
+
+      for (int t = 0; t < weighted_avg_trajectory.rows(); ++t) {
+        double cost_val = per_point(0, t);
+        if (cost_val <= 0.0) continue;
+
+        geometry_msgs::msg::Point p;
+        p.x = weighted_avg_trajectory(t, 0);
+        p.y = weighted_avg_trajectory(t, 1);
+        p.z = 0.1;
+        collision_marker.points.push_back(p);
+
+        std_msgs::msg::ColorRGBA color;
+        color.a = 0.9;
+        if (cost_val >= params_.costmap_lethal_cost * 0.9) {
+          // LETHAL → 빨강
+          color.r = 1.0; color.g = 0.0; color.b = 0.0;
+        } else if (cost_val >= params_.costmap_critical_cost * 0.9) {
+          // INSCRIBED → 주황
+          color.r = 1.0; color.g = 0.5; color.b = 0.0;
+        } else {
+          // inflation → 노랑
+          color.r = 1.0; color.g = 1.0; color.b = 0.0;
+        }
+        collision_marker.colors.push_back(color);
+      }
+
+      if (!collision_marker.points.empty()) {
+        marker_array.markers.push_back(collision_marker);
+      }
+    }
+  }
+
+  // (3) 안전 영역 원 (내부: footprint_radius, 외부: footprint + safety_distance)
+  if (params_.debug_safety_footprint) {
+    auto make_circle = [&](double radius, int id, float r, float g, float b) {
+      visualization_msgs::msg::Marker circle;
+      circle.header.stamp = stamp;
+      circle.header.frame_id = frame_id;
+      circle.ns = "mppi_debug_footprint";
+      circle.id = id;
+      circle.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      circle.action = visualization_msgs::msg::Marker::ADD;
+      circle.lifetime = rclcpp::Duration::from_seconds(marker_lifetime);
+      circle.scale.x = 0.02;
+      circle.color.r = r;
+      circle.color.g = g;
+      circle.color.b = b;
+      circle.color.a = 0.8;
+
+      int num_pts = 36;
+      for (int i = 0; i <= num_pts; ++i) {
+        double angle = 2.0 * M_PI * i / num_pts;
+        geometry_msgs::msg::Point p;
+        p.x = current_state(0) + radius * std::cos(angle);
+        p.y = current_state(1) + radius * std::sin(angle);
+        p.z = 0.05;
+        circle.points.push_back(p);
+      }
+      return circle;
+    };
+
+    // 내부 원 (시안)
+    marker_array.markers.push_back(
+      make_circle(params_.debug_footprint_radius, 0, 0.0f, 1.0f, 1.0f));
+    // 외부 원 (빨강)
+    marker_array.markers.push_back(
+      make_circle(params_.debug_footprint_radius + params_.safety_distance, 1, 1.0f, 0.0f, 0.0f));
+  }
+
+  // (4) best 궤적 비용 히트맵 (SPHERE_LIST)
+  if (params_.debug_cost_heatmap && costmap_obstacle_cost_ptr_ && info.best_trajectory.rows() > 0) {
+    visualization_msgs::msg::Marker heatmap;
+    heatmap.header.stamp = stamp;
+    heatmap.header.frame_id = frame_id;
+    heatmap.ns = "mppi_debug_heatmap";
+    heatmap.id = 0;
+    heatmap.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+    heatmap.action = visualization_msgs::msg::Marker::ADD;
+    heatmap.lifetime = rclcpp::Duration::from_seconds(marker_lifetime);
+    heatmap.pose.orientation.w = 1.0;
+    heatmap.scale.x = 0.06;
+    heatmap.scale.y = 0.06;
+    heatmap.scale.z = 0.06;
+
+    std::vector<Eigen::MatrixXd> best_traj = {info.best_trajectory};
+    Eigen::MatrixXd per_point = costmap_obstacle_cost_ptr_->computePerPoint(best_traj);
+
+    double max_cost = per_point.maxCoeff();
+    if (max_cost < 1e-6) max_cost = 1.0;
+
+    int stride = std::max(1, params_.debug_heatmap_stride);
+    for (int t = 0; t < info.best_trajectory.rows(); t += stride) {
+      geometry_msgs::msg::Point p;
+      p.x = info.best_trajectory(t, 0);
+      p.y = info.best_trajectory(t, 1);
+      p.z = 0.15;
+      heatmap.points.push_back(p);
+
+      double ratio = std::min(per_point(0, t) / max_cost, 1.0);
+
+      std_msgs::msg::ColorRGBA color;
+      color.a = 0.8;
+      if (ratio < 0.5) {
+        // 녹색 → 노랑
+        color.r = static_cast<float>(ratio * 2.0);
+        color.g = 1.0f;
+        color.b = 0.0f;
+      } else {
+        // 노랑 → 빨강
+        color.r = 1.0f;
+        color.g = static_cast<float>((1.0 - ratio) * 2.0);
+        color.b = 0.0f;
+      }
+      heatmap.colors.push_back(color);
+    }
+
+    if (!heatmap.points.empty()) {
+      marker_array.markers.push_back(heatmap);
+    }
+  }
+
+  if (!marker_array.markers.empty()) {
+    marker_pub_->publish(marker_array);
+  }
 }
 
 void MPPIControllerPlugin::publishTubeVisualization(

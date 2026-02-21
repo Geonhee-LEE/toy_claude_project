@@ -71,6 +71,8 @@ add_library(mppi_controller_plugin SHARED
   src/swerve_drive_model.cpp
   src/non_coaxial_swerve_model.cpp
   src/motion_model_factory.cpp
+  src/barrier_function.cpp
+  src/cbf_safety_filter.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -127,6 +129,7 @@ install(PROGRAMS
   scripts/test_robot_motion.py
   scripts/verify_robot_motion.py
   scripts/odom_to_tf.py
+  scripts/swerve_kinematics_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -229,6 +232,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_motion_model test/unit/test_motion_model.cpp)
   if(TARGET test_motion_model)
     target_link_libraries(test_motion_model mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cbf test/unit/test_cbf.cpp)
+  if(TARGET test_cbf)
+    target_link_libraries(test_cbf mppi_controller_plugin)
   endif()
 endif()
 

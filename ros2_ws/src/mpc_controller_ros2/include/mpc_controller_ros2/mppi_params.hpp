@@ -53,6 +53,10 @@ struct MPPIParams
   // Forward preference
   double prefer_forward_weight{5.0};         // 전진 선호 가중치 (후진 페널티)
   double prefer_forward_linear_ratio{0.5};   // 선형 비용 비율 (0=이차만, 1=선형만, 0.5=혼합)
+  double prefer_forward_velocity_incentive{0.0};  // 전진 인센티브 (저속 정지 회피)
+
+  // Control smoothing (EMA 출력 필터)
+  double control_smoothing_alpha{1.0};  // 0=이전유지, 1=즉시반영(필터OFF)
 
   // ============================================================================
   // Phase 1: Colored Noise 파라미터
@@ -120,6 +124,17 @@ struct MPPIParams
   double svg_resample_std{0.3};         // follower 리샘플링 표준편차
 
   // ============================================================================
+  // CBF (Control Barrier Function) 안전성 보장 파라미터
+  // ============================================================================
+  bool cbf_enabled{false};                 // CBF 활성화 여부
+  double cbf_gamma{1.0};                   // CBF class-K 함수 계수
+  double cbf_safety_margin{0.3};           // 추가 안전 마진 (m)
+  double cbf_robot_radius{0.2};            // 로봇 반지름 (m)
+  double cbf_activation_distance{3.0};     // 장애물 활성화 거리 (m)
+  double cbf_cost_weight{500.0};           // CBFCost soft cost 가중치
+  bool cbf_use_safety_filter{true};        // Post-hoc QP safety filter 사용
+
+  // ============================================================================
   // Motion Model 선택
   // ============================================================================
   std::string motion_model{"diff_drive"};  // "diff_drive", "swerve", "non_coaxial_swerve"
@@ -131,7 +146,19 @@ struct MPPIParams
   double costmap_lethal_cost{1000.0};   // LETHAL 셀 비용
   double costmap_critical_cost{100.0};  // INSCRIBED 셀 비용
   double lookahead_dist{0.0};           // 0 = auto (v_max * N * dt)
+  double min_lookahead{0.5};            // 최소 lookahead 거리 (goal 근처 수렴 보장)
   double goal_slowdown_dist{1.0};       // 목표 근처 감속 시작 거리 (m)
+
+  // ============================================================================
+  // Collision Debug Visualization (기본 OFF — 성능 오버헤드 0)
+  // ============================================================================
+  bool debug_collision_viz{false};          // 마스터 스위치
+  bool debug_cost_breakdown{true};          // 비용 분해 텍스트
+  bool debug_collision_points{true};        // 충돌 지점 마커
+  bool debug_safety_footprint{true};        // 안전 영역 원
+  bool debug_cost_heatmap{true};            // 궤적 비용 히트맵
+  double debug_footprint_radius{0.3};       // 로봇 반지름 (m)
+  int debug_heatmap_stride{3};              // 히트맵 점 간격
 
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
