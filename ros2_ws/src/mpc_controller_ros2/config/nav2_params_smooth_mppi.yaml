@@ -36,6 +36,7 @@ controller_server:
     # ---- Smooth-MPPI Controller ----
     FollowPath:
       plugin: "mpc_controller_ros2::SmoothMPPIControllerPlugin"
+      motion_model: "diff_drive"
 
       # Prediction horizon
       N: 30

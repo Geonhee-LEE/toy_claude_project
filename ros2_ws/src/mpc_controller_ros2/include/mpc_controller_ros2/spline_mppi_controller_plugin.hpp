@@ -55,16 +55,16 @@ public:
   static Eigen::MatrixXd computeBSplineBasis(int N, int P, int degree);
 
 protected:
-  std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
-    const Eigen::Vector3d& current_state,
+  std::pair<Eigen::VectorXd, MPPIInfo> computeControl(
+    const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory
   ) override;
 
 private:
   Eigen::MatrixXd basis_;       // (N, P) 사전 계산
   Eigen::MatrixXd basis_pinv_;  // (P, N) pseudo-inverse (LS warm-start용)
-  Eigen::MatrixXd u_knots_;     // (P, 2) knot warm-start
-  Eigen::Vector2d knot_sigma_;  // knot 노이즈 σ (auto 보정 적용)
+  Eigen::MatrixXd u_knots_;     // (P, nu) knot warm-start
+  Eigen::VectorXd knot_sigma_;  // (nu,) knot 노이즈 σ (auto 보정 적용)
   int P_;                       // 제어점 수
   int degree_;                  // B-spline 차수
 };

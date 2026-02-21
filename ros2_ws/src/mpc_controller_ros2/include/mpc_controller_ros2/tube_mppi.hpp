@@ -16,13 +16,13 @@ namespace mpc_controller_ros2
  */
 struct TubeMPPIInfo
 {
-  Eigen::Vector3d nominal_state;        // 외란 없는 이상 상태
-  Eigen::Vector2d nominal_control;      // MPPI가 계산한 nominal 제어
-  Eigen::Vector3d body_error;           // Body frame 오차
-  Eigen::Vector2d feedback_correction;  // 피드백 보정량
-  Eigen::Vector2d applied_control;      // 최종 적용된 제어
-  double tube_width;                    // Tube 폭
-  std::vector<Eigen::Vector3d> tube_boundary;  // 시각화용 tube 경계점들
+  Eigen::VectorXd nominal_state;        // 외란 없는 이상 상태
+  Eigen::VectorXd nominal_control;      // MPPI가 계산한 nominal 제어
+  Eigen::VectorXd body_error;           // Body frame 오차
+  Eigen::VectorXd feedback_correction;  // 피드백 보정량
+  Eigen::VectorXd applied_control;      // 최종 적용된 제어
+  double tube_width{0.0};               // Tube 폭
+  std::vector<Eigen::VectorXd> tube_boundary;  // 시각화용 tube 경계점들
 };
 
 /**
@@ -63,10 +63,10 @@ public:
    * @param actual_state 실제 로봇 상태 [x, y, theta]
    * @return 보정된 제어 입력과 정보
    */
-  std::pair<Eigen::Vector2d, TubeMPPIInfo> computeCorrectedControl(
-    const Eigen::Vector2d& nominal_control,
+  std::pair<Eigen::VectorXd, TubeMPPIInfo> computeCorrectedControl(
+    const Eigen::VectorXd& nominal_control,
     const Eigen::MatrixXd& nominal_trajectory,
-    const Eigen::Vector3d& actual_state
+    const Eigen::VectorXd& actual_state
   );
 
   /**
@@ -80,7 +80,7 @@ public:
    * @param nominal_trajectory Nominal 궤적
    * @return 좌/우 경계점 쌍 벡터
    */
-  std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> computeTubeBoundary(
+  std::vector<std::pair<Eigen::VectorXd, Eigen::VectorXd>> computeTubeBoundary(
     const Eigen::MatrixXd& nominal_trajectory
   ) const;
 
@@ -91,8 +91,8 @@ public:
    * @return true if 실제 상태가 tube 내부에 있음
    */
   bool isInsideTube(
-    const Eigen::Vector3d& nominal_state,
-    const Eigen::Vector3d& actual_state
+    const Eigen::VectorXd& nominal_state,
+    const Eigen::VectorXd& actual_state
   ) const;
 
   /**

@@ -40,6 +40,7 @@ controller_server:
     # ---- Risk-Aware (CVaR) MPPI Controller (mpc_controller_ros2) ----
     FollowPath:
       plugin: "mpc_controller_ros2::RiskAwareMPPIControllerPlugin"
+      motion_model: "diff_drive"
 
       # CVaR 고유 파라미터
       cvar_alpha: 0.5          # 상위 50% 최저 비용 샘플만 사용

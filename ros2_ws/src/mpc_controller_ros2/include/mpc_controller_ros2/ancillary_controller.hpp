@@ -30,12 +30,12 @@ class AncillaryController
 public:
   /**
    * @brief 생성자
-   * @param K_fb 피드백 게인 매트릭스 (2x3)
+   * @param K_fb 피드백 게인 매트릭스 (nu x nx)
    */
-  explicit AncillaryController(const Eigen::Matrix<double, 2, 3>& K_fb);
+  explicit AncillaryController(const Eigen::MatrixXd& K_fb);
 
   /**
-   * @brief 기본 게인으로 생성
+   * @brief 기본 게인으로 생성 (DiffDrive 2x3)
    * @param k_forward 전진 오차 게인
    * @param k_lateral 측면 오차 게인
    * @param k_angle 각도 오차 게인
@@ -48,44 +48,44 @@ public:
 
   /**
    * @brief Body frame 오차 계산
-   * @param nominal_state Nominal 상태 [x, y, theta]
-   * @param actual_state 실제 상태 [x, y, theta]
+   * @param nominal_state Nominal 상태 (nx,)
+   * @param actual_state 실제 상태 (nx,)
    * @return Body frame 오차 [e_forward, e_lateral, e_angle]
    */
-  Eigen::Vector3d computeBodyFrameError(
-    const Eigen::Vector3d& nominal_state,
-    const Eigen::Vector3d& actual_state
+  Eigen::VectorXd computeBodyFrameError(
+    const Eigen::VectorXd& nominal_state,
+    const Eigen::VectorXd& actual_state
   ) const;
 
   /**
    * @brief 피드백 보정 제어 입력 계산
-   * @param nominal_control Nominal 제어 입력 [v, omega]
-   * @param nominal_state Nominal 상태 [x, y, theta]
-   * @param actual_state 실제 상태 [x, y, theta]
-   * @return 보정된 제어 입력 [v_corrected, omega_corrected]
+   * @param nominal_control Nominal 제어 입력 (nu,)
+   * @param nominal_state Nominal 상태 (nx,)
+   * @param actual_state 실제 상태 (nx,)
+   * @return 보정된 제어 입력 (nu,)
    */
-  Eigen::Vector2d computeCorrectedControl(
-    const Eigen::Vector2d& nominal_control,
-    const Eigen::Vector3d& nominal_state,
-    const Eigen::Vector3d& actual_state
+  Eigen::VectorXd computeCorrectedControl(
+    const Eigen::VectorXd& nominal_control,
+    const Eigen::VectorXd& nominal_state,
+    const Eigen::VectorXd& actual_state
   ) const;
 
   /**
    * @brief 피드백 게인 업데이트
    */
-  void setGains(const Eigen::Matrix<double, 2, 3>& K_fb);
+  void setGains(const Eigen::MatrixXd& K_fb);
   void setGains(double k_forward, double k_lateral, double k_angle);
 
   /**
    * @brief 현재 게인 반환
    */
-  Eigen::Matrix<double, 2, 3> getGains() const { return K_fb_; }
+  Eigen::MatrixXd getGains() const { return K_fb_; }
 
   /**
    * @brief 피드백 보정량만 계산 (디버깅용)
    */
-  Eigen::Vector2d computeFeedbackCorrection(
-    const Eigen::Vector3d& body_error
+  Eigen::VectorXd computeFeedbackCorrection(
+    const Eigen::VectorXd& body_error
   ) const;
 
   /**
@@ -94,7 +94,7 @@ public:
   static double normalizeAngle(double angle);
 
 private:
-  Eigen::Matrix<double, 2, 3> K_fb_;  // 피드백 게인 매트릭스
+  Eigen::MatrixXd K_fb_;  // 피드백 게인 매트릭스 (nu x nx)
 };
 
 }  // namespace mpc_controller_ros2

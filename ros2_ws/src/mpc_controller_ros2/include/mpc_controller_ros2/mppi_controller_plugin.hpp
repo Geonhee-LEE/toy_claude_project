@@ -89,14 +89,14 @@ protected:
   std::unique_ptr<WeightComputation> weight_computation_;
 
   // MPPI 핵심 알고리즘 (서브클래스에서 override 가능)
-  virtual std::pair<Eigen::Vector2d, MPPIInfo> computeControl(
-    const Eigen::Vector3d& current_state,
+  virtual std::pair<Eigen::VectorXd, MPPIInfo> computeControl(
+    const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory
   );
 
   // 서브클래스 접근 가능 멤버
   MPPIParams params_;
-  Eigen::MatrixXd control_sequence_;  // N x 2
+  Eigen::MatrixXd control_sequence_;  // N x nu
   std::unique_ptr<BatchDynamicsWrapper> dynamics_;
   std::unique_ptr<CompositeMPPICost> cost_function_;
   std::unique_ptr<BaseSampler> sampler_;
@@ -108,18 +108,18 @@ protected:
 
 private:
   // 좌표 변환
-  Eigen::Vector3d poseToState(const geometry_msgs::msg::PoseStamped& pose);
+  Eigen::VectorXd poseToState(const geometry_msgs::msg::PoseStamped& pose);
   Eigen::MatrixXd pathToReferenceTrajectory(
-    const nav_msgs::msg::Path& path, const Eigen::Vector3d& current_state);
+    const nav_msgs::msg::Path& path, const Eigen::VectorXd& current_state);
 
   // 경로 pruning + costmap 장애물 갱신
-  void prunePlan(const Eigen::Vector3d& current_state);
+  void prunePlan(const Eigen::VectorXd& current_state);
   void updateCostmapObstacles();
 
   // 시각화
   void publishVisualization(
     const MPPIInfo& info,
-    const Eigen::Vector3d& current_state,
+    const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory,
     const Eigen::MatrixXd& weighted_avg_trajectory,
     double computation_time_ms
@@ -145,9 +145,11 @@ private:
   nav_msgs::msg::Path global_plan_;
   nav_msgs::msg::Path pruned_plan_;
   size_t prune_start_idx_{0};
-  Eigen::MatrixXd nominal_trajectory_;  // N+1 x 3 (Tube-MPPI용)
+  Eigen::MatrixXd nominal_trajectory_;  // N+1 x nx (Tube-MPPI용)
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
+  Eigen::VectorXd current_velocity_;  // (nu,) 현재 속도
+  double goal_dist_{std::numeric_limits<double>::max()};  // 목표까지 남은 거리
 
   // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
   CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};

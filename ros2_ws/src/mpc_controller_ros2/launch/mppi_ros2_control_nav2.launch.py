@@ -40,16 +40,24 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     # SVG-MPPI (Guide particle SVGD)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svg
 
+    # Swerve Drive MPPI (홀로노믹 3축)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
+
+    # Non-Coaxial Swerve Drive MPPI
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
+
 컨트롤러 전환:
-    controller:=custom      → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
-    controller:=log         → Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)
-    controller:=tsallis     → Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)
-    controller:=risk_aware  → Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)
-    controller:=svmpc       → SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)
-    controller:=smooth      → Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)
-    controller:=spline      → Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)
-    controller:=svg         → SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)
-    controller:=nav2        → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
+    controller:=custom       → 커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)
+    controller:=log          → Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)
+    controller:=tsallis      → Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)
+    controller:=risk_aware   → Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)
+    controller:=svmpc        → SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)
+    controller:=smooth       → Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)
+    controller:=spline       → Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)
+    controller:=svg          → SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)
+    controller:=swerve       → Swerve Drive MPPI (motion_model=swerve)
+    controller:=non_coaxial  → Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)
+    controller:=nav2         → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
 """
 
 import os
@@ -120,6 +128,16 @@ def launch_setup(context, *args, **kwargs):
             pkg_dir, 'config', 'nav2_params_svg_mppi.yaml'
         )
         controller_label = 'SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)'
+    elif controller_type == 'swerve':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_swerve_mppi.yaml'
+        )
+        controller_label = 'Swerve MPPI (motion_model=swerve)'
+    elif controller_type == 'non_coaxial':
+        controller_params_file = os.path.join(
+            pkg_dir, 'config', 'nav2_params_non_coaxial_mppi.yaml'
+        )
+        controller_label = 'Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)'
     else:
         controller_params_file = os.path.join(
             pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
@@ -461,7 +479,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", "smooth", "spline", "svg", or "nav2"'
+            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", "smooth", "spline", "svg", "swerve", "non_coaxial", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

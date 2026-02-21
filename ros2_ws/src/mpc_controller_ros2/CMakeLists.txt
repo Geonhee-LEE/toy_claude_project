@@ -66,6 +66,11 @@ add_library(mppi_controller_plugin SHARED
   src/adaptive_temperature.cpp
   src/ancillary_controller.cpp
   src/tube_mppi.cpp
+  src/motion_model.cpp
+  src/diff_drive_model.cpp
+  src/swerve_drive_model.cpp
+  src/non_coaxial_swerve_model.cpp
+  src/motion_model_factory.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -219,6 +224,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_m35_plugins test/unit/test_m35_plugins.cpp)
   if(TARGET test_m35_plugins)
     target_link_libraries(test_m35_plugins mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_motion_model test/unit/test_motion_model.cpp)
+  if(TARGET test_motion_model)
+    target_link_libraries(test_motion_model mppi_controller_plugin)
   endif()
 endif()
 
