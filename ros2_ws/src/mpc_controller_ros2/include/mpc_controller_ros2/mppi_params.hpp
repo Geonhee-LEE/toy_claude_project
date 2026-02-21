@@ -122,6 +122,8 @@ struct MPPIParams
   double costmap_lethal_cost{1000.0};   // LETHAL 셀 비용
   double costmap_critical_cost{100.0};  // INSCRIBED 셀 비용
   double lookahead_dist{0.0};           // 0 = auto (v_max * N * dt)
+  double min_lookahead{0.5};            // 동적 lookahead 최소값 (m)
+  double goal_slowdown_dist{1.0};       // 목표 접근 감속 시작 거리 (m)
 
   // Visualization
   bool visualize_samples{true};           // 샘플 궤적 표시
