@@ -150,6 +150,7 @@ class MPPIController:
             model_name="diff_drive",
             use_float32=self.params.gpu_float32,
             warmup=self.params.gpu_warmup,
+            weight_fn=self._get_gpu_weight_fn(),
         )
         self._to_jax = to_jax
         logger.info(f"GPU MPPI initialized (backend: {get_backend_name()})")
@@ -365,6 +366,11 @@ class MPPIController:
     def _compute_weights(self, costs: np.ndarray) -> np.ndarray:
         """비용에서 가중치 계산. 서브클래스에서 오버라이드 가능."""
         return softmax_weights(costs, self._get_current_lambda())
+
+    def _get_gpu_weight_fn(self):
+        """GPU 가중치 함수 반환. 서브클래스에서 오버라이드."""
+        from mpc_controller.controllers.mppi.gpu_weights import vanilla_softmax_weights
+        return vanilla_softmax_weights
 
     def reset(self) -> None:
         """제어열 초기화 및 반복 횟수 리셋."""
