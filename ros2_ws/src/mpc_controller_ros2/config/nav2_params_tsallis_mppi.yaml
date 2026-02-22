@@ -40,6 +40,7 @@ controller_server:
     # ---- Tsallis-MPPI Controller (mpc_controller_ros2) ----
     FollowPath:
       plugin: "mpc_controller_ros2::TsallisMPPIControllerPlugin"
+      motion_model: "diff_drive"
 
       # Tsallis 고유 파라미터
       tsallis_q: 1.5          # q > 1: heavy-tail 탐색

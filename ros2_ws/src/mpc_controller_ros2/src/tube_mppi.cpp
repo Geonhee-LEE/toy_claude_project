@@ -13,10 +13,10 @@ TubeMPPI::TubeMPPI(const MPPIParams& params)
 {
 }
 
-std::pair<Eigen::Vector2d, TubeMPPIInfo> TubeMPPI::computeCorrectedControl(
-  const Eigen::Vector2d& nominal_control,
+std::pair<Eigen::VectorXd, TubeMPPIInfo> TubeMPPI::computeCorrectedControl(
+  const Eigen::VectorXd& nominal_control,
   const Eigen::MatrixXd& nominal_trajectory,
-  const Eigen::Vector3d& actual_state
+  const Eigen::VectorXd& actual_state
 )
 {
   TubeMPPIInfo info;
@@ -59,11 +59,11 @@ void TubeMPPI::updateTubeWidth(double tracking_error)
   tube_width_ = std::clamp(tube_width_, min_tube_width_, max_tube_width_);
 }
 
-std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> TubeMPPI::computeTubeBoundary(
+std::vector<std::pair<Eigen::VectorXd, Eigen::VectorXd>> TubeMPPI::computeTubeBoundary(
   const Eigen::MatrixXd& nominal_trajectory
 ) const
 {
-  std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> boundaries;
+  std::vector<std::pair<Eigen::VectorXd, Eigen::VectorXd>> boundaries;
 
   int n_points = nominal_trajectory.rows();
   if (n_points < 2) {
@@ -74,20 +74,17 @@ std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> TubeMPPI::computeTubeBo
   for (int i = 0; i < n_points; ++i) {
     double x = nominal_trajectory(i, 0);
     double y = nominal_trajectory(i, 1);
-    double theta = nominal_trajectory(i, 2);
+    double theta = (nominal_trajectory.cols() >= 3) ? nominal_trajectory(i, 2) : 0.0;
 
-    // 로봇 진행 방향에 수직인 방향 (좌/우)
     double perpendicular_x = -std::sin(theta);
     double perpendicular_y = std::cos(theta);
 
-    // 좌측 경계점
-    Eigen::Vector3d left_point;
+    Eigen::VectorXd left_point(3);
     left_point(0) = x + tube_width_ * perpendicular_x;
     left_point(1) = y + tube_width_ * perpendicular_y;
     left_point(2) = theta;
 
-    // 우측 경계점
-    Eigen::Vector3d right_point;
+    Eigen::VectorXd right_point(3);
     right_point(0) = x - tube_width_ * perpendicular_x;
     right_point(1) = y - tube_width_ * perpendicular_y;
     right_point(2) = theta;
@@ -99,11 +96,10 @@ std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> TubeMPPI::computeTubeBo
 }
 
 bool TubeMPPI::isInsideTube(
-  const Eigen::Vector3d& nominal_state,
-  const Eigen::Vector3d& actual_state
+  const Eigen::VectorXd& nominal_state,
+  const Eigen::VectorXd& actual_state
 ) const
 {
-  // 위치 오차 계산
   double dx = actual_state(0) - nominal_state(0);
   double dy = actual_state(1) - nominal_state(1);
   double position_error = std::sqrt(dx * dx + dy * dy);

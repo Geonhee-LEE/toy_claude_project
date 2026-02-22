@@ -5,7 +5,7 @@ namespace mpc_controller_ros2
 {
 
 // StateTrackingCost
-StateTrackingCost::StateTrackingCost(const Eigen::Matrix3d& Q) : Q_(Q) {}
+StateTrackingCost::StateTrackingCost(const Eigen::MatrixXd& Q) : Q_(Q) {}
 
 Eigen::VectorXd StateTrackingCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -18,13 +18,18 @@ Eigen::VectorXd StateTrackingCost::compute(
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
   for (int k = 0; k < K; ++k) {
+    int nx = trajectories[k].cols();
+    int ref_cols = reference.cols();
+    int min_cols = std::min(nx, ref_cols);
     for (int t = 0; t < N; ++t) {
-      Eigen::Vector3d state = trajectories[k].row(t).transpose();
-      Eigen::Vector3d ref = reference.row(t).transpose();
-      Eigen::Vector3d error = state - ref;
+      Eigen::VectorXd error = Eigen::VectorXd::Zero(nx);
+      error.head(min_cols) = trajectories[k].row(t).head(min_cols).transpose()
+                           - reference.row(t).head(min_cols).transpose();
 
-      // Normalize angle error
-      error(2) = normalizeAngle(error(2));
+      // Normalize angle error (index 2 = theta for all models)
+      if (nx >= 3) {
+        error(2) = normalizeAngle(error(2));
+      }
 
       costs(k) += error.transpose() * Q_ * error;
     }
@@ -34,7 +39,7 @@ Eigen::VectorXd StateTrackingCost::compute(
 }
 
 // TerminalCost
-TerminalCost::TerminalCost(const Eigen::Matrix3d& Qf) : Qf_(Qf) {}
+TerminalCost::TerminalCost(const Eigen::MatrixXd& Qf) : Qf_(Qf) {}
 
 Eigen::VectorXd TerminalCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -47,11 +52,16 @@ Eigen::VectorXd TerminalCost::compute(
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
   for (int k = 0; k < K; ++k) {
-    Eigen::Vector3d terminal_state = trajectories[k].row(N).transpose();
-    Eigen::Vector3d terminal_ref = reference.row(N).transpose();
-    Eigen::Vector3d error = terminal_state - terminal_ref;
+    int nx = trajectories[k].cols();
+    int ref_cols = reference.cols();
+    int min_cols = std::min(nx, ref_cols);
+    Eigen::VectorXd error = Eigen::VectorXd::Zero(nx);
+    error.head(min_cols) = trajectories[k].row(N).head(min_cols).transpose()
+                         - reference.row(N).head(min_cols).transpose();
 
-    error(2) = normalizeAngle(error(2));
+    if (nx >= 3) {
+      error(2) = normalizeAngle(error(2));
+    }
 
     costs(k) = error.transpose() * Qf_ * error;
   }
@@ -60,7 +70,7 @@ Eigen::VectorXd TerminalCost::compute(
 }
 
 // ControlEffortCost
-ControlEffortCost::ControlEffortCost(const Eigen::Matrix2d& R) : R_(R) {}
+ControlEffortCost::ControlEffortCost(const Eigen::MatrixXd& R) : R_(R) {}
 
 Eigen::VectorXd ControlEffortCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -74,7 +84,7 @@ Eigen::VectorXd ControlEffortCost::compute(
 
   for (int k = 0; k < K; ++k) {
     for (int t = 0; t < N; ++t) {
-      Eigen::Vector2d u = controls[k].row(t).transpose();
+      Eigen::VectorXd u = controls[k].row(t).transpose();
       costs(k) += u.transpose() * R_ * u;
     }
   }
@@ -83,7 +93,7 @@ Eigen::VectorXd ControlEffortCost::compute(
 }
 
 // ControlRateCost
-ControlRateCost::ControlRateCost(const Eigen::Matrix2d& R_rate) : R_rate_(R_rate) {}
+ControlRateCost::ControlRateCost(const Eigen::MatrixXd& R_rate) : R_rate_(R_rate) {}
 
 Eigen::VectorXd ControlRateCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -97,9 +107,9 @@ Eigen::VectorXd ControlRateCost::compute(
 
   for (int k = 0; k < K; ++k) {
     for (int t = 0; t < N - 1; ++t) {
-      Eigen::Vector2d u_curr = controls[k].row(t).transpose();
-      Eigen::Vector2d u_next = controls[k].row(t + 1).transpose();
-      Eigen::Vector2d du = u_next - u_curr;
+      Eigen::VectorXd u_curr = controls[k].row(t).transpose();
+      Eigen::VectorXd u_next = controls[k].row(t + 1).transpose();
+      Eigen::VectorXd du = u_next - u_curr;
       costs(k) += du.transpose() * R_rate_ * du;
     }
   }

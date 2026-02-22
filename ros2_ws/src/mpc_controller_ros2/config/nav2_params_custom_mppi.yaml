@@ -37,6 +37,7 @@ controller_server:
     # ---- Custom MPPI Controller (mpc_controller_ros2) ----
     FollowPath:
       plugin: "mpc_controller_ros2::MPPIControllerPlugin"
+      motion_model: "diff_drive"
 
       # Prediction horizon
       N: 30

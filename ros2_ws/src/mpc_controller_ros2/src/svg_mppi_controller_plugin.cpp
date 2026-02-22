@@ -57,15 +57,16 @@ void SVGMPPIControllerPlugin::configure(
     params_.svg_resample_std);
 }
 
-std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
-  const Eigen::Vector3d& current_state,
+std::pair<Eigen::VectorXd, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory)
 {
   int G = params_.svg_num_guide_particles;  // guide particle 수
   int L = params_.svg_guide_iterations;     // SVGD 반복 횟수
   int K = params_.K;
   int N = params_.N;
-  int nu = 2;
+  int nu = dynamics_->model().controlDim();
+  int nx = dynamics_->model().stateDim();
   int D = N * nu;  // flatten 차원 (제어 시퀀스 전체)
 
   // G=0 또는 L=0이면 SVMPC (전체 K×K SVGD) fallback
@@ -291,10 +292,10 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVGMPPIControllerPlugin::computeControl(
   control_sequence_ += weighted_noise;
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
-  Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
+  Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
 
   // Weighted average trajectory
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, 3);
+  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
   for (int k = 0; k < K_total; ++k) {
     weighted_traj += weights(k) * all_trajectories[k];
   }

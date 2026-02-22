@@ -1,12 +1,10 @@
 # ============================================================
-# nav2 파라미터 - Log-MPPI (mpc_controller_ros2)
+# nav2 파라미터 - Non-Coaxial Swerve MPPI
 # ============================================================
 # 사용법:
-#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=log
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
 #
-# Log-MPPI는 Vanilla MPPI와 수학적으로 동일한 결과를 내지만,
-# log-space 가중치 계산을 사용하여 수치 안정성이 개선되며,
-# importance sampling 보정 등 후속 확장의 기반 역할을 합니다.
+# Non-Coaxial Swerve Drive 로봇 (비홀로노믹, state=[x,y,θ,δ], control=[v,ω,δ_dot])
 # ============================================================
 
 controller_server:
@@ -35,10 +33,10 @@ controller_server:
       yaw_goal_tolerance: 0.25
       stateful: true
 
-    # ---- Log-MPPI Controller (mpc_controller_ros2) ----
+    # ---- Non-Coaxial Swerve MPPI Controller ----
     FollowPath:
-      plugin: "mpc_controller_ros2::LogMPPIControllerPlugin"
-      motion_model: "diff_drive"
+      plugin: "mpc_controller_ros2::MPPIControllerPlugin"
+      motion_model: "non_coaxial_swerve"
 
       # Prediction horizon
       N: 30
@@ -50,15 +48,15 @@ controller_server:
 
       # Noise parameters
       noise_sigma_v: 0.5
-      noise_sigma_omega: 0.5
+      noise_sigma_omega: 0.3
 
       # Control limits
-      v_max: 0.5
-      v_min: 0.0
-      omega_max: 1.0
-      omega_min: -1.0
+      v_max: 1.5
+      v_min: -0.5
+      omega_max: 2.0
+      omega_min: -2.0
 
-      # State tracking cost weights (Q)
+      # State tracking cost weights (Q: x, y, theta)
       Q_x: 10.0
       Q_y: 10.0
       Q_theta: 1.0
@@ -69,12 +67,12 @@ controller_server:
       Qf_theta: 2.0
 
       # Control effort weights (R)
-      R_v: 0.5
+      R_v: 0.3
       R_omega: 0.3
 
       # Control rate weights (R_rate)
-      R_rate_v: 1.0
-      R_rate_omega: 1.0
+      R_rate_v: 0.5
+      R_rate_omega: 0.5
 
       # Obstacle avoidance
       obstacle_weight: 100.0
@@ -88,16 +86,32 @@ controller_server:
       min_lookahead: 0.5
       goal_slowdown_dist: 1.0
 
-      # Forward preference (후진 페널티)
-      prefer_forward_weight: 10.0
+      # Forward preference
+      prefer_forward_weight: 5.0
       prefer_forward_linear_ratio: 0.5
 
-      # Adaptive Temperature (ESS 기반 자동 조정)
+      # Adaptive Temperature
       adaptive_temperature: true
       target_ess_ratio: 0.5
       adaptation_rate: 0.1
       lambda_min: 0.1
       lambda_max: 100.0
+
+      # SOTA 변형 (기본값)
+      tsallis_q: 1.5
+      cvar_alpha: 0.5
+      svgd_num_iterations: 0
+      svgd_step_size: 0.1
+      svgd_bandwidth: -1.0
+      smooth_R_jerk_v: 0.1
+      smooth_R_jerk_omega: 0.1
+      smooth_action_cost_weight: 0.0
+      spline_num_knots: 8
+      spline_degree: 3
+      svg_num_guide_particles: 10
+      svg_guide_iterations: 3
+      svg_guide_step_size: 0.1
+      svg_resample_std: 0.3
 
       # Visualization
       visualize_samples: true
@@ -106,4 +120,5 @@ controller_server:
       visualize_reference: true
       visualize_text_info: true
       visualize_control_sequence: true
+      visualize_tube: false
       max_visualized_samples: 20

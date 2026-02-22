@@ -28,8 +28,8 @@ void SVMPCControllerPlugin::configure(
     params_.svgd_bandwidth);
 }
 
-std::pair<Eigen::Vector2d, MPPIInfo> SVMPCControllerPlugin::computeControl(
-  const Eigen::Vector3d& current_state,
+std::pair<Eigen::VectorXd, MPPIInfo> SVMPCControllerPlugin::computeControl(
+  const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory)
 {
   int L = params_.svgd_num_iterations;
@@ -41,7 +41,8 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVMPCControllerPlugin::computeControl(
 
   int N = params_.N;
   int K = params_.K;
-  int nu = 2;  // [v, omega]
+  int nu = dynamics_->model().controlDim();
+  int nx = dynamics_->model().stateDim();
   int D = N * nu;  // flatten 차원
 
   // ──── Phase 1: Vanilla 동일 (shift, sample, perturb, rollout, cost) ────
@@ -173,10 +174,10 @@ std::pair<Eigen::Vector2d, MPPIInfo> SVMPCControllerPlugin::computeControl(
   control_sequence_ = dynamics_->clipControls(control_sequence_);
 
   // 최적 제어 추출 (first timestep)
-  Eigen::Vector2d u_opt = control_sequence_.row(0).transpose();
+  Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
 
   // 가중 평균 궤적
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, 3);
+  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
   for (int k = 0; k < K; ++k) {
     weighted_traj += weights(k) * trajectories[k];
   }
