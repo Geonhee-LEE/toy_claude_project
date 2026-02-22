@@ -41,3 +41,8 @@ class TsallisMPPIController(MPPIController):
         if total == 0.0:
             return np.ones_like(costs) / len(costs)
         return raw / total
+
+    def _get_gpu_weight_fn(self):
+        """GPU Tsallis q-exponential 가중치 함수."""
+        from mpc_controller.controllers.mppi.gpu_weights import make_tsallis_weights
+        return make_tsallis_weights(self.params.tsallis_q)

@@ -63,3 +63,8 @@ class RiskAwareMPPIController(MPPIController):
         weights = np.zeros(K)
         weights[keep_indices] = selected_weights
         return weights
+
+    def _get_gpu_weight_fn(self):
+        """GPU CVaR 가중치 함수."""
+        from mpc_controller.controllers.mppi.gpu_weights import make_cvar_weights
+        return make_cvar_weights(self.params.cvar_alpha, self.params.K)
