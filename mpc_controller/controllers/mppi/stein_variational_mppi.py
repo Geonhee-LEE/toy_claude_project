@@ -52,6 +52,156 @@ class SteinVariationalMPPIController(MPPIController):
     svgd_num_iterations>0 → SVGD 루프로 샘플 분포 개선 후 가중 평균
     """
 
+    def _compute_control_gpu(
+        self,
+        current_state: np.ndarray,
+        reference_trajectory: np.ndarray,
+    ) -> Tuple[np.ndarray, dict]:
+        """GPU 경로: SVGD 루프 GPU 가속.
+
+        SVGD 루프를 JAX JIT 함수로 실행.
+        """
+        from mpc_controller.controllers.mppi.gpu_backend import to_numpy, to_jax
+        from mpc_controller.controllers.mppi.gpu_svgd import (
+            svgd_step_jit,
+            median_bandwidth_jit,
+            compute_diversity_jit,
+        )
+        from mpc_controller.controllers.mppi.gpu_weights import vanilla_softmax_weights
+        import jax.numpy as jnp
+
+        L = self.params.svgd_num_iterations
+
+        solve_start = time.perf_counter()
+
+        N = self.params.N
+        K = self.params.K
+        nu = self.dynamics.nu
+        D = N * nu
+
+        # 1. shift
+        self.U[:-1] = self.U[1:]
+        self.U[-1] = 0.0
+
+        # 2. CPU → GPU
+        x0_jax = self._to_jax(current_state)
+        U_jax = self._to_jax(self.U)
+        ref_jax = self._to_jax(reference_trajectory)
+
+        current_lambda = self._get_current_lambda()
+        self._gpu_kernel.update_lambda(current_lambda)
+
+        # 3. 초기 mppi_step (노이즈 샘플링 + rollout + cost)
+        # mppi_step 내부 로직을 부분적으로 가져옴
+        from jax import random
+        from mpc_controller.controllers.mppi.gpu_sampling import gaussian_sample_jit, colored_noise_sample_jit
+        from mpc_controller.controllers.mppi.gpu_dynamics import clip_controls_jit
+
+        kernel = self._gpu_kernel
+        kernel._rng_key, subkey = random.split(kernel._rng_key)
+
+        if kernel._colored_noise:
+            noise = colored_noise_sample_jit(subkey, K, N, nu, kernel._sigma, kernel._noise_beta)
+        else:
+            noise = gaussian_sample_jit(subkey, K, N, nu, kernel._sigma)
+        noise = noise.astype(kernel._dtype)
+
+        perturbed = U_jax[None, :, :] + noise
+        perturbed = clip_controls_jit(perturbed, kernel._max_velocity, kernel._max_omega)
+
+        trajectories = kernel._rollout_fn(x0_jax, perturbed)
+
+        cost_params = {"q_diag": kernel._q_diag, "qf_diag": kernel._qf_diag, "r_diag": kernel._r_diag}
+        if kernel._has_r_rate:
+            cost_params["r_rate_diag"] = kernel._r_rate_diag
+        if kernel._has_obstacles and kernel._obstacles is not None:
+            cost_params["obstacles"] = kernel._obstacles
+            cost_params["obs_weight"] = kernel._obs_weight
+            cost_params["safety_margin"] = kernel._safety_margin
+
+        costs = kernel._cost_fn(trajectories, perturbed, ref_jax, cost_params)
+
+        # diversity before
+        particles = perturbed.reshape(K, D)
+        diversity_before = float(to_numpy(compute_diversity_jit(particles)))
+
+        # 4. SVGD 루프 (GPU)
+        for svgd_iter in range(L):
+            weights = vanilla_softmax_weights(costs, kernel.lambda_)
+
+            if self.params.svgd_bandwidth is not None:
+                h = self.params.svgd_bandwidth
+            else:
+                h = float(to_numpy(median_bandwidth_jit(particles)))
+
+            particles = svgd_step_jit(
+                particles, weights, h, self.params.svgd_step_size
+            )
+
+            # unflatten, clip, re-rollout, re-cost
+            perturbed = particles.reshape(K, N, nu)
+            perturbed = clip_controls_jit(perturbed, kernel._max_velocity, kernel._max_omega)
+            particles = perturbed.reshape(K, D)
+
+            trajectories = kernel._rollout_fn(x0_jax, perturbed)
+            costs = kernel._cost_fn(trajectories, perturbed, ref_jax, cost_params)
+
+        diversity_after = float(to_numpy(compute_diversity_jit(particles)))
+
+        # 5. Final weights + update
+        weights = kernel._weight_fn(costs, kernel.lambda_)
+        effective_noise = perturbed - U_jax[None, :, :]
+        weighted_noise = weights[:, None, None] * effective_noise
+        U_new = U_jax + jnp.sum(weighted_noise, axis=0)
+        U_new = clip_controls_jit(U_new[None, :, :], kernel._max_velocity, kernel._max_omega)[0]
+
+        # GPU → CPU
+        self.U = to_numpy(U_new)
+        u_opt = self.U[0].copy()
+        solve_time = time.perf_counter() - solve_start
+
+        costs_np = to_numpy(costs)
+        weights_np = to_numpy(weights)
+        trajectories_np = to_numpy(trajectories)
+        best_idx = int(np.argmin(costs_np))
+        ess = float(1.0 / np.sum(weights_np ** 2))
+        weighted_traj = to_numpy(jnp.sum(weights[:, None, None] * trajectories, axis=0))
+
+        if self._adaptive_temp is not None:
+            current_lambda = self._adaptive_temp.update(ess, K)
+
+        self._iteration_count += 1
+        logger.info(
+            f"SVMPC-GPU iteration {self._iteration_count}: "
+            f"solve_time={solve_time*1000:.2f}ms, "
+            f"min_cost={costs_np[best_idx]:.4f}, "
+            f"svgd_iters={L}, "
+            f"diversity={diversity_before:.4f}→{diversity_after:.4f}, "
+            f"ESS={ess:.1f}/{K}"
+        )
+
+        info = {
+            "predicted_trajectory": weighted_traj,
+            "predicted_controls": self.U.copy(),
+            "cost": float(costs_np[best_idx]),
+            "mean_cost": float(np.mean(costs_np)),
+            "solve_time": solve_time,
+            "solver_status": "optimal",
+            "sample_trajectories": trajectories_np,
+            "sample_weights": weights_np,
+            "sample_costs": costs_np,
+            "best_trajectory": trajectories_np[best_idx],
+            "best_index": best_idx,
+            "ess": ess,
+            "temperature": current_lambda,
+            "svgd_iterations": L,
+            "sample_diversity_before": diversity_before,
+            "sample_diversity_after": diversity_after,
+            "backend": "gpu",
+        }
+
+        return u_opt, info
+
     def compute_control(
         self,
         current_state: np.ndarray,
@@ -71,6 +221,10 @@ class SteinVariationalMPPIController(MPPIController):
         # svgd_num_iterations=0 → Vanilla 동등
         if self.params.svgd_num_iterations == 0:
             return super().compute_control(current_state, reference_trajectory)
+
+        # GPU 분기
+        if self._use_gpu:
+            return self._compute_control_gpu(current_state, reference_trajectory)
 
         solve_start = time.perf_counter()
 
