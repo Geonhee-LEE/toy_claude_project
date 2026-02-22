@@ -51,6 +51,34 @@
 
 ## ✅ Completed
 
+### 2026-02-22
+- [x] Swerve MPPI 오실레이션 진단 + 옵티마이저 수렴 수정 (Phase C)
+  * cmd_vel 녹화/분석 파이프라인으로 오실레이션 정량 진단
+  * vx≡0 근본원인: Spline-MPPI 비대칭 clipping bias + auto lookahead 도달불가 + ESS 균등화
+  * v_min: 0.0→-0.5 (비대칭 clipping 제거), lookahead_dist: 0→1.5 (고정)
+  * target_ess_ratio: 0.5→0.2 (가중치 집중도 증가)
+  * noise_sigma_vy: 0.5→0.2, R_vy: 0.3→1.0, control_smoothing_alpha: 0.8→0.5
+  * prefer_forward_velocity_incentive: 0→2.0 (전진 인센티브)
+  * Spline-MPPI RCLCPP_DEBUG 진단 로그 추가
+
+### 2026-02-21
+- [x] #95 MotionModel 추상화 — DiffDrive/Swerve/NonCoaxialSwerve 다모델 지원 (PR #96)
+  * `MotionModel` 인터페이스 → DiffDrive(nx=3,nu=2), Swerve(nx=3,nu=3), NonCoaxialSwerve(nx=4,nu=3)
+  * `MotionModelFactory::create(string, params)` — YAML `motion_model` 파라미터로 전환
+  * VectorXd/MatrixXd 동적 차원 리팩토링 (Q/R/noise_sigma 런타임 크기)
+  * swerve_robot.urdf: 4륜 스티어링 + 4륜 휠 URDF
+  * launch: `controller:=swerve`, `controller:=non_coaxial` 분기
+  * 단위 테스트 36개 통과 (test_motion_model 신규)
+- [x] Goal approach 수렴 + 장애물 회피 보수화 튜닝
+  * `min_lookahead` 파라미터 구현 (goal 근처 수렴 보장)
+  * Q_theta: 1.0→3.0, Qf_theta: 2.0→6.0 (yaw 수렴 가속)
+  * R_omega: 0.3→0.8, R_rate_omega: 0.5→1.0 (heading 유지 강화)
+  * goal_slowdown_dist: 1.0→0.5 (감속 거리 축소)
+  * costmap_lethal_cost: 500→5000, costmap_critical_cost: 50→500 (장애물 비용 10x)
+  * obstacle_weight: 100→300, inflation_radius: 1.0→1.5 (회피 영역 확장)
+  * `setLethalCost`/`setCriticalCost` 런타임 setter 추가
+  * onSetParametersCallback에 min_lookahead, goal_slowdown_dist, costmap costs 추가
+
 ### 2026-02-18 (Issue #64)
 - [x] Spline-MPPI figure8 궤적 추적 RMSE 개선 (2.17m → <0.5m)
   * Auto knot sigma: basis 감쇠 자동 보정 (amp_factor)
@@ -240,7 +268,7 @@
 ## 💡 Ideas / Backlog
 
 - 강화학습 기반 MPC 튜닝
-- ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~, ~~M3.5 C++ 완료~~
+- ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~, ~~M3.5 C++ 완료~~, ~~MotionModel 추상화 완료~~
 - 실제 로봇 테스트 환경 구축
 - 슬립 모델 적용
 - 적응형 MPC 가중치 튜닝

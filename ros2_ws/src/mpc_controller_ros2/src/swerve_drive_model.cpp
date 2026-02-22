@@ -5,8 +5,8 @@ namespace mpc_controller_ros2
 {
 
 SwerveDriveModel::SwerveDriveModel(
-  double vx_max, double vy_max, double omega_max)
-: vx_max_(vx_max), vy_max_(vy_max), omega_max_(omega_max)
+  double vx_min, double vx_max, double vy_max, double omega_max)
+: vx_min_(vx_min), vx_max_(vx_max), vy_max_(vy_max), omega_max_(omega_max)
 {
 }
 
@@ -37,7 +37,7 @@ Eigen::MatrixXd SwerveDriveModel::clipControls(
   const Eigen::MatrixXd& controls) const
 {
   Eigen::MatrixXd clipped = controls;
-  clipped.col(0) = clipped.col(0).cwiseMax(-vx_max_).cwiseMin(vx_max_);
+  clipped.col(0) = clipped.col(0).cwiseMax(vx_min_).cwiseMin(vx_max_);
   clipped.col(1) = clipped.col(1).cwiseMax(-vy_max_).cwiseMin(vy_max_);
   clipped.col(2) = clipped.col(2).cwiseMax(-omega_max_).cwiseMin(omega_max_);
   return clipped;

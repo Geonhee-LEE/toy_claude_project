@@ -5,9 +5,9 @@ namespace mpc_controller_ros2
 {
 
 NonCoaxialSwerveModel::NonCoaxialSwerveModel(
-  double v_max, double omega_max, double max_steering_rate,
+  double v_min, double v_max, double omega_max, double max_steering_rate,
   double max_steering_angle)
-: v_max_(v_max), omega_max_(omega_max),
+: v_min_(v_min), v_max_(v_max), omega_max_(omega_max),
   max_steering_rate_(max_steering_rate),
   max_steering_angle_(max_steering_angle)
 {
@@ -48,7 +48,7 @@ Eigen::MatrixXd NonCoaxialSwerveModel::clipControls(
   const Eigen::MatrixXd& controls) const
 {
   Eigen::MatrixXd clipped = controls;
-  clipped.col(0) = clipped.col(0).cwiseMax(-v_max_).cwiseMin(v_max_);
+  clipped.col(0) = clipped.col(0).cwiseMax(v_min_).cwiseMin(v_max_);
   clipped.col(1) = clipped.col(1).cwiseMax(-omega_max_).cwiseMin(omega_max_);
   clipped.col(2) = clipped.col(2).cwiseMax(-max_steering_rate_).cwiseMin(max_steering_rate_);
   return clipped;
@@ -85,12 +85,11 @@ geometry_msgs::msg::Twist NonCoaxialSwerveModel::controlToTwist(
   const Eigen::VectorXd& control) const
 {
   geometry_msgs::msg::Twist twist;
-  // v, omega → Twist (delta_dot은 Twist에 매핑하기 어려움)
-  // body frame velocity: vx_body = v * cos(delta) — 하지만 delta는 상태이므로
-  // 여기서는 단순히 v → linear.x, omega → angular.z 매핑
-  twist.linear.x = control(0);
-  twist.angular.z = control(1);
-  // delta_dot은 별도 토픽으로 publish하거나 JointCommand 사용 필요
+  double v = control(0);
+  // Body-frame 분해: swerve_kinematics_node가 vx/vy/omega → IK 수행
+  twist.linear.x = v * std::cos(last_delta_);
+  twist.linear.y = v * std::sin(last_delta_);
+  twist.angular.z = control(1);  // omega
   return twist;
 }
 

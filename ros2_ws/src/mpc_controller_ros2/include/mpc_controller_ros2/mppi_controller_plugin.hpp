@@ -20,6 +20,10 @@
 #include "mpc_controller_ros2/adaptive_temperature.hpp"
 #include "mpc_controller_ros2/tube_mppi.hpp"
 #include "mpc_controller_ros2/weight_computation.hpp"
+#include "mpc_controller_ros2/barrier_function.hpp"
+#include "mpc_controller_ros2/cbf_safety_filter.hpp"
+#include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
+#include "mpc_controller_ros2/savitzky_golay_filter.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -52,6 +56,13 @@ struct MPPIInfo
   int num_guides{0};
   int num_followers{0};
   int guide_iterations{0};
+
+  // CBF 안전성 정보
+  bool cbf_used{false};
+  CBFFilterInfo cbf_filter_info;
+
+  // Collision debug (debug_collision_viz=true일 때만 채워짐)
+  CostBreakdown cost_breakdown;
 };
 
 /**
@@ -151,13 +162,34 @@ private:
   Eigen::VectorXd current_velocity_;  // (nu,) 현재 속도
   double goal_dist_{std::numeric_limits<double>::max()};  // 목표까지 남은 거리
 
+  // EMA 출력 필터 / SG 필터
+  Eigen::VectorXd prev_cmd_;
+  bool prev_cmd_valid_{false};
+  std::unique_ptr<SavitzkyGolayFilter> sg_filter_;
+
+  // Non-Coaxial Swerve: steering angle 추적 (poseToState/computeVelocityCommands)
+  double last_delta_{0.0};
+
   // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
   CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};
+
+  // CBF (Control Barrier Function) 컴포넌트
+  BarrierFunctionSet barrier_set_;
+  std::unique_ptr<CBFSafetyFilter> cbf_safety_filter_;
+  void updateCBFObstacles();
 
   // Tube 시각화
   void publishTubeVisualization(
     const TubeMPPIInfo& tube_info,
     const Eigen::MatrixXd& nominal_trajectory
+  );
+
+  // 충돌 디버그 시각화
+  void publishCollisionDebugVisualization(
+    const MPPIInfo& info,
+    const Eigen::VectorXd& current_state,
+    const Eigen::MatrixXd& reference_trajectory,
+    const Eigen::MatrixXd& weighted_avg_trajectory
   );
 };
 

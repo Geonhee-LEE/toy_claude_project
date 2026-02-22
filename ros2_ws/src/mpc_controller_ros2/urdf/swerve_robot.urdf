@@ -90,7 +90,7 @@
     <joint name="${prefix}_wheel_joint" type="continuous">
       <parent link="${prefix}_steer_link"/>
       <child link="${prefix}_wheel_link"/>
-      <origin xyz="0 0 ${-steer_height/2 - wheel_radius}" rpy="0 0 0"/>
+      <origin xyz="0 0 ${-steer_height/2}" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
       <dynamics damping="0.1" friction="0.1"/>
     </joint>
@@ -107,9 +107,10 @@
   </xacro:macro>
 
   <!-- ========== Base link ========== -->
+  <!-- visual/collision을 5cm 올려서 지면 접촉 방지 (diff_drive와 동일 패턴) -->
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_height}"/>
       </geometry>
@@ -118,13 +119,13 @@
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length} ${base_width} ${base_height}"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <mass value="20.0"/>
       <inertia ixx="0.5" ixy="0.0" ixz="0.0"
                iyy="0.7" iyz="0.0"
@@ -254,6 +255,16 @@
       <always_on>1</always_on>
       <visualize>true</visualize>
     </sensor>
+  </gazebo>
+
+  <!-- Gazebo ground truth odometry (simulation only) -->
+  <gazebo>
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+    </plugin>
   </gazebo>
 
 </robot>

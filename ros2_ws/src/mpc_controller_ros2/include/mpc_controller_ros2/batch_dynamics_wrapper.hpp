@@ -75,6 +75,7 @@ public:
 
   /** @brief 내부 MotionModel 참조 */
   const MotionModel& model() const { return *model_; }
+  MotionModel& model() { return *model_; }
 
 private:
   MPPIParams params_;

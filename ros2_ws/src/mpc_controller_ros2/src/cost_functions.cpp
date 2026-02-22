@@ -118,8 +118,10 @@ Eigen::VectorXd ControlRateCost::compute(
 }
 
 // PreferForwardCost
-PreferForwardCost::PreferForwardCost(double weight, double linear_ratio)
-: weight_(weight), linear_ratio_(std::clamp(linear_ratio, 0.0, 1.0)) {}
+PreferForwardCost::PreferForwardCost(double weight, double linear_ratio,
+                                     double velocity_incentive)
+: weight_(weight), linear_ratio_(std::clamp(linear_ratio, 0.0, 1.0)),
+  velocity_incentive_(velocity_incentive) {}
 
 Eigen::VectorXd PreferForwardCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -134,6 +136,8 @@ Eigen::VectorXd PreferForwardCost::compute(
   int N = controls[0].rows();
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
+  constexpr double kIncentiveThreshold = 0.1;  // m/s
+
   for (int k = 0; k < K; ++k) {
     for (int t = 0; t < N; ++t) {
       double v = controls[k](t, 0);
@@ -141,6 +145,11 @@ Eigen::VectorXd PreferForwardCost::compute(
         // 선형+이차 혼합 페널티: weight * (ratio*|v| + (1-ratio)*v²)
         double abs_v = std::abs(v);
         costs(k) += weight_ * (linear_ratio_ * abs_v + (1.0 - linear_ratio_) * v * v);
+      }
+      // 전진 인센티브: 저속(v < threshold)일 때 정지 회피 비용 추가
+      if (velocity_incentive_ > 0.0 && v >= 0.0 && v < kIncentiveThreshold) {
+        double deficit = kIncentiveThreshold - v;
+        costs(k) += velocity_incentive_ * deficit * deficit;
       }
     }
   }
@@ -275,6 +284,107 @@ Eigen::VectorXd CostmapObstacleCost::compute(
   return costs;
 }
 
+// CostmapObstacleCost::computePerPoint
+Eigen::MatrixXd CostmapObstacleCost::computePerPoint(
+  const std::vector<Eigen::MatrixXd>& trajectories
+) const
+{
+  int K = trajectories.size();
+  if (K == 0) {
+    return Eigen::MatrixXd();
+  }
+  int T = trajectories[0].rows();
+  Eigen::MatrixXd per_point = Eigen::MatrixXd::Zero(K, T);
+
+  if (!costmap_) {
+    return per_point;
+  }
+
+  for (int k = 0; k < K; ++k) {
+    const auto& traj = trajectories[k];
+    for (int t = 0; t < T; ++t) {
+      double map_x = traj(t, 0);
+      double map_y = traj(t, 1);
+
+      double query_x, query_y;
+      if (use_tf_) {
+        query_x = cos_th_ * map_x - sin_th_ * map_y + tx_;
+        query_y = sin_th_ * map_x + cos_th_ * map_y + ty_;
+      } else {
+        query_x = map_x;
+        query_y = map_y;
+      }
+
+      unsigned int mx, my;
+      if (!costmap_->worldToMap(query_x, query_y, mx, my)) {
+        per_point(k, t) = lethal_cost_;
+        continue;
+      }
+
+      unsigned char cell_cost = costmap_->getCost(mx, my);
+
+      if (cell_cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        per_point(k, t) = lethal_cost_;
+      } else if (cell_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+        per_point(k, t) = critical_cost_;
+      } else if (cell_cost > nav2_costmap_2d::FREE_SPACE) {
+        double normalized = static_cast<double>(cell_cost) / 252.0;
+        per_point(k, t) = weight_ * normalized * normalized;
+      }
+    }
+  }
+
+  return per_point;
+}
+
+// CBFCost
+CBFCost::CBFCost(BarrierFunctionSet* barrier_set, double weight,
+                 double gamma, double dt)
+: barrier_set_(barrier_set), weight_(weight)
+{
+  decay_ = 1.0 - gamma * dt;
+}
+
+Eigen::VectorXd CBFCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)controls;
+  (void)reference;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (!barrier_set_ || barrier_set_->empty()) {
+    return costs;
+  }
+
+  for (const auto& barrier : barrier_set_->barriers()) {
+    for (int k = 0; k < K; ++k) {
+      const auto& traj = trajectories[k];
+      int N = traj.rows() - 1;
+
+      // 배치 평가: h(x_0), h(x_1), ..., h(x_N)
+      Eigen::VectorXd h_all = barrier.evaluateBatch(traj);
+
+      for (int t = 0; t < N; ++t) {
+        double h_t = h_all(t);
+        double h_t1 = h_all(t + 1);
+
+        // DCBF 위반: (1-γdt)·h(x_t) - h(x_{t+1}) > 0
+        double violation = decay_ * h_t - h_t1;
+        if (violation > 0.0) {
+          costs(k) += weight_ * violation * violation;
+        }
+      }
+    }
+  }
+
+  return costs;
+}
+
 // CompositeMPPICost
 void CompositeMPPICost::addCost(std::unique_ptr<MPPICostFunction> cost)
 {
@@ -303,6 +413,25 @@ Eigen::VectorXd CompositeMPPICost::compute(
   }
 
   return total_costs;
+}
+
+CostBreakdown CompositeMPPICost::computeDetailed(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  CostBreakdown breakdown;
+  int K = trajectories.size();
+  breakdown.total_costs = Eigen::VectorXd::Zero(K);
+
+  for (const auto& cost_fn : costs_) {
+    Eigen::VectorXd component = cost_fn->compute(trajectories, controls, reference);
+    breakdown.component_costs[cost_fn->name()] = component;
+    breakdown.total_costs += component;
+  }
+
+  return breakdown;
 }
 
 }  // namespace mpc_controller_ros2

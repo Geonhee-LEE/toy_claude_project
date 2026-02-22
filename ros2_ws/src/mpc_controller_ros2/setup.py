@@ -29,6 +29,7 @@ setup(
             'mpc_controller_node = mpc_controller_ros2.mpc_controller_node:main',
             'odom_to_tf = mpc_controller_ros2.odom_to_tf:main',
             'twist_to_twist_stamped = mpc_controller_ros2.twist_to_twist_stamped:main',
+            'swerve_kinematics_node = mpc_controller_ros2.swerve_kinematics_node:main',
         ],
     },
 )

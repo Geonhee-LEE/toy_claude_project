@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │          Gazebo Harmonic Simulation             │
-│  - differential_robot (SDF)                     │
+│  - DiffDrive / Swerve / NonCoaxial robot       │
 │  - World with obstacles                         │
 │  - Lidar sensor                                 │
 └─────────────────────────────────────────────────┘
@@ -18,7 +18,7 @@
 │         ↓ (goal)          ↓ (path)              │
 │  ┌──────────────┐   ┌──────────────────────┐   │
 │  │planner_server│   │ controller_server    │   │
-│  │  (NavFn)     │   │  (MPPI Controller)   │   │
+│  │  (NavFn)     │   │  (MPPI 8종 플러그인) │   │
 │  └──────────────┘   └──────────────────────┘   │
 │         ↓                    ↓                   │
 │  ┌─────────────────────────────────────────┐   │
@@ -30,7 +30,7 @@
                     ↓ (cmd_vel)
 ┌─────────────────────────────────────────────────┐
 │         Robot Hardware (Gazebo)                 │
-│  - Differential Drive                           │
+│  - DiffDrive / Swerve controller               │
 │  - Odometry feedback                            │
 └─────────────────────────────────────────────────┘
 ```
@@ -51,7 +51,20 @@ source install/setup.bash
 
 ```bash
 source install/setup.bash
-ros2 launch mpc_controller_ros2 mppi_nav2_gazebo.launch.py
+
+# DiffDrive (기본)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py
+
+# Swerve Drive (홀로노믹, vx/vy/omega)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
+
+# Non-Coaxial Swerve (비홀로노믹, v/omega/delta_dot)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
+
+# 플러그인 변형 사용
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline  # Spline-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=log     # Log-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc   # SVMPC
 ```
 
 실행되는 노드들:
@@ -160,17 +173,85 @@ rqt_graph
 # Temperature 파라미터 (탐색 vs 최적화 균형)
 ros2 param set /controller_server FollowPath.lambda 15.0
 
-# 샘플 개수 (성능 vs 정확도)
-ros2 param set /controller_server FollowPath.K 1024
-
 # 장애물 회피 강도
-ros2 param set /controller_server FollowPath.obstacle_weight 200.0
+ros2 param set /controller_server FollowPath.obstacle_weight 300.0
+ros2 param set /controller_server FollowPath.costmap_lethal_cost 5000.0
+ros2 param set /controller_server FollowPath.costmap_critical_cost 500.0
 
-# 안전 거리
-ros2 param set /controller_server FollowPath.safety_distance 0.8
+# Goal approach 튜닝
+ros2 param set /controller_server FollowPath.min_lookahead 0.5
+ros2 param set /controller_server FollowPath.goal_slowdown_dist 0.5
+
+# Heading 유지 강화 (swerve용)
+ros2 param set /controller_server FollowPath.R_omega 0.8
+
+# Collision debug 실시간 활성화
+ros2 param set /controller_server FollowPath.debug_collision_viz true
 
 # 현재 파라미터 확인
 ros2 param list /controller_server | grep FollowPath
+```
+
+### 모델별 YAML 설정 파일
+
+| 모델 | MPPI YAML | 공통 YAML |
+|------|-----------|-----------|
+| DiffDrive | `config/nav2_params.yaml` | (내장) |
+| Swerve | `config/nav2_params_swerve_mppi.yaml` | `config/nav2_params_swerve.yaml` |
+| NonCoaxial | `config/nav2_params_non_coaxial_mppi.yaml` | `config/nav2_params_swerve.yaml` |
+
+### Swerve MPPI 튜닝 가이드
+
+Swerve(홀로노믹) 모델은 vx/vy/omega 3축 제어로 DiffDrive보다 복잡한 튜닝이 필요합니다.
+
+**핵심 파라미터:**
+
+| 파라미터 | 기본값 | 설명 |
+|----------|--------|------|
+| `v_min` | -0.5 | **0.0으로 설정 금지** — Spline-MPPI 비대칭 clipping bias 발생 |
+| `lookahead_dist` | 1.5 | **0(auto)은 비권장** — auto=v_max*N*dt가 도달불가 거리 생성 |
+| `target_ess_ratio` | 0.2 | 낮을수록 상위 샘플에 가중치 집중 (0.5는 너무 균등) |
+| `noise_sigma_vy` | 0.2 | vy 노이즈 과다 시 측면 오실레이션 유발 |
+| `R_vy` | 1.0 | vy 제어 비용 — 낮으면 불필요한 측면 이동 발생 |
+| `control_smoothing_alpha` | 0.5 | EMA 필터 강도 (0=이전유지, 1=필터OFF) |
+
+**주의사항:**
+
+```
+┌─ Swerve MPPI에서 vx≡0이 발생하는 경우 ─────────────────────┐
+│                                                             │
+│  ① v_min=0.0 → 비대칭 clipping → MPPI 업데이트 bias       │
+│  ② lookahead=auto(4.5m) → 모든 샘플 도달 불가 → 비용 포화  │
+│  ③ target_ess_ratio=0.5 → 가중치 균등 → 업데이트 ≈ 0       │
+│                                                             │
+│  해결: v_min=-0.5, lookahead=1.5, target_ess=0.2            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### cmd_vel 오실레이션 분석
+
+```bash
+# 1. cmd_vel 녹화 (45초)
+python3 /tmp/record_cmd_vel.py
+
+# 2. goal 전송 (별도 터미널)
+ros2 run mpc_controller_ros2 send_nav_goal.py --x 3.0 --y 0.0 --yaw 0.0
+
+# 3. 분석 (녹화 완료 후)
+python3 /tmp/analyze_cmd_vel.py
+```
+
+주요 지표:
+- **부호 전환율**: < 15% 양호, > 25% 오실레이션 심각
+- **제어 변화율**: dvx/dvy mean < 0.05 양호
+- **ESS**: < 20%가 최적 (RCLCPP_DEBUG로 확인)
+
+### Spline-MPPI 디버그
+
+```bash
+# 컨트롤러 로그 레벨 DEBUG로 변경 (u_opt, min_cost, ESS, knots_vx, ref0 출력)
+ros2 service call /controller_server/set_logger_level \
+  rcl_interfaces/srv/SetLoggerLevel "{logger_name: 'controller_server', level: 10}"
 ```
 
 ## 테스트 시나리오
@@ -283,17 +364,21 @@ ros2 param get /controller_server FollowPath.visualize_samples
 
 ## 파일 위치
 
-- Launch 파일: `launch/mppi_nav2_gazebo.launch.py`
-- nav2 파라미터: `config/nav2_params.yaml`
-- MPPI 파라미터: `config/mppi_controller_params.yaml`
+- Launch 파일: `launch/mppi_ros2_control_nav2.launch.py`
+- nav2 파라미터 (DiffDrive): `config/nav2_params.yaml`
+- nav2 파라미터 (Swerve): `config/nav2_params_swerve.yaml` + `config/nav2_params_swerve_mppi.yaml`
+- nav2 파라미터 (NonCoaxial): `config/nav2_params_swerve.yaml` + `config/nav2_params_non_coaxial_mppi.yaml`
+- 플러그인 XML: `plugins/mppi_controller_plugin.xml`
 - Goal 전송 스크립트: `scripts/send_nav_goal.py`
-- 로봇 모델: `models/differential_robot/model.sdf`
+- 로봇 URDF: `urdf/swerve_robot.urdf`
 - World 파일: `worlds/mppi_test_simple.world`
 
 ## 다음 단계
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
-2. 🔄 실제 로봇 테스트
-3. 📊 성능 벤치마크 수행
-4. 📝 튜닝 가이드 작성
-5. 🚀 고급 MPPI 변형 구현 (M3 마일스톤)
+2. ✅ 고급 MPPI 8종 플러그인 (M3/M3.5/M5 완료)
+3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial)
+4. ✅ Goal 수렴 + 장애물 회피 튜닝
+5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
+6. 🔄 실제 로봇 테스트
+7. 📊 GPU 가속 (M2 잔여)

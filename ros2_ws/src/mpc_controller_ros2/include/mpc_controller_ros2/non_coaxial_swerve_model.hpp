@@ -29,7 +29,7 @@ class NonCoaxialSwerveModel : public MotionModel
 {
 public:
   NonCoaxialSwerveModel(
-    double v_max, double omega_max, double max_steering_rate,
+    double v_min, double v_max, double omega_max, double max_steering_rate,
     double max_steering_angle = M_PI / 2.0);
 
   int stateDim() const override { return 4; }
@@ -60,8 +60,13 @@ public:
     const Eigen::MatrixXd& controls,
     double dt) const override;
 
+  // controlToTwist용 last_delta_ 추적 (플러그인에서 갱신)
+  void setLastDelta(double delta) { last_delta_ = delta; }
+  double getLastDelta() const { return last_delta_; }
+
 private:
-  double v_max_, omega_max_, max_steering_rate_, max_steering_angle_;
+  double v_min_, v_max_, omega_max_, max_steering_rate_, max_steering_angle_;
+  double last_delta_{0.0};  // controlToTwist body-frame 변환용
 };
 
 }  // namespace mpc_controller_ros2

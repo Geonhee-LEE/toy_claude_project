@@ -413,6 +413,61 @@ TEST_F(CostFunctionsTest, PreferForwardCostQuadraticOnly)
   EXPECT_NEAR(costs(0), 15.0 * (0.2 * 0.2 + 0.3 * 0.3), 1e-9);
 }
 
+TEST_F(CostFunctionsTest, PreferForwardCostVelocityIncentive)
+{
+  // velocity_incentive > 0 → 저속 전진 시 비용 추가 (정지 회피)
+  double weight = 50.0;
+  double velocity_incentive = 10.0;
+  PreferForwardCost cost(weight, 0.5, velocity_incentive);
+
+  // 저속 전진 controls (v=0.02 < threshold=0.1)
+  std::vector<Eigen::MatrixXd> slow_controls;
+  Eigen::MatrixXd ctrl(1, 2);
+  ctrl << 0.02, 0.0;
+  slow_controls.push_back(ctrl);
+
+  auto costs = cost.compute(trajectories_, slow_controls, reference_);
+
+  // deficit = 0.1 - 0.02 = 0.08
+  // incentive_cost = 10.0 * 0.08^2 = 0.064
+  EXPECT_NEAR(costs(0), velocity_incentive * 0.08 * 0.08, 1e-9);
+}
+
+TEST_F(CostFunctionsTest, PreferForwardCostNoIncentiveWhenZero)
+{
+  // velocity_incentive=0 → 기존 동작과 동일 (인센티브 비용 없음)
+  double weight = 50.0;
+  PreferForwardCost cost(weight, 0.5, 0.0);  // incentive=0
+
+  // 저속 전진 controls
+  std::vector<Eigen::MatrixXd> slow_controls;
+  Eigen::MatrixXd ctrl(1, 2);
+  ctrl << 0.02, 0.0;
+  slow_controls.push_back(ctrl);
+
+  auto costs = cost.compute(trajectories_, slow_controls, reference_);
+
+  // v >= 0 이고 incentive=0 → 비용 0
+  EXPECT_NEAR(costs(0), 0.0, 1e-9);
+}
+
+TEST_F(CostFunctionsTest, PreferForwardCostNoIncentiveAboveThreshold)
+{
+  // v >= threshold(0.1) → 인센티브 비용 없음
+  double velocity_incentive = 10.0;
+  PreferForwardCost cost(50.0, 0.5, velocity_incentive);
+
+  std::vector<Eigen::MatrixXd> fast_controls;
+  Eigen::MatrixXd ctrl(1, 2);
+  ctrl << 0.5, 0.0;  // v=0.5 > threshold
+  fast_controls.push_back(ctrl);
+
+  auto costs = cost.compute(trajectories_, fast_controls, reference_);
+
+  // v >= 0 이고 v >= threshold → 비용 0
+  EXPECT_NEAR(costs(0), 0.0, 1e-9);
+}
+
 // ============================================================================
 // CostmapObstacleCost 테스트
 // ============================================================================
@@ -572,6 +627,180 @@ TEST_F(CostmapObstacleCostTest, InflationGradientSmooth)
   // 비용이 0보다 크고 inflation gradient가 반영됨
   EXPECT_GT(costs(0), expected_low);  // 최소 low_inflation만큼
   EXPECT_NEAR(costs(0), expected_low + expected_high, 1e-6);
+}
+
+// ============================================================================
+// name() 테스트
+// ============================================================================
+
+TEST(CostFunctionNameTest, AllCostFunctionsReturnCorrectName)
+{
+  Eigen::Matrix3d Q = Eigen::Matrix3d::Identity();
+  Eigen::Matrix2d R = Eigen::Matrix2d::Identity();
+
+  StateTrackingCost state_cost(Q);
+  EXPECT_EQ(state_cost.name(), "state_tracking");
+
+  TerminalCost terminal_cost(Q);
+  EXPECT_EQ(terminal_cost.name(), "terminal");
+
+  ControlEffortCost effort_cost(R);
+  EXPECT_EQ(effort_cost.name(), "control_effort");
+
+  ControlRateCost rate_cost(R);
+  EXPECT_EQ(rate_cost.name(), "control_rate");
+
+  PreferForwardCost fwd_cost(5.0);
+  EXPECT_EQ(fwd_cost.name(), "prefer_forward");
+
+  ObstacleCost obs_cost(100.0, 0.5);
+  EXPECT_EQ(obs_cost.name(), "obstacle");
+
+  CostmapObstacleCost costmap_cost(100.0);
+  EXPECT_EQ(costmap_cost.name(), "costmap_obstacle");
+}
+
+// ============================================================================
+// CostBreakdown 테스트
+// ============================================================================
+
+class CostBreakdownTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    K_ = 3;
+    N_ = 4;
+
+    reference_ = Eigen::MatrixXd::Zero(N_ + 1, 3);
+    for (int t = 0; t <= N_; ++t) {
+      reference_(t, 0) = t * 0.1;
+    }
+
+    for (int k = 0; k < K_; ++k) {
+      Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(N_ + 1, 3);
+      for (int t = 0; t <= N_; ++t) {
+        traj(t, 0) = t * 0.1 + k * 0.05;
+        traj(t, 1) = k * 0.02;
+      }
+      trajectories_.push_back(traj);
+
+      Eigen::MatrixXd ctrl = Eigen::MatrixXd::Zero(N_, 2);
+      ctrl.col(0).setConstant(0.5 + k * 0.1);
+      controls_.push_back(ctrl);
+    }
+
+    Q_ = Eigen::Matrix3d::Identity();
+    R_ = Eigen::Matrix2d::Identity() * 0.1;
+  }
+
+  int K_, N_;
+  Eigen::MatrixXd reference_;
+  std::vector<Eigen::MatrixXd> trajectories_;
+  std::vector<Eigen::MatrixXd> controls_;
+  Eigen::Matrix3d Q_;
+  Eigen::Matrix2d R_;
+};
+
+TEST_F(CostBreakdownTest, ComponentSumEqualsTotal)
+{
+  CompositeMPPICost composite;
+  composite.addCost(std::make_unique<StateTrackingCost>(Q_));
+  composite.addCost(std::make_unique<ControlEffortCost>(R_));
+
+  auto breakdown = composite.computeDetailed(trajectories_, controls_, reference_);
+
+  EXPECT_EQ(breakdown.total_costs.size(), K_);
+  EXPECT_EQ(breakdown.component_costs.size(), 2u);
+  EXPECT_TRUE(breakdown.component_costs.count("state_tracking") > 0);
+  EXPECT_TRUE(breakdown.component_costs.count("control_effort") > 0);
+
+  // 성분 합 == 총합
+  Eigen::VectorXd sum = breakdown.component_costs.at("state_tracking")
+                      + breakdown.component_costs.at("control_effort");
+  for (int k = 0; k < K_; ++k) {
+    EXPECT_NEAR(breakdown.total_costs(k), sum(k), 1e-9);
+  }
+}
+
+TEST_F(CostBreakdownTest, MatchesCompute)
+{
+  CompositeMPPICost composite;
+  composite.addCost(std::make_unique<StateTrackingCost>(Q_));
+  composite.addCost(std::make_unique<ControlEffortCost>(R_));
+
+  auto breakdown = composite.computeDetailed(trajectories_, controls_, reference_);
+  auto direct = composite.compute(trajectories_, controls_, reference_);
+
+  for (int k = 0; k < K_; ++k) {
+    EXPECT_NEAR(breakdown.total_costs(k), direct(k), 1e-9);
+  }
+}
+
+TEST_F(CostBreakdownTest, EmptyCompositeReturnsEmptyBreakdown)
+{
+  CompositeMPPICost composite;
+
+  auto breakdown = composite.computeDetailed(trajectories_, controls_, reference_);
+
+  EXPECT_EQ(breakdown.total_costs.size(), K_);
+  EXPECT_TRUE(breakdown.component_costs.empty());
+  for (int k = 0; k < K_; ++k) {
+    EXPECT_NEAR(breakdown.total_costs(k), 0.0, 1e-9);
+  }
+}
+
+// ============================================================================
+// computePerPoint 테스트
+// ============================================================================
+
+TEST_F(CostBreakdownTest, CostmapPerPointShapeIsKxT)
+{
+  CostmapObstacleCost cost(100.0, 1000.0, 100.0);
+  // costmap 미설정 → 모두 0 반환
+  auto per_point = cost.computePerPoint(trajectories_);
+
+  EXPECT_EQ(per_point.rows(), K_);
+  EXPECT_EQ(per_point.cols(), N_ + 1);
+
+  // 모두 0
+  EXPECT_NEAR(per_point.sum(), 0.0, 1e-9);
+}
+
+TEST_F(CostBreakdownTest, CostmapPerPointLethalValues)
+{
+  // costmap 생성 (LETHAL 셀 포함)
+  nav2_costmap_2d::Costmap2D costmap(40, 40, 0.05, -0.5, -0.5);
+  for (unsigned int i = 0; i < 40; ++i) {
+    for (unsigned int j = 0; j < 40; ++j) {
+      costmap.setCost(i, j, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+
+  // 원점(0,0) 부근에 LETHAL 셀 배치
+  unsigned int mx, my;
+  if (costmap.worldToMap(0.0, 0.0, mx, my)) {
+    costmap.setCost(mx, my, nav2_costmap_2d::LETHAL_OBSTACLE);
+  }
+
+  double lethal_cost = 1000.0;
+  CostmapObstacleCost cost(100.0, lethal_cost, 100.0);
+  cost.setCostmap(&costmap);
+
+  // 원점을 지나는 단일 궤적
+  std::vector<Eigen::MatrixXd> test_trajs;
+  Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(3, 3);
+  traj(0, 0) = 0.0;  // 원점 (LETHAL)
+  traj(1, 0) = 0.5;  // FREE
+  traj(2, 0) = 1.0;  // FREE
+  test_trajs.push_back(traj);
+
+  auto per_point = cost.computePerPoint(test_trajs);
+
+  EXPECT_EQ(per_point.rows(), 1);
+  EXPECT_EQ(per_point.cols(), 3);
+  // 첫 번째 점은 LETHAL 비용
+  EXPECT_NEAR(per_point(0, 0), lethal_cost, 1e-9);
 }
 
 }  // namespace mpc_controller_ros2
