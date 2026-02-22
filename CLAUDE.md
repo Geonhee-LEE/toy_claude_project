@@ -28,9 +28,11 @@ mpc_controller/
 │   │   ├── mppi_params.py         # 파라미터 데이터클래스
 │   │   ├── gpu_backend.py         # JAX/NumPy 백엔드 추상화
 │   │   ├── gpu_dynamics.py        # JIT rollout (lax.scan + vmap)
-│   │   ├── gpu_costs.py           # JIT 비용 함수 fusion
+│   │   ├── gpu_costs.py           # JIT 비용 함수 fusion + jerk cost
 │   │   ├── gpu_sampling.py        # JAX PRNG 샘플러
-│   │   └── gpu_mppi_kernel.py     # 통합 GPU MPPI 커널
+│   │   ├── gpu_mppi_kernel.py     # GPU MPPI 커널 (vanilla/smooth/spline step)
+│   │   ├── gpu_weights.py         # GPU 가중치 전략 (4종 JIT weight fn)
+│   │   └── gpu_svgd.py            # SVGD JIT 커널 (SVMPC/SVG-MPPI 공유)
 │   ├── swerve_mpc/          # 스워브 MPC
 │   └── non_coaxial_swerve_mpc/
 ├── ros2/                    # ROS2 노드 및 RVIZ 시각화
@@ -46,6 +48,7 @@ mpc_controller/
 - M4 ROS2 nav2 통합 (8종 C++ 플러그인 + Swerve): 완료
 - M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
+- GPU 8종 변형 확장 (가중치 Strategy + SVGD JIT): 완료 (PR #105)
 - MPPI-CBF 통합 (Python + C++): 완료
 - 궤적 안정화 (SG Filter + IT 정규화): 완료
 
