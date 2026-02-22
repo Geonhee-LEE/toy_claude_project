@@ -69,8 +69,8 @@ controller_server:
       Qf_theta: 2.0
 
       # Control effort weights (R)
-      R_v: 0.1
-      R_omega: 0.1
+      R_v: 0.5
+      R_omega: 0.3
 
       # Control rate weights (R_rate)
       R_rate_v: 1.0
@@ -82,13 +82,22 @@ controller_server:
 
       # Costmap obstacle cost
       use_costmap_cost: true
-      costmap_lethal_cost: 1000.0
-      costmap_critical_cost: 100.0
+      costmap_lethal_cost: 500.0
+      costmap_critical_cost: 50.0
       lookahead_dist: 0.0
+      min_lookahead: 0.5
+      goal_slowdown_dist: 1.0
 
       # Forward preference (후진 페널티)
-      prefer_forward_weight: 50.0
+      prefer_forward_weight: 10.0
       prefer_forward_linear_ratio: 0.5
+
+      # Adaptive Temperature (ESS 기반 자동 조정)
+      adaptive_temperature: true
+      target_ess_ratio: 0.5
+      adaptation_rate: 0.1
+      lambda_min: 0.1
+      lambda_max: 100.0
 
       # Visualization
       visualize_samples: true
