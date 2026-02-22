@@ -88,6 +88,11 @@ class MPPIParams:
     tube_disturbance_bound: float = 0.1            # 예상 외란 크기 (튜브 폭 추정용)
     tube_nominal_reset_threshold: float = 1.0      # 편차 > threshold → 명목 상태 리셋
 
+    # GPU acceleration (JAX)
+    use_gpu: bool = False           # True → JAX GPU 경로 사용
+    gpu_warmup: bool = True         # __init__ 시 JIT 사전 컴파일
+    gpu_float32: bool = False       # True → float32 (2x 빠름, 정밀도↓)
+
     def __post_init__(self):
         if self.noise_sigma is None:
             self.noise_sigma = np.array([0.3, 0.3])

@@ -96,6 +96,18 @@ class MPPIController:
         # 제어열 초기화 (warm start)
         self.U = np.zeros((self.params.N, self.dynamics.nu))
 
+        # GPU 가속 초기화 (use_gpu=False 기본 → 기존 동작 100% 유지)
+        self._use_gpu = False
+        if self.params.use_gpu:
+            from mpc_controller.controllers.mppi.gpu_backend import is_jax_available
+            if is_jax_available():
+                self._use_gpu = True
+                self._init_gpu()
+            else:
+                logger.warning(
+                    "use_gpu=True but JAX not available. Falling back to CPU."
+                )
+
         # 로깅 설정
         if not logger.handlers:
             handler = logging.StreamHandler()
@@ -105,6 +117,117 @@ class MPPIController:
             handler.setFormatter(formatter)
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
+
+    def _init_gpu(self):
+        """GPU 커널 초기화."""
+        from mpc_controller.controllers.mppi.gpu_mppi_kernel import GPUMPPIKernel
+        from mpc_controller.controllers.mppi.gpu_backend import to_jax, get_backend_name
+
+        r_rate_diag = None
+        if self.params.R_rate is not None:
+            r_rate_diag = (
+                np.diag(self.params.R_rate)
+                if self.params.R_rate.ndim == 2
+                else self.params.R_rate
+            )
+
+        self._gpu_kernel = GPUMPPIKernel(
+            N=self.params.N,
+            K=self.params.K,
+            nu=self.dynamics.nu,
+            nx=self.dynamics.nx,
+            dt=self.params.dt,
+            lambda_=self.params.lambda_,
+            noise_sigma=self.params.noise_sigma,
+            q_diag=np.diag(self.params.Q),
+            qf_diag=np.diag(self.params.Qf),
+            r_diag=np.diag(self.params.R),
+            max_velocity=self.robot_params.max_velocity,
+            max_omega=self.robot_params.max_omega,
+            r_rate_diag=r_rate_diag,
+            colored_noise=self.params.colored_noise,
+            noise_beta=self.params.noise_beta,
+            model_name="diff_drive",
+            use_float32=self.params.gpu_float32,
+            warmup=self.params.gpu_warmup,
+        )
+        self._to_jax = to_jax
+        logger.info(f"GPU MPPI initialized (backend: {get_backend_name()})")
+
+    def _compute_control_gpu(
+        self,
+        current_state: np.ndarray,
+        reference_trajectory: np.ndarray,
+    ) -> Tuple[np.ndarray, dict]:
+        """GPU 경로: 전체 MPPI 스텝을 GPU에서 실행.
+
+        CPU↔GPU 전송 2회만 발생 (입력 전송 + 결과 반환).
+        """
+        from mpc_controller.controllers.mppi.gpu_backend import to_numpy
+
+        solve_start = time.perf_counter()
+
+        # 1. 이전 제어열 shift
+        self.U[:-1] = self.U[1:]
+        self.U[-1] = 0.0
+
+        # 2. CPU → GPU 전송 (1회)
+        x0_jax = self._to_jax(current_state)
+        U_jax = self._to_jax(self.U)
+        ref_jax = self._to_jax(reference_trajectory)
+
+        # Adaptive temperature 반영
+        current_lambda = self._get_current_lambda()
+        self._gpu_kernel.update_lambda(current_lambda)
+
+        # 3. GPU에서 MPPI 스텝 실행
+        U_new_jax, gpu_info = self._gpu_kernel.mppi_step(x0_jax, U_jax, ref_jax)
+
+        # 4. GPU → CPU 전송 (1회)
+        self.U = to_numpy(U_new_jax)
+        u_opt = self.U[0].copy()
+        solve_time = time.perf_counter() - solve_start
+
+        # info dict 변환 (JAX → NumPy)
+        costs = to_numpy(gpu_info["costs"])
+        weights = to_numpy(gpu_info["weights"])
+        trajectories = to_numpy(gpu_info["trajectories"])
+        best_idx = int(to_numpy(gpu_info["best_idx"]))
+        ess = float(to_numpy(gpu_info["ess"]))
+        weighted_traj = to_numpy(gpu_info["weighted_trajectory"])
+
+        # Adaptive Temperature 업데이트
+        if self._adaptive_temp is not None:
+            current_lambda = self._adaptive_temp.update(ess, self.params.K)
+
+        # 로깅
+        self._iteration_count += 1
+        logger.info(
+            f"MPPI-GPU iteration {self._iteration_count}: "
+            f"solve_time={solve_time*1000:.2f}ms, "
+            f"min_cost={costs[best_idx]:.4f}, "
+            f"mean_cost={np.mean(costs):.4f}, "
+            f"ESS={ess:.1f}/{self.params.K}"
+        )
+
+        info = {
+            "predicted_trajectory": weighted_traj,
+            "predicted_controls": self.U.copy(),
+            "cost": float(costs[best_idx]),
+            "mean_cost": float(np.mean(costs)),
+            "solve_time": solve_time,
+            "solver_status": "optimal",
+            "sample_trajectories": trajectories,
+            "sample_weights": weights,
+            "sample_costs": costs,
+            "best_trajectory": trajectories[best_idx],
+            "best_index": best_idx,
+            "ess": ess,
+            "temperature": current_lambda,
+            "backend": "gpu",
+        }
+
+        return u_opt, info
 
     def compute_control(
         self,
@@ -122,6 +245,10 @@ class MPPIController:
               - control: [v, omega] 최적 제어
               - info: 디버그/시각화 정보
         """
+        # GPU 분기: use_gpu=True이고 JAX 사용 가능 시 GPU 경로 실행
+        if self._use_gpu:
+            return self._compute_control_gpu(current_state, reference_trajectory)
+
         solve_start = time.perf_counter()
 
         N = self.params.N
@@ -214,6 +341,11 @@ class MPPIController:
         Args:
             obstacles: (M, 3) 장애물 배열 [x, y, radius]
         """
+        # GPU 경로: GPU 커널 장애물 업데이트
+        if self._use_gpu:
+            self._gpu_kernel.set_obstacles(obstacles)
+            return
+
         # 비용 함수 재구성
         self.cost = CompositeMPPICost()
         self.cost.add(StateTrackingCost(self.params.Q))
