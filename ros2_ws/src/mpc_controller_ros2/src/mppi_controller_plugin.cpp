@@ -135,8 +135,11 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
   nav2_core::GoalChecker* goal_checker
 )
 {
-  (void)velocity;  // Unused parameter
   (void)goal_checker;  // Unused parameter
+
+  // 현재 속도 저장 (동적 lookahead, goal approach에 활용)
+  current_velocity_(0) = velocity.linear.x;
+  current_velocity_(1) = velocity.angular.z;
 
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.stamp = node_->now();
@@ -183,12 +186,41 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 2. Prune plan (이미 지나간 waypoint 제거) — map 프레임에서 수행
     prunePlan(current_state);
 
+    // 2.5. pruned_plan_ 남은 경로 거리 계산 (goal approach용)
+    goal_dist_ = 0.0;
+    for (size_t i = 1; i < pruned_plan_.poses.size(); ++i) {
+      double dx = pruned_plan_.poses[i].pose.position.x -
+                  pruned_plan_.poses[i - 1].pose.position.x;
+      double dy = pruned_plan_.poses[i].pose.position.y -
+                  pruned_plan_.poses[i - 1].pose.position.y;
+      goal_dist_ += std::sqrt(dx * dx + dy * dy);
+    }
+
     // 3. Convert pruned path to reference trajectory (lookahead 기반)
     Eigen::MatrixXd reference_trajectory = pathToReferenceTrajectory(pruned_plan_, current_state);
 
     // 4. Update costmap TF (cost_function_ 재생성 없이 TF만 갱신)
     if (params_.use_costmap_cost) {
       updateCostmapObstacles();
+    }
+
+    // 4.5. Goal approach: 목표 근처에서 noise sigma 스케일링 (정밀 제어)
+    double goal_scale = 1.0;
+    if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
+      goal_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
+      Eigen::Vector2d scaled_sigma = params_.noise_sigma * goal_scale;
+      if (params_.colored_noise) {
+        sampler_ = std::make_unique<ColoredNoiseSampler>(scaled_sigma, params_.noise_beta);
+      } else {
+        sampler_ = std::make_unique<GaussianSampler>(scaled_sigma);
+      }
+    } else if (goal_scale < 1.0) {
+      // goal에서 멀어지면 원래 sigma 복원
+      if (params_.colored_noise) {
+        sampler_ = std::make_unique<ColoredNoiseSampler>(params_.noise_sigma, params_.noise_beta);
+      } else {
+        sampler_ = std::make_unique<GaussianSampler>(params_.noise_sigma);
+      }
     }
 
     // 5. Compute optimal control (measure computation time)
@@ -225,6 +257,13 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 6. Apply speed limit if set
     double v_cmd = final_control(0);
     double omega_cmd = final_control(1);
+
+    // Goal approach 감속: 거리 비례로 v_max 스케일링
+    if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
+      double v_scale = std::clamp(goal_dist_ / params_.goal_slowdown_dist, 0.1, 1.0);
+      double effective_v_max = params_.v_max * v_scale;
+      v_cmd = std::clamp(v_cmd, params_.v_min, effective_v_max);
+    }
 
     if (speed_limit_valid_) {
       v_cmd = std::clamp(v_cmd, -speed_limit_, speed_limit_);
@@ -324,7 +363,8 @@ std::pair<Eigen::Vector2d, MPPIInfo> MPPIControllerPlugin::computeControl(
   for (int t = 0; t < N - 1; ++t) {
     control_sequence_.row(t) = control_sequence_.row(t + 1);
   }
-  control_sequence_.row(N - 1).setZero();
+  // 마지막 스텝: 이전 값 유지 (급감속 방지)
+  control_sequence_.row(N - 1) = control_sequence_.row(N - 2);
 
   // 2. Sample noise
   auto noise_samples = sampler_->sample(K, N, nu);
@@ -462,10 +502,8 @@ void MPPIControllerPlugin::prunePlan(const Eigen::Vector3d& current_state)
 }
 
 Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
-  const nav_msgs::msg::Path& path, const Eigen::Vector3d& current_state)
+  const nav_msgs::msg::Path& path, const Eigen::Vector3d& /*current_state*/)
 {
-  (void)current_state;
-
   if (path.poses.empty()) {
     RCLCPP_WARN(node_->get_logger(), "Empty path provided");
     return Eigen::MatrixXd::Zero(params_.N + 1, 3);
@@ -474,10 +512,15 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
   int path_size = path.poses.size();
   Eigen::MatrixXd reference = Eigen::MatrixXd::Zero(params_.N + 1, 3);
 
-  // lookahead 거리 계산: 0 = auto (v_max * N * dt)
+  // 동적 lookahead: 현재 속도 비례 (정지 시 min_lookahead, 고속 시 v_max*N*dt)
+  double max_lookahead = params_.v_max * params_.N * params_.dt;
   double lookahead = params_.lookahead_dist;
   if (lookahead <= 0.0) {
-    lookahead = params_.v_max * params_.N * params_.dt;
+    double speed = std::abs(current_velocity_(0));
+    lookahead = std::clamp(
+      speed * params_.N * params_.dt,
+      params_.min_lookahead,
+      max_lookahead);
   }
 
   // 경로를 따라 누적 arc-length 계산
@@ -503,7 +546,7 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
     }
 
     if (path_idx >= path_size - 1) {
-      // 경로 끝 도달: 마지막 점 반복
+      // 경로 끝 도달: 마지막 점 반복 + goal orientation 사용
       reference(t, 0) = path.poses[path_size - 1].pose.position.x;
       reference(t, 1) = path.poses[path_size - 1].pose.position.y;
       reference(t, 2) = quaternionToYaw(path.poses[path_size - 1].pose.orientation);
@@ -518,10 +561,25 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
       reference(t, 1) = (1.0 - alpha) * path.poses[path_idx].pose.position.y +
                         alpha * path.poses[path_idx + 1].pose.position.y;
 
-      double theta_lower = quaternionToYaw(path.poses[path_idx].pose.orientation);
-      double theta_upper = quaternionToYaw(path.poses[path_idx + 1].pose.orientation);
-      double theta_diff = normalizeAngle(theta_upper - theta_lower);
-      reference(t, 2) = normalizeAngle(theta_lower + alpha * theta_diff);
+      // heading: 경로 접선 방향 (atan2) 사용 — waypoint orientation 대신
+      double dx = path.poses[path_idx + 1].pose.position.x -
+                  path.poses[path_idx].pose.position.x;
+      double dy = path.poses[path_idx + 1].pose.position.y -
+                  path.poses[path_idx].pose.position.y;
+      double seg_heading = std::atan2(dy, dx);
+
+      // 경로 끝 근처: 접선 heading → goal heading 블렌딩
+      double remaining_arc = total_path_length - target_arc;
+      double blend_dist = std::min(effective_lookahead * 0.3, 0.5);  // 블렌딩 구간
+      if (remaining_arc < blend_dist && blend_dist > 1e-6) {
+        double goal_heading = quaternionToYaw(
+          path.poses[path_size - 1].pose.orientation);
+        double blend_alpha = 1.0 - (remaining_arc / blend_dist);
+        double heading_diff = normalizeAngle(goal_heading - seg_heading);
+        reference(t, 2) = normalizeAngle(seg_heading + blend_alpha * heading_diff);
+      } else {
+        reference(t, 2) = seg_heading;
+      }
     }
   }
 
@@ -854,6 +912,8 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "costmap_lethal_cost", params_.costmap_lethal_cost);
   node_->declare_parameter(prefix + "costmap_critical_cost", params_.costmap_critical_cost);
   node_->declare_parameter(prefix + "lookahead_dist", params_.lookahead_dist);
+  node_->declare_parameter(prefix + "min_lookahead", params_.min_lookahead);
+  node_->declare_parameter(prefix + "goal_slowdown_dist", params_.goal_slowdown_dist);
 
   // Phase 1: Colored Noise
   node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
@@ -961,6 +1021,8 @@ void MPPIControllerPlugin::loadParameters()
   params_.costmap_lethal_cost = node_->get_parameter(prefix + "costmap_lethal_cost").as_double();
   params_.costmap_critical_cost = node_->get_parameter(prefix + "costmap_critical_cost").as_double();
   params_.lookahead_dist = node_->get_parameter(prefix + "lookahead_dist").as_double();
+  params_.min_lookahead = node_->get_parameter(prefix + "min_lookahead").as_double();
+  params_.goal_slowdown_dist = node_->get_parameter(prefix + "goal_slowdown_dist").as_double();
 
   // Phase 1: Colored Noise
   params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();

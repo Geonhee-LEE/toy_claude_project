@@ -148,6 +148,8 @@ private:
   Eigen::MatrixXd nominal_trajectory_;  // N+1 x 3 (Tube-MPPI용)
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
+  Eigen::Vector2d current_velocity_{0.0, 0.0};  // [v, omega] 현재 속도
+  double goal_dist_{std::numeric_limits<double>::max()};  // 목표까지 남은 거리
 
   // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
   CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};
