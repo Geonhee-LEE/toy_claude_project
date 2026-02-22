@@ -19,8 +19,8 @@
 - [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
 - [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
 - [ ] 속도 제약 고려 MPC — 가속도/저크 제한
-- [ ] CI/CD 파이프라인 — GitHub Actions ROS2 빌드 + 테스트 자동화
-- [ ] Swerve E2E 시뮬레이션 검증 — nav2 goal 주행 + 궤적안정화/CBF 비교
+- [x] CI/CD 파이프라인 — GitHub Actions ROS2 빌드 + 테스트 자동화 (PR #102, Issue #101)
+- [x] Swerve E2E 시뮬레이션 검증 스크립트 — jerk/smoothness 정량 분석 (PR #100, Issue #99)
 - [ ] pybind11 Python 바인딩 — C++ ↔ Python 연동
 
 ## 🟢 Low Priority (P2)
