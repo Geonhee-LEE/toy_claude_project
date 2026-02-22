@@ -22,6 +22,7 @@
 #include "mpc_controller_ros2/weight_computation.hpp"
 #include "mpc_controller_ros2/barrier_function.hpp"
 #include "mpc_controller_ros2/cbf_safety_filter.hpp"
+#include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -163,6 +164,9 @@ private:
   // EMA 출력 필터
   Eigen::VectorXd prev_cmd_;
   bool prev_cmd_valid_{false};
+
+  // Non-Coaxial Swerve: steering angle 추적 (poseToState/computeVelocityCommands)
+  double last_delta_{0.0};
 
   // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
   CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};

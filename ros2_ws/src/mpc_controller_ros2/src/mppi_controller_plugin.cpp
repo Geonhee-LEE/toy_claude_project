@@ -109,14 +109,19 @@ void MPPIControllerPlugin::configure(
     if (params_.cbf_use_safety_filter) {
       int nu_dim = dynamics_->model().controlDim();
       Eigen::VectorXd u_min(nu_dim), u_max(nu_dim);
-      // DiffDrive: [v, omega], Swerve: [vx, vy, omega]
-      u_min(0) = params_.v_min;
-      u_max(0) = params_.v_max;
-      u_min(nu_dim - 1) = params_.omega_min;
-      u_max(nu_dim - 1) = params_.omega_max;
-      if (nu_dim >= 3) {
-        u_min(1) = -params_.v_max;  // vy
-        u_max(1) = params_.v_max;
+      bool is_nc = (params_.motion_model == "non_coaxial_swerve");
+      if (is_nc) {
+        // Non-Coaxial: [v, omega, delta_dot]
+        u_min << params_.v_min, params_.omega_min, -params_.max_steering_rate;
+        u_max << params_.v_max, params_.omega_max,  params_.max_steering_rate;
+      } else if (nu_dim >= 3) {
+        // Swerve: [vx, vy, omega]
+        u_min << params_.v_min, -params_.v_max, params_.omega_min;
+        u_max << params_.v_max,  params_.v_max, params_.omega_max;
+      } else {
+        // DiffDrive: [v, omega]
+        u_min << params_.v_min, params_.omega_min;
+        u_max << params_.v_max, params_.omega_max;
       }
       cbf_safety_filter_ = std::make_unique<CBFSafetyFilter>(
         &barrier_set_, params_.cbf_gamma, params_.dt, u_min, u_max);
@@ -338,6 +343,16 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
+    // 6.9. Non-Coaxial: delta 추적 갱신 (controlToTwist 전에 수행)
+    if (params_.motion_model == "non_coaxial_swerve") {
+      double delta_dot = final_control(2);
+      last_delta_ += delta_dot * params_.dt;
+      last_delta_ = std::clamp(last_delta_,
+        -params_.max_steering_angle, params_.max_steering_angle);
+      auto& nc_model = dynamic_cast<NonCoaxialSwerveModel&>(dynamics_->model());
+      nc_model.setLastDelta(last_delta_);
+    }
+
     // 7. Build Twist message (MotionModel 기반 변환)
     cmd_vel.twist = dynamics_->model().controlToTwist(final_control);
 
@@ -373,6 +388,7 @@ void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
   global_plan_ = path;
   prune_start_idx_ = 0;
   prev_cmd_valid_ = false;
+  last_delta_ = 0.0;  // 경로 리셋 시 steering angle 초기화
 
   // Reset control sequence for new plan (warm start from zero)
   int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
@@ -537,7 +553,10 @@ Eigen::VectorXd MPPIControllerPlugin::poseToState(const geometry_msgs::msg::Pose
   if (nx >= 3) {
     state(2) = quaternionToYaw(pose.pose.orientation);
   }
-  // NonCoaxialSwerve (nx=4): state(3)=δ — pose에서 추출 불가, 0으로 유지
+  // NonCoaxialSwerve (nx=4): state(3)=δ — pose에서 추출 불가, last_delta_로 추적
+  if (nx >= 4) {
+    state(3) = last_delta_;
+  }
   return state;
 }
 
@@ -965,10 +984,11 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "K", params_.K);
   node_->declare_parameter(prefix + "lambda", params_.lambda);
 
-  // Noise parameters (vy는 swerve/non_coaxial에서 사용, diff_drive에서는 무시)
+  // Noise parameters (vy는 swerve, delta_dot은 non_coaxial에서 사용)
   node_->declare_parameter(prefix + "noise_sigma_v", params_.noise_sigma(0));
   node_->declare_parameter(prefix + "noise_sigma_vy", 0.5);
   node_->declare_parameter(prefix + "noise_sigma_omega", params_.noise_sigma(1));
+  node_->declare_parameter(prefix + "noise_sigma_delta_dot", 0.3);  // non_coaxial 전용
 
   // Control limits
   node_->declare_parameter(prefix + "v_max", params_.v_max);
@@ -986,15 +1006,17 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "Qf_y", params_.Qf(1, 1));
   node_->declare_parameter(prefix + "Qf_theta", params_.Qf(2, 2));
 
-  // Cost weights - R (vy는 swerve/non_coaxial에서 사용)
+  // Cost weights - R (vy는 swerve, delta_dot은 non_coaxial에서 사용)
   node_->declare_parameter(prefix + "R_v", params_.R(0, 0));
   node_->declare_parameter(prefix + "R_vy", 0.1);
   node_->declare_parameter(prefix + "R_omega", params_.R(1, 1));
+  node_->declare_parameter(prefix + "R_delta_dot", 0.5);  // non_coaxial 전용
 
-  // Cost weights - R_rate (vy는 swerve/non_coaxial에서 사용)
+  // Cost weights - R_rate (vy는 swerve, delta_dot은 non_coaxial에서 사용)
   node_->declare_parameter(prefix + "R_rate_v", params_.R_rate(0, 0));
   node_->declare_parameter(prefix + "R_rate_vy", 1.0);
   node_->declare_parameter(prefix + "R_rate_omega", params_.R_rate(1, 1));
+  node_->declare_parameter(prefix + "R_rate_delta_dot", 1.0);  // non_coaxial 전용
 
   // Obstacle avoidance
   node_->declare_parameter(prefix + "obstacle_weight", params_.obstacle_weight);
@@ -1058,6 +1080,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "svg_guide_step_size", params_.svg_guide_step_size);
   node_->declare_parameter(prefix + "svg_resample_std", params_.svg_resample_std);
 
+  // Non-Coaxial Swerve 전용 파라미터
+  node_->declare_parameter(prefix + "max_steering_rate", params_.max_steering_rate);
+  node_->declare_parameter(prefix + "max_steering_angle", params_.max_steering_angle);
+
   // CBF (Control Barrier Function)
   node_->declare_parameter(prefix + "cbf_enabled", params_.cbf_enabled);
   node_->declare_parameter(prefix + "cbf_gamma", params_.cbf_gamma);
@@ -1098,12 +1124,23 @@ void MPPIControllerPlugin::loadParameters()
 
   // nu 결정 및 noise_sigma/R/R_rate 동적 리사이즈
   int nu = (params_.motion_model == "diff_drive") ? 2 : 3;
+  bool is_non_coaxial = (params_.motion_model == "non_coaxial_swerve");
   if (nu > static_cast<int>(params_.noise_sigma.size())) {
     params_.noise_sigma = Eigen::VectorXd::Zero(nu);
     params_.R = Eigen::MatrixXd::Zero(nu, nu);
     params_.R_rate = Eigen::MatrixXd::Zero(nu, nu);
   }
-  int omega_idx = nu - 1;
+
+  // nx 결정 및 Q/Qf 동적 리사이즈 (non_coaxial_swerve: nx=4)
+  int nx = is_non_coaxial ? 4 : 3;
+  if (nx > static_cast<int>(params_.Q.rows())) {
+    Eigen::MatrixXd Q_new = Eigen::MatrixXd::Zero(nx, nx);
+    Q_new.topLeftCorner(params_.Q.rows(), params_.Q.cols()) = params_.Q;
+    params_.Q = Q_new;
+    Eigen::MatrixXd Qf_new = Eigen::MatrixXd::Zero(nx, nx);
+    Qf_new.topLeftCorner(params_.Qf.rows(), params_.Qf.cols()) = params_.Qf;
+    params_.Qf = Qf_new;
+  }
 
   // MPPI parameters
   params_.N = node_->get_parameter(prefix + "N").as_int();
@@ -1111,11 +1148,16 @@ void MPPIControllerPlugin::loadParameters()
   params_.K = node_->get_parameter(prefix + "K").as_int();
   params_.lambda = node_->get_parameter(prefix + "lambda").as_double();
 
-  // Noise parameters (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
+  // Noise parameters — non_coaxial: [v, omega, delta_dot], swerve: [vx, vy, omega]
   params_.noise_sigma(0) = node_->get_parameter(prefix + "noise_sigma_v").as_double();
-  params_.noise_sigma(omega_idx) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
-  if (nu >= 3) {
+  if (is_non_coaxial) {
+    params_.noise_sigma(1) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
+    params_.noise_sigma(2) = node_->get_parameter(prefix + "noise_sigma_delta_dot").as_double();
+  } else if (nu >= 3) {
     params_.noise_sigma(1) = node_->get_parameter(prefix + "noise_sigma_vy").as_double();
+    params_.noise_sigma(2) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
+  } else {
+    params_.noise_sigma(1) = node_->get_parameter(prefix + "noise_sigma_omega").as_double();
   }
 
   // Control limits
@@ -1134,18 +1176,28 @@ void MPPIControllerPlugin::loadParameters()
   params_.Qf(1, 1) = node_->get_parameter(prefix + "Qf_y").as_double();
   params_.Qf(2, 2) = node_->get_parameter(prefix + "Qf_theta").as_double();
 
-  // Cost weights - R (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
+  // Cost weights - R — non_coaxial: [v, omega, delta_dot], swerve: [vx, vy, omega]
   params_.R(0, 0) = node_->get_parameter(prefix + "R_v").as_double();
-  params_.R(omega_idx, omega_idx) = node_->get_parameter(prefix + "R_omega").as_double();
-  if (nu >= 3) {
+  if (is_non_coaxial) {
+    params_.R(1, 1) = node_->get_parameter(prefix + "R_omega").as_double();
+    params_.R(2, 2) = node_->get_parameter(prefix + "R_delta_dot").as_double();
+  } else if (nu >= 3) {
     params_.R(1, 1) = node_->get_parameter(prefix + "R_vy").as_double();
+    params_.R(2, 2) = node_->get_parameter(prefix + "R_omega").as_double();
+  } else {
+    params_.R(1, 1) = node_->get_parameter(prefix + "R_omega").as_double();
   }
 
-  // Cost weights - R_rate (index 0=vx, omega_idx=omega, nu>=3이면 1=vy)
+  // Cost weights - R_rate — non_coaxial: [v, omega, delta_dot], swerve: [vx, vy, omega]
   params_.R_rate(0, 0) = node_->get_parameter(prefix + "R_rate_v").as_double();
-  params_.R_rate(omega_idx, omega_idx) = node_->get_parameter(prefix + "R_rate_omega").as_double();
-  if (nu >= 3) {
+  if (is_non_coaxial) {
+    params_.R_rate(1, 1) = node_->get_parameter(prefix + "R_rate_omega").as_double();
+    params_.R_rate(2, 2) = node_->get_parameter(prefix + "R_rate_delta_dot").as_double();
+  } else if (nu >= 3) {
     params_.R_rate(1, 1) = node_->get_parameter(prefix + "R_rate_vy").as_double();
+    params_.R_rate(2, 2) = node_->get_parameter(prefix + "R_rate_omega").as_double();
+  } else {
+    params_.R_rate(1, 1) = node_->get_parameter(prefix + "R_rate_omega").as_double();
   }
 
   // Obstacle avoidance
@@ -1209,6 +1261,10 @@ void MPPIControllerPlugin::loadParameters()
   params_.svg_guide_iterations = node_->get_parameter(prefix + "svg_guide_iterations").as_int();
   params_.svg_guide_step_size = node_->get_parameter(prefix + "svg_guide_step_size").as_double();
   params_.svg_resample_std = node_->get_parameter(prefix + "svg_resample_std").as_double();
+
+  // Non-Coaxial Swerve 전용 파라미터
+  params_.max_steering_rate = node_->get_parameter(prefix + "max_steering_rate").as_double();
+  params_.max_steering_angle = node_->get_parameter(prefix + "max_steering_angle").as_double();
 
   // CBF (Control Barrier Function)
   params_.cbf_enabled = node_->get_parameter(prefix + "cbf_enabled").as_bool();

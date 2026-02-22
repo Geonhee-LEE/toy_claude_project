@@ -85,12 +85,11 @@ geometry_msgs::msg::Twist NonCoaxialSwerveModel::controlToTwist(
   const Eigen::VectorXd& control) const
 {
   geometry_msgs::msg::Twist twist;
-  // v, omega → Twist (delta_dot은 Twist에 매핑하기 어려움)
-  // body frame velocity: vx_body = v * cos(delta) — 하지만 delta는 상태이므로
-  // 여기서는 단순히 v → linear.x, omega → angular.z 매핑
-  twist.linear.x = control(0);
-  twist.angular.z = control(1);
-  // delta_dot은 별도 토픽으로 publish하거나 JointCommand 사용 필요
+  double v = control(0);
+  // Body-frame 분해: swerve_kinematics_node가 vx/vy/omega → IK 수행
+  twist.linear.x = v * std::cos(last_delta_);
+  twist.linear.y = v * std::sin(last_delta_);
+  twist.angular.z = control(1);  // omega
   return twist;
 }
 

@@ -25,13 +25,9 @@ std::unique_ptr<MotionModel> MotionModelFactory::create(
     return std::make_unique<SwerveDriveModel>(vx_min, vx_max, vy_max, omega_max);
   }
   else if (model_type == "non_coaxial_swerve") {
-    double v_min = params.v_min;
-    double v_max = params.v_max;
-    double omega_max = params.omega_max;
-    double max_steering_rate = 2.0;  // TODO: params에서 읽기
-    double max_steering_angle = M_PI / 2.0;
     return std::make_unique<NonCoaxialSwerveModel>(
-      v_min, v_max, omega_max, max_steering_rate, max_steering_angle);
+      params.v_min, params.v_max, params.omega_max,
+      params.max_steering_rate, params.max_steering_angle);
   }
   else {
     throw std::invalid_argument(

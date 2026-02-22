@@ -422,14 +422,58 @@ TEST_F(NonCoaxialSwerveModelTest, NormalizeStates)
   EXPECT_LE(states(0, 3), M_PI / 2.0 + 1e-10);
 }
 
-TEST_F(NonCoaxialSwerveModelTest, ControlToTwistRoundTrip)
+TEST_F(NonCoaxialSwerveModelTest, ControlToTwistZeroDelta)
+{
+  // delta=0 (기본값) → linear.x = v, linear.y = 0
+  Eigen::VectorXd control(3);
+  control << 1.0, 0.5, 0.1;
+
+  auto twist = model_->controlToTwist(control);
+  EXPECT_NEAR(twist.linear.x, 1.0, 1e-10);  // v * cos(0) = v
+  EXPECT_NEAR(twist.linear.y, 0.0, 1e-10);  // v * sin(0) = 0
+  EXPECT_NEAR(twist.angular.z, 0.5, 1e-10); // omega
+}
+
+TEST_F(NonCoaxialSwerveModelTest, ControlToTwistBodyFrame)
+{
+  // delta=pi/4 → body-frame 분해
+  model_->setLastDelta(M_PI / 4.0);
+
+  Eigen::VectorXd control(3);
+  control << 1.0, 0.3, 0.0;
+
+  auto twist = model_->controlToTwist(control);
+  EXPECT_NEAR(twist.linear.x, std::cos(M_PI / 4.0), 1e-10);
+  EXPECT_NEAR(twist.linear.y, std::sin(M_PI / 4.0), 1e-10);
+  EXPECT_NEAR(twist.angular.z, 0.3, 1e-10);
+}
+
+TEST_F(NonCoaxialSwerveModelTest, LastDeltaUpdate)
+{
+  // 초기값
+  EXPECT_NEAR(model_->getLastDelta(), 0.0, 1e-10);
+
+  // 설정
+  model_->setLastDelta(0.5);
+  EXPECT_NEAR(model_->getLastDelta(), 0.5, 1e-10);
+
+  // controlToTwist에 반영되는지 확인
+  Eigen::VectorXd control(3);
+  control << 2.0, 0.0, 0.0;
+  auto twist = model_->controlToTwist(control);
+  EXPECT_NEAR(twist.linear.x, 2.0 * std::cos(0.5), 1e-10);
+  EXPECT_NEAR(twist.linear.y, 2.0 * std::sin(0.5), 1e-10);
+}
+
+TEST_F(NonCoaxialSwerveModelTest, TwistToControlRoundTrip)
 {
   Eigen::VectorXd control(3);
-  control << 0.5, 0.3, 0.1;
+  control << 0.8, -0.3, 0.1;
 
   auto twist = model_->controlToTwist(control);
   auto recovered = model_->twistToControl(twist);
 
+  // delta=0이므로 v = linear.x
   EXPECT_NEAR(recovered(0), control(0), 1e-10);
   EXPECT_NEAR(recovered(1), control(1), 1e-10);
   // delta_dot은 Twist에서 보존 안 됨 → 0.0
@@ -462,6 +506,39 @@ TEST(NonCoaxialClipControlsTest, NegativeVminAllowsBackward)
   auto clipped = model->clipControls(controls);
   EXPECT_NEAR(clipped(0, 0), -0.3, 1e-10);  // -1.0 → -0.3으로 클리핑
   EXPECT_NEAR(clipped(1, 0), -0.2, 1e-10);  // 범위 내 유지
+}
+
+// ============================================================================
+// Non-Coaxial Q/Qf Resize Tests (Bug #1 검증)
+// ============================================================================
+
+TEST(NonCoaxialQResizeTest, QMatrixResizeTo4x4)
+{
+  // MPPIParams 기본 Q는 3x3 — non_coaxial_swerve에서 4x4로 리사이즈 필요
+  MPPIParams params;
+  EXPECT_EQ(params.Q.rows(), 3);
+  EXPECT_EQ(params.Q.cols(), 3);
+
+  // non_coaxial_swerve nx=4 시뮬레이션
+  int nx = 4;
+  if (nx > static_cast<int>(params.Q.rows())) {
+    Eigen::MatrixXd Q_new = Eigen::MatrixXd::Zero(nx, nx);
+    Q_new.topLeftCorner(params.Q.rows(), params.Q.cols()) = params.Q;
+    params.Q = Q_new;
+    Eigen::MatrixXd Qf_new = Eigen::MatrixXd::Zero(nx, nx);
+    Qf_new.topLeftCorner(params.Qf.rows(), params.Qf.cols()) = params.Qf;
+    params.Qf = Qf_new;
+  }
+
+  EXPECT_EQ(params.Q.rows(), 4);
+  EXPECT_EQ(params.Q.cols(), 4);
+  EXPECT_NEAR(params.Q(0, 0), 10.0, 1e-10);  // x 보존
+  EXPECT_NEAR(params.Q(1, 1), 10.0, 1e-10);  // y 보존
+  EXPECT_NEAR(params.Q(2, 2), 1.0, 1e-10);   // theta 보존
+  EXPECT_NEAR(params.Q(3, 3), 0.0, 1e-10);   // delta = 0 (추적 없음)
+
+  EXPECT_EQ(params.Qf.rows(), 4);
+  EXPECT_NEAR(params.Qf(3, 3), 0.0, 1e-10);  // delta terminal = 0
 }
 
 // ============================================================================

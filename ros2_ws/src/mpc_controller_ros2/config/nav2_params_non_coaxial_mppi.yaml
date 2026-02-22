@@ -47,16 +47,20 @@ controller_server:
       K: 1024
       lambda: 10.0
 
-      # Noise parameters (v, vy, omega)
+      # Noise parameters — Non-Coaxial: control=[v, omega, delta_dot] 순서
       noise_sigma_v: 0.5
-      noise_sigma_vy: 0.2
-      noise_sigma_omega: 0.2
+      noise_sigma_omega: 0.3
+      noise_sigma_delta_dot: 0.3
 
       # Control limits
       v_max: 1.5
-      v_min: -0.5
+      v_min: -0.1        # 후진 거의 차단 (-0.5 → -0.1)
       omega_max: 2.0
       omega_min: -2.0
+
+      # Non-Coaxial 전용 스티어링 한계
+      max_steering_rate: 2.0     # rad/s
+      max_steering_angle: 1.5707 # rad (π/2)
 
       # State tracking cost weights (Q: x, y, theta)
       Q_x: 10.0
@@ -68,15 +72,20 @@ controller_server:
       Qf_y: 20.0
       Qf_theta: 6.0
 
-      # Control effort weights (R: v, vy, omega)
+      # Control effort weights — Non-Coaxial: R=[v, omega, delta_dot] 순서
       R_v: 0.3
-      R_vy: 1.0
-      R_omega: 0.8
+      R_omega: 0.3         # 기존 R_vy=1.0 대신 (회전 억제 해소)
+      R_delta_dot: 0.5
+      R_vy: 0.1            # swerve 전용 (declare 필수, non_coaxial에서 무시)
 
-      # Control rate weights (R_rate: v, vy, omega)
+      # Control rate weights — Non-Coaxial: R_rate=[v, omega, delta_dot] 순서
       R_rate_v: 0.5
-      R_rate_vy: 0.5
       R_rate_omega: 1.0
+      R_rate_delta_dot: 1.5
+      R_rate_vy: 1.0        # swerve 전용 (declare 필수, non_coaxial에서 무시)
+
+      # Swerve 전용 noise (declare 필수, non_coaxial에서 무시)
+      noise_sigma_vy: 0.2
 
       # Obstacle avoidance
       obstacle_weight: 300.0
@@ -91,12 +100,12 @@ controller_server:
       goal_slowdown_dist: 0.5
 
       # Forward preference
-      prefer_forward_weight: 5.0
+      prefer_forward_weight: 10.0   # 후진 페널티 강화 (5.0 → 10.0)
       prefer_forward_linear_ratio: 0.5
       prefer_forward_velocity_incentive: 2.0  # 전진 인센티브 (vx>0 보상)
 
       # Control smoothing (EMA 출력 필터)
-      control_smoothing_alpha: 0.5  # 0=이전유지, 1=필터OFF (0.5=중간 필터)
+      control_smoothing_alpha: 0.7  # EMA 완화 (0.5 → 0.7, 응답성 개선)
 
       # Adaptive Temperature
       adaptive_temperature: true
@@ -125,7 +134,7 @@ controller_server:
       svg_resample_std: 0.3
 
       # CBF (Control Barrier Function) 안전성 보장
-      cbf_enabled: true                # CBF 활성화
+      cbf_enabled: false               # 먼저 비활성화하여 진동 원인 분리
       cbf_gamma: 1.0                   # class-K 함수 계수 (클수록 보수적)
       cbf_safety_margin: 0.3           # 추가 안전 마진 (m)
       cbf_robot_radius: 0.2            # 로봇 반지름 (m)

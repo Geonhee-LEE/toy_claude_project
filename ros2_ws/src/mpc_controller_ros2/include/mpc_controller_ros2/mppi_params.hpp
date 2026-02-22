@@ -126,6 +126,10 @@ struct MPPIParams
   // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
+  // Non-Coaxial Swerve 전용 파라미터
+  double max_steering_rate{2.0};            // 최대 스티어링 각속도 (rad/s)
+  double max_steering_angle{M_PI / 2.0};    // 최대 스티어링 각도 (rad)
+
   bool cbf_enabled{false};                 // CBF 활성화 여부
   double cbf_gamma{1.0};                   // CBF class-K 함수 계수
   double cbf_safety_margin{0.3};           // 추가 안전 마진 (m)
