@@ -104,8 +104,15 @@ controller_server:
       prefer_forward_linear_ratio: 0.5
       prefer_forward_velocity_incentive: 2.0  # 전진 인센티브 (vx>0 보상)
 
-      # Control smoothing (EMA 출력 필터)
+      # Control smoothing (EMA 출력 필터 — SG 필터 활성 시 무시됨)
       control_smoothing_alpha: 0.7  # EMA 완화 (0.5 → 0.7, 응답성 개선)
+
+      # Trajectory Stability
+      sg_filter_enabled: true       # SG 필터 ON (EMA 대체)
+      sg_half_window: 3             # 과거3 + 현재 + 미래3 = 7점 윈도우
+      sg_poly_order: 3              # 3차 다항식
+      it_alpha: 0.975               # IT 정규화 ON (보수적)
+      exploration_ratio: 0.1        # 10% 탐색 샘플
 
       # Adaptive Temperature
       adaptive_temperature: true

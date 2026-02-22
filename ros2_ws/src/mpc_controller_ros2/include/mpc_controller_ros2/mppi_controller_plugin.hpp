@@ -23,6 +23,7 @@
 #include "mpc_controller_ros2/barrier_function.hpp"
 #include "mpc_controller_ros2/cbf_safety_filter.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
+#include "mpc_controller_ros2/savitzky_golay_filter.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -161,9 +162,10 @@ private:
   Eigen::VectorXd current_velocity_;  // (nu,) 현재 속도
   double goal_dist_{std::numeric_limits<double>::max()};  // 목표까지 남은 거리
 
-  // EMA 출력 필터
+  // EMA 출력 필터 / SG 필터
   Eigen::VectorXd prev_cmd_;
   bool prev_cmd_valid_{false};
+  std::unique_ptr<SavitzkyGolayFilter> sg_filter_;
 
   // Non-Coaxial Swerve: steering angle 추적 (poseToState/computeVelocityCommands)
   double last_delta_{0.0};

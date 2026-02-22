@@ -34,6 +34,9 @@ struct MPPIParams
   // Noise parameters (동적 차원)
   Eigen::VectorXd noise_sigma;  // (nu,) 노이즈 표준편차
 
+  // Exploitation/Exploration 분할
+  double exploration_ratio{0.0};  // 0.0=전부exploitation(현재동작), 0.1=10%탐색(권장)
+
   // Cost weights (동적 차원)
   Eigen::MatrixXd Q;      // (nx x nx) State tracking weight
   Eigen::MatrixXd Qf;     // (nx x nx) Terminal state weight
@@ -57,6 +60,14 @@ struct MPPIParams
 
   // Control smoothing (EMA 출력 필터)
   double control_smoothing_alpha{1.0};  // 0=이전유지, 1=즉시반영(필터OFF)
+
+  // Savitzky-Golay Filter (EMA 대체)
+  bool sg_filter_enabled{false};          // SG 필터 활성화 (true면 EMA 무시)
+  int sg_half_window{3};                  // 과거/미래 윈도우 크기
+  int sg_poly_order{3};                   // 다항식 차수
+
+  // Information-Theoretic 정규화 (KL-divergence 기반 보수적 업데이트)
+  double it_alpha{1.0};    // 1.0=비활성화, 0.975=보수적 (권장: swerve 0.975)
 
   // ============================================================================
   // Phase 1: Colored Noise 파라미터

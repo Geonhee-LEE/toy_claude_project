@@ -73,6 +73,7 @@ add_library(mppi_controller_plugin SHARED
   src/motion_model_factory.cpp
   src/barrier_function.cpp
   src/cbf_safety_filter.cpp
+  src/savitzky_golay_filter.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -237,6 +238,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_cbf test/unit/test_cbf.cpp)
   if(TARGET test_cbf)
     target_link_libraries(test_cbf mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_trajectory_stability test/unit/test_trajectory_stability.cpp)
+  if(TARGET test_trajectory_stability)
+    target_link_libraries(test_trajectory_stability mppi_controller_plugin)
   endif()
 endif()
 

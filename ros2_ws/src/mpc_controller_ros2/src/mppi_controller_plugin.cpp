@@ -138,6 +138,15 @@ void MPPIControllerPlugin::configure(
   control_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
   current_velocity_ = Eigen::VectorXd::Zero(nu);
 
+  // Savitzky-Golay Filter 초기화 (EMA 대체)
+  if (params_.sg_filter_enabled) {
+    sg_filter_ = std::make_unique<SavitzkyGolayFilter>(
+      params_.sg_half_window, params_.sg_poly_order, nu);
+    RCLCPP_INFO(node_->get_logger(),
+      "SG Filter enabled (half_window=%d, poly_order=%d, window_size=%d)",
+      params_.sg_half_window, params_.sg_poly_order, sg_filter_->windowSize());
+  }
+
   // Create marker publisher
   marker_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
     plugin_name_ + "/mppi_markers", 10
@@ -297,8 +306,11 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 6. EMA 출력 필터 (안전 규제 전에 적용 — rear check가 EMA를 우회하지 않도록)
-    if (prev_cmd_valid_ && params_.control_smoothing_alpha < 1.0) {
+    // 6. 출력 스무딩: SG Filter (우선) 또는 EMA (폴백)
+    if (sg_filter_) {
+      final_control = sg_filter_->apply(control_sequence_);
+      sg_filter_->pushHistory(final_control);
+    } else if (prev_cmd_valid_ && params_.control_smoothing_alpha < 1.0) {
       double a = params_.control_smoothing_alpha;
       final_control = a * final_control + (1.0 - a) * prev_cmd_;
     }
@@ -389,6 +401,7 @@ void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
   prune_start_idx_ = 0;
   prev_cmd_valid_ = false;
   last_delta_ = 0.0;  // 경로 리셋 시 steering angle 초기화
+  if (sg_filter_) { sg_filter_->reset(); }  // SG 필터 이력 초기화
 
   // Reset control sequence for new plan (warm start from zero)
   int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
@@ -444,12 +457,20 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
     }
   }
 
-  // 3. Add noise to control sequence and clip
+  // 3. Add noise to control sequence and clip (Exploitation/Exploration 분할)
   std::vector<Eigen::MatrixXd> perturbed_controls;
   perturbed_controls.reserve(K);
+  int K_exploit = static_cast<int>((1.0 - params_.exploration_ratio) * K);
 
   for (int k = 0; k < K; ++k) {
-    Eigen::MatrixXd perturbed = control_sequence_ + noise_samples[k];
+    Eigen::MatrixXd perturbed;
+    if (k < K_exploit) {
+      // Exploitation: 이전 최적 시퀀스 + 노이즈
+      perturbed = control_sequence_ + noise_samples[k];
+    } else {
+      // Exploration: 순수 노이즈 (warm-start 없이)
+      perturbed = noise_samples[k];
+    }
     perturbed = dynamics_->clipControls(perturbed);
     perturbed_controls.push_back(perturbed);
   }
@@ -471,6 +492,20 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   } else {
     costs = cost_function_->compute(
       trajectories, perturbed_controls, reference_trajectory);
+  }
+
+  // 5.5. Information-Theoretic 정규화 (KL-divergence 기반)
+  if (params_.it_alpha < 1.0) {
+    Eigen::VectorXd sigma_inv = params_.noise_sigma.cwiseInverse().cwiseAbs2();
+    for (int k = 0; k < K; ++k) {
+      double it_cost = 0.0;
+      for (int t = 0; t < N; ++t) {
+        Eigen::VectorXd u_prev_t = control_sequence_.row(t).transpose();
+        Eigen::VectorXd u_k_t = perturbed_controls[k].row(t).transpose();
+        it_cost += u_prev_t.dot(sigma_inv.cwiseProduct(u_k_t));
+      }
+      costs(k) += params_.lambda * (1.0 - params_.it_alpha) * it_cost;
+    }
   }
 
   // 6. Compute weights via strategy (Adaptive Temperature 적용)
@@ -1030,6 +1065,17 @@ void MPPIControllerPlugin::declareParameters()
   // Control smoothing
   node_->declare_parameter(prefix + "control_smoothing_alpha", params_.control_smoothing_alpha);
 
+  // Savitzky-Golay Filter
+  node_->declare_parameter(prefix + "sg_filter_enabled", params_.sg_filter_enabled);
+  node_->declare_parameter(prefix + "sg_half_window", params_.sg_half_window);
+  node_->declare_parameter(prefix + "sg_poly_order", params_.sg_poly_order);
+
+  // Information-Theoretic 정규화
+  node_->declare_parameter(prefix + "it_alpha", params_.it_alpha);
+
+  // Exploitation/Exploration 분할
+  node_->declare_parameter(prefix + "exploration_ratio", params_.exploration_ratio);
+
   // Costmap obstacle cost
   node_->declare_parameter(prefix + "use_costmap_cost", params_.use_costmap_cost);
   node_->declare_parameter(prefix + "costmap_lethal_cost", params_.costmap_lethal_cost);
@@ -1212,6 +1258,17 @@ void MPPIControllerPlugin::loadParameters()
   // Control smoothing
   params_.control_smoothing_alpha = node_->get_parameter(prefix + "control_smoothing_alpha").as_double();
 
+  // Savitzky-Golay Filter
+  params_.sg_filter_enabled = node_->get_parameter(prefix + "sg_filter_enabled").as_bool();
+  params_.sg_half_window = node_->get_parameter(prefix + "sg_half_window").as_int();
+  params_.sg_poly_order = node_->get_parameter(prefix + "sg_poly_order").as_int();
+
+  // Information-Theoretic 정규화
+  params_.it_alpha = node_->get_parameter(prefix + "it_alpha").as_double();
+
+  // Exploitation/Exploration 분할
+  params_.exploration_ratio = node_->get_parameter(prefix + "exploration_ratio").as_double();
+
   // Costmap obstacle cost
   params_.use_costmap_cost = node_->get_parameter(prefix + "use_costmap_cost").as_bool();
   params_.costmap_lethal_cost = node_->get_parameter(prefix + "costmap_lethal_cost").as_double();
@@ -1305,6 +1362,12 @@ void MPPIControllerPlugin::loadParameters()
     params_.colored_noise ? "ON" : "OFF",
     params_.adaptive_temperature ? "ON" : "OFF",
     params_.tube_enabled ? "ON" : "OFF"
+  );
+  RCLCPP_INFO(
+    node_->get_logger(),
+    "Trajectory stability: sg_filter=%s, it_alpha=%.3f, exploration_ratio=%.2f",
+    params_.sg_filter_enabled ? "ON" : "OFF",
+    params_.it_alpha, params_.exploration_ratio
   );
 }
 
