@@ -276,8 +276,12 @@ std::pair<Eigen::VectorXd, MPPIInfo> SplineMPPIControllerPlugin::computeControl(
 
   RCLCPP_DEBUG(
     node_->get_logger(),
-    "Spline-MPPI: min_cost=%.4f, ESS=%.1f/%d, knots=%d",
-    min_cost, ess, K, P_);
+    "Spline-MPPI: u_opt=[%.3f,%.3f,%.3f] min_cost=%.1f ESS=%.1f/%d "
+    "knots_vx=[%.3f,%.3f,%.3f] ref0=[%.2f,%.2f]",
+    u_opt(0), u_opt.size()>1?u_opt(1):0.0, u_opt.size()>2?u_opt(2):0.0,
+    min_cost, ess, K,
+    u_knots_(0,0), u_knots_(P_/2,0), u_knots_(P_-1,0),
+    reference_trajectory(0,0), reference_trajectory(0,1));
 
   return {u_opt, info};
 }

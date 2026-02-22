@@ -22,7 +22,7 @@ namespace mpc_controller_ros2
 class SwerveDriveModel : public MotionModel
 {
 public:
-  SwerveDriveModel(double vx_max, double vy_max, double omega_max);
+  SwerveDriveModel(double vx_min, double vx_max, double vy_max, double omega_max);
 
   int stateDim() const override { return 3; }
   int controlDim() const override { return 3; }
@@ -47,7 +47,7 @@ public:
   std::vector<int> angleIndices() const override { return {2}; }
 
 private:
-  double vx_max_, vy_max_, omega_max_;
+  double vx_min_, vx_max_, vy_max_, omega_max_;
 };
 
 }  // namespace mpc_controller_ros2

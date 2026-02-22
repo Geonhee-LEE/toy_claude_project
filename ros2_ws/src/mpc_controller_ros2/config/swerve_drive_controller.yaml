@@ -1,0 +1,40 @@
+# ============================================================
+# ros2_control config - Swerve Drive (ForwardCommandController x2)
+# ============================================================
+# ROS2 Jazzy에 표준 swerve_drive_controller가 없으므로
+# ForwardCommandController 2개 + 커스텀 SwerveKinematicsNode로 구현
+#
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
+# ============================================================
+
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    steer_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    wheel_velocity_controller:
+      type: forward_command_controller/ForwardCommandController
+
+steer_position_controller:
+  ros__parameters:
+    joints:
+      - fl_steer_joint
+      - fr_steer_joint
+      - rl_steer_joint
+      - rr_steer_joint
+    interface_name: position
+
+wheel_velocity_controller:
+  ros__parameters:
+    joints:
+      - fl_wheel_joint
+      - fr_wheel_joint
+      - rl_wheel_joint
+      - rr_wheel_joint
+    interface_name: velocity

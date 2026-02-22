@@ -29,7 +29,7 @@ class NonCoaxialSwerveModel : public MotionModel
 {
 public:
   NonCoaxialSwerveModel(
-    double v_max, double omega_max, double max_steering_rate,
+    double v_min, double v_max, double omega_max, double max_steering_rate,
     double max_steering_angle = M_PI / 2.0);
 
   int stateDim() const override { return 4; }
@@ -61,7 +61,7 @@ public:
     double dt) const override;
 
 private:
-  double v_max_, omega_max_, max_steering_rate_, max_steering_angle_;
+  double v_min_, v_max_, omega_max_, max_steering_rate_, max_steering_angle_;
 };
 
 }  // namespace mpc_controller_ros2

@@ -33,11 +33,45 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 ### 특징
 
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
-- **C++ Eigen 기반** 고성능 연산 (K=512 샘플, N=30 호라이즌에서 <50ms)
-- **RK4 동역학** 정밀한 differential drive 모델
-- **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, Obstacle
-- **동적 파라미터** 런타임 중 튜닝 가능
-- **RVIZ 시각화** 예측 궤적, 샘플 궤적, 장애물 마커
+- **C++ Eigen 기반** 고성능 연산 (K=1024 샘플, N=30 호라이즌에서 <50ms)
+- **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve (MotionModel 추상화)
+- **8종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI
+- **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
+- **M2 고도화** Colored Noise, Adaptive Temperature, Tube-MPPI
+- **동적 파라미터** 런타임 중 튜닝 가능 (min_lookahead, costmap costs 포함)
+- **RVIZ 시각화** 예측 궤적, 샘플 궤적, 장애물 마커, Collision debug heatmap
+
+### MotionModel 추상화
+
+```
+┌─ MotionModel 인터페이스 ─────────────────────────────────┐
+│                                                           │
+│  MotionModelFactory::create(model_name, params)           │
+│                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │  DiffDrive   │  │   Swerve     │  │ NonCoaxial     │  │
+│  │  nx=3, nu=2  │  │  nx=3, nu=3  │  │ Swerve         │  │
+│  │  (v, omega)  │  │ (vx,vy,omega)│  │ nx=4, nu=3     │  │
+│  │              │  │  홀로노믹     │  │ (v,omega,d_dot)│  │
+│  └──────────────┘  └──────────────┘  └────────────────┘  │
+│                                                           │
+│  YAML: motion_model: "diff_drive" | "swerve"             │
+│                       | "non_coaxial_swerve"              │
+└───────────────────────────────────────────────────────────┘
+```
+
+### 플러그인 계층 구조
+
+```
+MPPIControllerPlugin (base, Vanilla MPPI)
+├── LogMPPIControllerPlugin     (log-space softmax)
+├── TsallisMPPIControllerPlugin (q-exponential)
+├── RiskAwareMPPIControllerPlugin (CVaR)
+├── SmoothMPPIControllerPlugin  (du space + jerk cost)
+├── SplineMPPIControllerPlugin  (B-spline basis)
+└── SVMPCControllerPlugin       (SVGD)
+    └── SVGMPPIControllerPlugin (Guide + follower)
+```
 
 ### 빠른 시작 (Gazebo Harmonic + ros2_control + nav2)
 
@@ -47,8 +81,14 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 cd ~/toy_claude_project/ros2_ws
 source install/setup.bash
 
-# Gazebo + ros2_control + nav2 통합 실행
+# DiffDrive (기본)
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py
+
+# Swerve Drive (홀로노믹)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
+
+# Non-Coaxial Swerve
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
 ```
 
 **시작 순서 (자동 TimerAction 관리):**
@@ -232,22 +272,29 @@ ros2 lifecycle get /amcl
 │                  MPPIControllerPlugin                        │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│  ┌────────────────┐    ┌────────────────┐    ┌───────────┐  │
-│  │ BatchDynamics  │    │  CostFunctions │    │  Sampler  │  │
-│  │  (RK4 적분)    │    │  (5종 비용)     │    │ (Gaussian)│  │
-│  └───────┬────────┘    └───────┬────────┘    └─────┬─────┘  │
-│          │                     │                   │        │
-│          └─────────────────────┼───────────────────┘        │
-│                                ▼                            │
-│                    ┌──────────────────────┐                 │
-│                    │   MPPI Algorithm     │                 │
-│                    │ 1. 제어열 shift       │                 │
-│                    │ 2. K개 샘플 생성      │                 │
-│                    │ 3. 배치 rollout       │                 │
-│                    │ 4. 비용 계산          │                 │
-│                    │ 5. softmax 가중치    │                 │
-│                    │ 6. 가중 평균 업데이트 │                 │
-│                    └──────────────────────┘                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
+│  │ MotionModel    │  │ CostFunctions  │  │   Sampler     │  │
+│  │ (DiffDrive/    │  │ (6종 비용 +    │  │ (Gaussian /   │  │
+│  │  Swerve/       │  │  CostmapObs)   │  │  ColoredNoise)│  │
+│  │  NonCoaxial)   │  │                │  │               │  │
+│  └───────┬────────┘  └───────┬────────┘  └───────┬───────┘  │
+│          │                   │                   │          │
+│  ┌───────┴────────┐         │    ┌───────────────┴───────┐  │
+│  │ BatchDynamics  │         │    │ WeightComputation     │  │
+│  │ (RK4 벡터화)   │         │    │ (Vanilla/Log/Tsallis/ │  │
+│  └───────┬────────┘         │    │  RiskAware)           │  │
+│          │                  │    └───────────┬───────────┘  │
+│          └──────────────────┼───────────────┘              │
+│                             ▼                              │
+│                 ┌──────────────────────┐                   │
+│                 │   MPPI Algorithm     │                   │
+│                 │ 1. 제어열 shift       │                   │
+│                 │ 2. K개 샘플 생성      │                   │
+│                 │ 3. 배치 rollout       │                   │
+│                 │ 4. 비용 계산          │                   │
+│                 │ 5. 가중치 (Strategy)  │                   │
+│                 │ 6. 가중 평균 업데이트 │                   │
+│                 └──────────────────────┘                   │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -459,29 +506,36 @@ colcon test-result --verbose
 | 테스트 | 항목 수 | 상태 |
 |--------|---------|------|
 | test_batch_dynamics | 8 | ✅ |
-| test_cost_functions | 15 | ✅ |
+| test_cost_functions | 24 | ✅ |
 | test_sampling | 8 | ✅ |
 | test_mppi_algorithm | 7 | ✅ |
-| **총계** | **38** | **PASSED** |
+| test_adaptive_temperature | 9 | ✅ |
+| test_tube_mppi | 13 | ✅ |
+| test_weight_computation | 30 | ✅ |
+| test_svmpc | 13 | ✅ |
+| test_m35_plugins | 18 | ✅ |
+| test_motion_model | 36 | ✅ |
+| **총계** | **166** | **PASSED** |
 
 ---
 
 ## 개발 이력
 
-### M4 마일스톤: ROS2 nav2 통합
+### 마일스톤 진행 현황
 
-| Phase | 내용 | 상태 |
-|-------|------|------|
-| 1 | 기초 인프라 (CMake, utils) | ✅ |
-| 2 | 동역학 & 샘플링 | ✅ |
-| 3 | 비용 함수 계층 | ✅ |
-| 4 | MPPI 알고리즘 | ✅ |
-| 5 | nav2 인터페이스 | ✅ |
-| 6 | 동적 파라미터 | ✅ |
-| 7 | RVIZ 시각화 | ✅ |
-| 8 | Gazebo 통합 | ✅ |
-| 9 | 테스트 | ✅ |
-| 10 | 문서화 | ✅ |
+| 마일스톤 | 내용 | 상태 |
+|----------|------|------|
+| M1 | Vanilla MPPI (Python) | ✅ |
+| M2 | Colored Noise, Adaptive Temp, Tube-MPPI | ✅ |
+| M3 | Log, Tsallis, CVaR, SVMPC | ✅ |
+| M3.5 | Smooth, Spline, SVG-MPPI | ✅ |
+| M4 | ROS2 nav2 통합 + Gazebo | ✅ |
+| M5a | C++ SOTA 변형 (Log/Tsallis/CVaR/SVMPC) | ✅ |
+| M5b | C++ M2 고도화 (Colored/Adaptive/Tube) | ✅ |
+| M3.5 C++ | Smooth/Spline/SVG-MPPI C++ 포팅 | ✅ |
+| Phase A | MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial) | ✅ |
+| Phase B | Goal 수렴 + 장애물 회피 튜닝 | ✅ |
+| Phase C | Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정 | ✅ |
 
 ---
 

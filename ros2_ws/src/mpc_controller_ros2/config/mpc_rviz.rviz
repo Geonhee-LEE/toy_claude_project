@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Navigation1
         - /Navigation1/MPPI Trajectories1
+        - /Navigation1/MPPI Debug1
       Splitter Ratio: 0.5
     Tree Height: 549
   - Class: rviz_common/Selection
@@ -265,6 +266,16 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /FollowPath/mppi_markers
           Value: true
+
+        # ---- MPPI 충돌 디버그 시각화 ----
+        # ros2 param set /controller_server FollowPath.debug_collision_viz true 로 활성화
+        # 같은 /FollowPath/mppi_markers 토픽에 mppi_debug_* 네임스페이스로 발행됨
+        # 개별 네임스페이스별 ON/OFF는 MPPI Markers 디스플레이의
+        # Namespaces 체크박스에서 제어 가능:
+        #   mppi_debug_cost_text    — 비용 분해 텍스트 (min/mean/max)
+        #   mppi_debug_collision    — 충돌 지점 구체 (빨/주/노)
+        #   mppi_debug_footprint    — 안전 영역 원 (시안+빨강)
+        #   mppi_debug_heatmap      — best 궤적 비용 히트맵 (녹→노→빨)
 
         # nav2 기본 MPPI 시각화 (controller:=nav2 사용시 활성화)
         # 샘플 궤적 (nav2 MPPI trajectories)

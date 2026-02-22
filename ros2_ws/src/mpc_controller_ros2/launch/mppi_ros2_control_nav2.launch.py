@@ -71,9 +71,8 @@ from launch.actions import (
     DeclareLaunchArgument,
     OpaqueFunction,
 )
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 import xacro
 
 
@@ -144,12 +143,24 @@ def launch_setup(context, *args, **kwargs):
         )
         controller_label = '커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)'
 
-    # 공통 파라미터 파일 (AMCL, costmap, planner, behavior 등)
-    nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
+    # Swerve drive 판별
+    is_swerve = controller_type in ['swerve', 'non_coaxial']
+
+    # URDF / ros2_control config / nav2 공통 파라미터 분기
+    if is_swerve:
+        urdf_file = os.path.join(pkg_dir, 'urdf', 'swerve_robot.urdf')
+        controller_config = os.path.join(pkg_dir, 'config', 'swerve_drive_controller.yaml')
+        nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params_swerve.yaml')
+        robot_name = 'swerve_robot'
+        spawn_z = '0.20'
+    else:
+        urdf_file = os.path.join(pkg_dir, 'urdf', 'differential_robot_ros2_control.urdf')
+        controller_config = os.path.join(pkg_dir, 'config', 'diff_drive_controller.yaml')
+        nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
+        robot_name = 'differential_robot'
+        spawn_z = '0.15'
 
     # Static paths
-    urdf_file = os.path.join(pkg_dir, 'urdf', 'differential_robot_ros2_control.urdf')
-    controller_config = os.path.join(pkg_dir, 'config', 'diff_drive_controller.yaml')
     rviz_config = os.path.join(pkg_dir, 'config', 'mpc_rviz.rviz')
 
     # Dynamic paths
@@ -202,11 +213,11 @@ def launch_setup(context, *args, **kwargs):
         name='spawn_robot',
         output='screen',
         arguments=[
-            '-name', 'differential_robot',
+            '-name', robot_name,
             '-topic', 'robot_description',
             '-x', '0.0',
             '-y', '0.0',
-            '-z', '0.15',
+            '-z', spawn_z,
         ],
     )
 
@@ -231,16 +242,40 @@ def launch_setup(context, *args, **kwargs):
         output='screen',
     )
 
-    diff_drive_controller_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=[
-            'diff_drive_controller',
-            '--controller-manager', '/controller_manager',
-            '--param-file', controller_config
-        ],
-        output='screen',
-    )
+    if is_swerve:
+        # Swerve: ForwardCommandController x2
+        steer_position_controller_spawner = Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=[
+                'steer_position_controller',
+                '--controller-manager', '/controller_manager',
+            ],
+            output='screen',
+        )
+        wheel_velocity_controller_spawner = Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=[
+                'wheel_velocity_controller',
+                '--controller-manager', '/controller_manager',
+            ],
+            output='screen',
+        )
+        controller_spawners = [steer_position_controller_spawner, wheel_velocity_controller_spawner]
+    else:
+        # Diff Drive: DiffDriveController
+        diff_drive_controller_spawner = Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=[
+                'diff_drive_controller',
+                '--controller-manager', '/controller_manager',
+                '--param-file', controller_config
+            ],
+            output='screen',
+        )
+        controller_spawners = [diff_drive_controller_spawner]
 
     # ========== 6. Map Server ==========
     map_server = Node(
@@ -276,8 +311,26 @@ def launch_setup(context, *args, **kwargs):
         remappings=[('cmd_vel', '/cmd_vel_nav')]
     )
 
-    # Twist → TwistStamped 변환 (inline Python)
-    twist_to_stamped_cmd = '''
+    # cmd_vel relay: Swerve → SwerveKinematicsNode, Diff → TwistStamper
+    if is_swerve:
+        # SwerveKinematicsNode: Twist → IK → joint commands + FK → odom + TF
+        cmd_vel_relay = Node(
+            package='mpc_controller_ros2',
+            executable='swerve_kinematics_node.py',
+            name='swerve_kinematics_node',
+            output='screen',
+            parameters=[{
+                'use_sim_time': True,
+                'wheel_radius': 0.08,
+                'wheel_x': 0.25,
+                'wheel_y': 0.22,
+                'publish_rate': 50.0,
+                'cmd_vel_timeout': 0.5,
+            }],
+        )
+    else:
+        # Twist → TwistStamped 변환 (inline Python)
+        twist_to_stamped_cmd = '''
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
@@ -299,10 +352,10 @@ class TwistStamper(Node):
 rclpy.init()
 rclpy.spin(TwistStamper())
 '''
-    twist_stamper = ExecuteProcess(
-        cmd=['python3', '-c', twist_to_stamped_cmd],
-        output='screen'
-    )
+        cmd_vel_relay = ExecuteProcess(
+            cmd=['python3', '-c', twist_to_stamped_cmd],
+            output='screen'
+        )
 
     planner_server = Node(
         package='nav2_planner',
@@ -401,7 +454,10 @@ rclpy.spin(TwistStamper())
             actions=[
                 LogInfo(msg='Starting controllers...'),
                 joint_state_broadcaster_spawner,
-                diff_drive_controller_spawner,
+                *controller_spawners,
+                # Swerve: odom→base_link TF를 빨리 시작해야 AMCL/costmap이
+                # lidar scan을 변환 가능 (18s까지 미루면 TF 부재로 scan 드롭)
+                cmd_vel_relay,
             ]
         ),
 
@@ -429,7 +485,6 @@ rclpy.spin(TwistStamper())
             period=18.0,
             actions=[
                 LogInfo(msg=f'Starting navigation nodes ({controller_type} MPPI)...'),
-                twist_stamper,
                 controller_server,
                 planner_server,
                 behavior_server,

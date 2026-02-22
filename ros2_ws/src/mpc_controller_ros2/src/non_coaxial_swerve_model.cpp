@@ -5,9 +5,9 @@ namespace mpc_controller_ros2
 {
 
 NonCoaxialSwerveModel::NonCoaxialSwerveModel(
-  double v_max, double omega_max, double max_steering_rate,
+  double v_min, double v_max, double omega_max, double max_steering_rate,
   double max_steering_angle)
-: v_max_(v_max), omega_max_(omega_max),
+: v_min_(v_min), v_max_(v_max), omega_max_(omega_max),
   max_steering_rate_(max_steering_rate),
   max_steering_angle_(max_steering_angle)
 {
@@ -48,7 +48,7 @@ Eigen::MatrixXd NonCoaxialSwerveModel::clipControls(
   const Eigen::MatrixXd& controls) const
 {
   Eigen::MatrixXd clipped = controls;
-  clipped.col(0) = clipped.col(0).cwiseMax(-v_max_).cwiseMin(v_max_);
+  clipped.col(0) = clipped.col(0).cwiseMax(v_min_).cwiseMin(v_max_);
   clipped.col(1) = clipped.col(1).cwiseMax(-omega_max_).cwiseMin(omega_max_);
   clipped.col(2) = clipped.col(2).cwiseMax(-max_steering_rate_).cwiseMin(max_steering_rate_);
   return clipped;

@@ -173,7 +173,7 @@ class SwerveDriveModelTest : public ::testing::Test
 protected:
   void SetUp() override
   {
-    model_ = std::make_unique<SwerveDriveModel>(1.5, 1.5, 2.0);
+    model_ = std::make_unique<SwerveDriveModel>(-1.5, 1.5, 1.5, 2.0);
   }
   std::unique_ptr<SwerveDriveModel> model_;
 };
@@ -278,6 +278,37 @@ TEST_F(SwerveDriveModelTest, ControlToTwistRoundTrip)
   EXPECT_NEAR(recovered(2), control(2), 1e-10);
 }
 
+TEST(SwerveClipControlsTest, RespectsVmin)
+{
+  // vx_min=0 → 음수 속도가 0으로 클리핑
+  auto model = std::make_unique<SwerveDriveModel>(0.0, 1.5, 1.5, 2.0);
+
+  Eigen::MatrixXd controls(3, 3);
+  controls << -0.5, 0.3, 0.0,
+               0.5, -0.3, 0.0,
+               1.0, 0.0, 0.0;
+
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), 0.0, 1e-10);   // 음수 → 0으로 클리핑
+  EXPECT_NEAR(clipped(1, 0), 0.5, 1e-10);   // 양수 유지
+  EXPECT_NEAR(clipped(2, 0), 1.0, 1e-10);   // 양수 유지
+  EXPECT_NEAR(clipped(0, 1), 0.3, 1e-10);   // vy는 vx_min 영향 없음
+}
+
+TEST(SwerveClipControlsTest, NegativeVminAllowsBackward)
+{
+  // vx_min=-0.5 → -0.5까지 후진 허용
+  auto model = std::make_unique<SwerveDriveModel>(-0.5, 1.5, 1.5, 2.0);
+
+  Eigen::MatrixXd controls(2, 3);
+  controls << -1.0, 0.0, 0.0,
+              -0.3, 0.0, 0.0;
+
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), -0.5, 1e-10);  // -1.0 → -0.5로 클리핑
+  EXPECT_NEAR(clipped(1, 0), -0.3, 1e-10);  // 범위 내 유지
+}
+
 // ============================================================================
 // NonCoaxialSwerveModel Tests
 // ============================================================================
@@ -287,7 +318,7 @@ class NonCoaxialSwerveModelTest : public ::testing::Test
 protected:
   void SetUp() override
   {
-    model_ = std::make_unique<NonCoaxialSwerveModel>(1.5, 2.0, 2.0, M_PI / 2.0);
+    model_ = std::make_unique<NonCoaxialSwerveModel>(-1.5, 1.5, 2.0, 2.0, M_PI / 2.0);
   }
   std::unique_ptr<NonCoaxialSwerveModel> model_;
 };
@@ -405,6 +436,34 @@ TEST_F(NonCoaxialSwerveModelTest, ControlToTwistRoundTrip)
   EXPECT_NEAR(recovered(2), 0.0, 1e-10);
 }
 
+TEST(NonCoaxialClipControlsTest, RespectsVmin)
+{
+  // v_min=0 → 음수 속도가 0으로 클리핑
+  auto model = std::make_unique<NonCoaxialSwerveModel>(0.0, 1.5, 2.0, 2.0, M_PI / 2.0);
+
+  Eigen::MatrixXd controls(2, 3);
+  controls << -0.5, 0.0, 0.0,
+               0.5, 0.0, 0.0;
+
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), 0.0, 1e-10);   // 음수 → 0으로 클리핑
+  EXPECT_NEAR(clipped(1, 0), 0.5, 1e-10);   // 양수 유지
+}
+
+TEST(NonCoaxialClipControlsTest, NegativeVminAllowsBackward)
+{
+  // v_min=-0.3 → -0.3까지 후진 허용
+  auto model = std::make_unique<NonCoaxialSwerveModel>(-0.3, 1.5, 2.0, 2.0, M_PI / 2.0);
+
+  Eigen::MatrixXd controls(2, 3);
+  controls << -1.0, 0.0, 0.0,
+              -0.2, 0.0, 0.0;
+
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), -0.3, 1e-10);  // -1.0 → -0.3으로 클리핑
+  EXPECT_NEAR(clipped(1, 0), -0.2, 1e-10);  // 범위 내 유지
+}
+
 // ============================================================================
 // MotionModelFactory Tests
 // ============================================================================
@@ -451,7 +510,7 @@ TEST(CrossModelTest, SameForwardMotion)
   // DiffDrive: v=1, omega=0
   auto dd = std::make_unique<DiffDriveModel>(0.0, 2.0, -2.0, 2.0);
   // Swerve: vx=1, vy=0, omega=0
-  auto sw = std::make_unique<SwerveDriveModel>(2.0, 2.0, 2.0);
+  auto sw = std::make_unique<SwerveDriveModel>(-2.0, 2.0, 2.0, 2.0);
 
   Eigen::MatrixXd dd_states(1, 3), dd_controls(1, 2);
   dd_states << 0.0, 0.0, 0.0;
