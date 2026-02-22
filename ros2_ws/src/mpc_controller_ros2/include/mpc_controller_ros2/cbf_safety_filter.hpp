@@ -21,6 +21,8 @@ struct CBFFilterInfo
   bool qp_success{false};
   std::vector<double> barrier_values;
   std::vector<double> constraint_margins;
+  Eigen::VectorXd u_mppi;   // 필터 입력 (원래 MPPI 출력)
+  Eigen::VectorXd u_safe;   // 필터 출력 (보정된 제어)
 };
 
 /**

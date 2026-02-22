@@ -5,6 +5,7 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <chrono>
+#include <set>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Controller)
 
@@ -280,6 +281,11 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
           filter_info.qp_success ? "true" : "false",
           (u_safe - u_opt).norm());
       }
+    }
+
+    // 5.4. CBF 시각화 (활성화된 경우)
+    if (params_.cbf_enabled && params_.visualize_cbf) {
+      publishCBFVisualization(info, current_state);
     }
 
     // 5.5. Tube-MPPI 피드백 보정 (활성화된 경우)
@@ -1156,6 +1162,7 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "visualize_text_info", params_.visualize_text_info);
   node_->declare_parameter(prefix + "visualize_control_sequence", params_.visualize_control_sequence);
   node_->declare_parameter(prefix + "visualize_tube", params_.visualize_tube);
+  node_->declare_parameter(prefix + "visualize_cbf", params_.visualize_cbf);
   node_->declare_parameter(prefix + "max_visualized_samples", params_.max_visualized_samples);
 
   RCLCPP_INFO(node_->get_logger(), "MPPI parameters declared (M2+SOTA features included)");
@@ -1349,6 +1356,7 @@ void MPPIControllerPlugin::loadParameters()
   params_.visualize_text_info = node_->get_parameter(prefix + "visualize_text_info").as_bool();
   params_.visualize_control_sequence = node_->get_parameter(prefix + "visualize_control_sequence").as_bool();
   params_.visualize_tube = node_->get_parameter(prefix + "visualize_tube").as_bool();
+  params_.visualize_cbf = node_->get_parameter(prefix + "visualize_cbf").as_bool();
   params_.max_visualized_samples = node_->get_parameter(prefix + "max_visualized_samples").as_int();
 
   RCLCPP_INFO(
@@ -1780,6 +1788,12 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         }
         RCLCPP_INFO(node_->get_logger(), "Updated costmap_critical_cost: %.1f", value);
       }
+      // visualize_cbf
+      else if (short_name == "visualize_cbf") {
+        params_.visualize_cbf = param.as_bool();
+        RCLCPP_INFO(node_->get_logger(), "Updated visualize_cbf: %s",
+          params_.visualize_cbf ? "ON" : "OFF");
+      }
 
     } catch (const rclcpp::ParameterTypeException& e) {
       result.successful = false;
@@ -2003,6 +2017,178 @@ void MPPIControllerPlugin::publishCollisionDebugVisualization(
   if (!marker_array.markers.empty()) {
     marker_pub_->publish(marker_array);
   }
+}
+
+void MPPIControllerPlugin::publishCBFVisualization(
+  const MPPIInfo& info,
+  const Eigen::VectorXd& current_state)
+{
+  if (!marker_pub_ || marker_pub_->get_subscription_count() == 0) {
+    return;
+  }
+
+  visualization_msgs::msg::MarkerArray marker_array;
+  auto stamp = node_->now();
+  std::string frame_id = global_plan_.header.frame_id.empty() ?
+    "map" : global_plan_.header.frame_id;
+  const double lifetime_sec = 0.3;
+  int marker_id = 0;
+
+  const auto& barriers = barrier_set_.barriers();
+  auto active_set = barrier_set_.getActiveBarriers(current_state);
+
+  // Active barrier 포인터를 set로 변환 (빠른 lookup)
+  std::set<const CircleBarrier*> active_ptrs(active_set.begin(), active_set.end());
+
+  // 1. Barrier circles (CYLINDER) + h(x) 텍스트 (TEXT_VIEW_FACING)
+  for (size_t i = 0; i < barriers.size(); ++i) {
+    const auto& b = barriers[i];
+    bool is_active = active_ptrs.count(&b) > 0;
+
+    // Inactive barriers: skip (성능 최적화)
+    if (!is_active) {
+      continue;
+    }
+
+    double h = b.evaluate(current_state);
+    double diameter = b.safeDistance() * 2.0;
+
+    // Barrier disk marker
+    visualization_msgs::msg::Marker disk;
+    disk.header.stamp = stamp;
+    disk.header.frame_id = frame_id;
+    disk.ns = "mppi_cbf_barriers";
+    disk.id = marker_id;
+    disk.type = visualization_msgs::msg::Marker::CYLINDER;
+    disk.action = visualization_msgs::msg::Marker::ADD;
+    disk.pose.position.x = b.obsX();
+    disk.pose.position.y = b.obsY();
+    disk.pose.position.z = 0.01;
+    disk.pose.orientation.w = 1.0;
+    disk.scale.x = diameter;
+    disk.scale.y = diameter;
+    disk.scale.z = 0.02;
+    disk.lifetime = rclcpp::Duration::from_seconds(lifetime_sec);
+
+    // h(x) 기반 색상: h>2 green, 0<h≤2 yellow, h≤0 red
+    if (h > 2.0) {
+      disk.color.r = 0.0; disk.color.g = 1.0; disk.color.b = 0.0;
+    } else if (h > 0.0) {
+      // yellow → red 보간 (h: 2→0 → green→red)
+      double t = h / 2.0;  // 1.0=safe, 0.0=boundary
+      disk.color.r = 1.0 - t;
+      disk.color.g = t + (1.0 - t) * 0.5;
+      disk.color.b = 0.0;
+    } else {
+      disk.color.r = 1.0; disk.color.g = 0.0; disk.color.b = 0.0;
+    }
+    disk.color.a = 0.4;
+    marker_array.markers.push_back(disk);
+
+    // h(x) text label
+    visualization_msgs::msg::Marker text;
+    text.header.stamp = stamp;
+    text.header.frame_id = frame_id;
+    text.ns = "mppi_cbf_text";
+    text.id = marker_id;
+    text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text.action = visualization_msgs::msg::Marker::ADD;
+    text.pose.position.x = b.obsX();
+    text.pose.position.y = b.obsY();
+    text.pose.position.z = 0.5;
+    text.pose.orientation.w = 1.0;
+    text.scale.z = 0.15;
+    text.color.r = 1.0; text.color.g = 1.0; text.color.b = 1.0; text.color.a = 1.0;
+    text.lifetime = rclcpp::Duration::from_seconds(lifetime_sec);
+
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "h=%.2f", h);
+    text.text = buf;
+    marker_array.markers.push_back(text);
+
+    ++marker_id;
+  }
+
+  // 2. Correction arrow (filter_applied == true일 때만)
+  const auto& fi = info.cbf_filter_info;
+  if (fi.filter_applied && fi.u_mppi.size() > 0 && fi.u_safe.size() > 0) {
+    Eigen::VectorXd du = fi.u_safe - fi.u_mppi;
+    double theta = current_state(2);
+
+    // body→world 변환: dv 방향을 로봇 heading으로 회전
+    double dx = du(0) * std::cos(theta);
+    double dy = du(0) * std::sin(theta);
+    // omega 보정은 회전이므로 lateral로 표현
+    if (du.size() > 1) {
+      dx -= du(du.size() - 1) * std::sin(theta) * 0.3;
+      dy += du(du.size() - 1) * std::cos(theta) * 0.3;
+    }
+
+    double arrow_len = std::sqrt(dx * dx + dy * dy);
+    if (arrow_len > 0.01) {
+      visualization_msgs::msg::Marker arrow;
+      arrow.header.stamp = stamp;
+      arrow.header.frame_id = frame_id;
+      arrow.ns = "mppi_cbf_correction";
+      arrow.id = 0;
+      arrow.type = visualization_msgs::msg::Marker::ARROW;
+      arrow.action = visualization_msgs::msg::Marker::ADD;
+      arrow.lifetime = rclcpp::Duration::from_seconds(lifetime_sec);
+
+      geometry_msgs::msg::Point start, end;
+      start.x = current_state(0);
+      start.y = current_state(1);
+      start.z = 0.15;
+      // 스케일링: 시각적으로 보기 좋게 제어 보정량을 확대
+      double scale = std::min(2.0, 1.0 / arrow_len);
+      end.x = start.x + dx * scale;
+      end.y = start.y + dy * scale;
+      end.z = 0.15;
+
+      arrow.points.push_back(start);
+      arrow.points.push_back(end);
+      arrow.scale.x = 0.04;  // shaft diameter
+      arrow.scale.y = 0.08;  // head diameter
+      arrow.scale.z = 0.08;  // head length
+      arrow.color.r = 1.0; arrow.color.g = 0.0; arrow.color.b = 1.0; arrow.color.a = 0.9;
+      marker_array.markers.push_back(arrow);
+    }
+  }
+
+  // 3. Status text summary
+  {
+    double min_h = std::numeric_limits<double>::max();
+    for (double h : fi.barrier_values) {
+      min_h = std::min(min_h, h);
+    }
+
+    visualization_msgs::msg::Marker status;
+    status.header.stamp = stamp;
+    status.header.frame_id = frame_id;
+    status.ns = "mppi_cbf_status";
+    status.id = 0;
+    status.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    status.action = visualization_msgs::msg::Marker::ADD;
+    status.pose.position.x = current_state(0);
+    status.pose.position.y = current_state(1) + 0.6;
+    status.pose.position.z = 0.8;
+    status.pose.orientation.w = 1.0;
+    status.scale.z = 0.12;
+    status.color.r = 0.0; status.color.g = 1.0; status.color.b = 1.0; status.color.a = 1.0;
+    status.lifetime = rclcpp::Duration::from_seconds(lifetime_sec);
+
+    char buf[128];
+    std::snprintf(buf, sizeof(buf),
+      "CBF: %d/%zu active, Filter=[%s], min_h=%.2f",
+      fi.num_active_barriers,
+      barriers.size(),
+      fi.filter_applied ? "APPLIED" : "pass",
+      (min_h < 1e10) ? min_h : 0.0);
+    status.text = buf;
+    marker_array.markers.push_back(status);
+  }
+
+  marker_pub_->publish(marker_array);
 }
 
 void MPPIControllerPlugin::publishTubeVisualization(

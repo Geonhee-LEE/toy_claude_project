@@ -191,6 +191,11 @@ private:
     const Eigen::MatrixXd& reference_trajectory,
     const Eigen::MatrixXd& weighted_avg_trajectory
   );
+
+  // CBF 시각화
+  void publishCBFVisualization(
+    const MPPIInfo& info,
+    const Eigen::VectorXd& current_state);
 };
 
 }  // namespace mpc_controller_ros2
