@@ -60,12 +60,14 @@ class SwerveKinematicsNode(Node):
         self.declare_parameter('wheel_y', 0.22)
         self.declare_parameter('publish_rate', 50.0)
         self.declare_parameter('cmd_vel_timeout', 0.5)
+        self.declare_parameter('use_gazebo_odom', False)
 
         self.wheel_radius = self.get_parameter('wheel_radius').value
         self.wheel_x = self.get_parameter('wheel_x').value
         self.wheel_y = self.get_parameter('wheel_y').value
         publish_rate = self.get_parameter('publish_rate').value
         self.cmd_vel_timeout = self.get_parameter('cmd_vel_timeout').value
+        self.use_gazebo_odom = self.get_parameter('use_gazebo_odom').value
 
         # Wheel positions relative to base_link center: (Lx, Ly)
         #   FL: (+x, +y), FR: (+x, -y), RL: (-x, +y), RR: (-x, -y)
@@ -98,25 +100,30 @@ class SwerveKinematicsNode(Node):
         # Subscribers
         self.cmd_vel_sub = self.create_subscription(
             Twist, '/cmd_vel_nav', self._cmd_vel_callback, 10)
-        self.joint_state_sub = self.create_subscription(
-            JointState, '/joint_states', self._joint_state_callback, qos)
 
-        # Publishers
+        # Joint state subscriber: FK에만 필요 (Gazebo odom 사용 시 불필요)
+        if not self.use_gazebo_odom:
+            self.joint_state_sub = self.create_subscription(
+                JointState, '/joint_states', self._joint_state_callback, qos)
+
+        # Publishers (IK: always active)
         self.steer_pub = self.create_publisher(
             Float64MultiArray,
             '/steer_position_controller/commands', 10)
         self.wheel_pub = self.create_publisher(
             Float64MultiArray,
             '/wheel_velocity_controller/commands', 10)
-        self.odom_pub = self.create_publisher(
-            Odometry, '/swerve_controller/odom', 10)
 
-        # TF broadcaster
-        self.tf_broadcaster = TransformBroadcaster(self)
-
-        # Timer for FK + odom publishing
-        timer_period = 1.0 / publish_rate
-        self.odom_timer = self.create_timer(timer_period, self._odom_timer_callback)
+        # FK odom + TF: only when NOT using Gazebo ground truth
+        if not self.use_gazebo_odom:
+            self.odom_pub = self.create_publisher(
+                Odometry, '/swerve_controller/odom', 10)
+            self.tf_broadcaster = TransformBroadcaster(self)
+            timer_period = 1.0 / publish_rate
+            self.odom_timer = self.create_timer(timer_period, self._odom_timer_callback)
+        else:
+            self.get_logger().info(
+                'use_gazebo_odom=True → FK/odom/TF 비활성화 (IK만 동작)')
 
         # Timeout timer (check at 10 Hz)
         self.timeout_timer = self.create_timer(0.1, self._timeout_check)

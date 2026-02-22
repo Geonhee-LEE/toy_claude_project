@@ -257,4 +257,14 @@
     </sensor>
   </gazebo>
 
+  <!-- Gazebo ground truth odometry (simulation only) -->
+  <gazebo>
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+    </plugin>
+  </gazebo>
+
 </robot>

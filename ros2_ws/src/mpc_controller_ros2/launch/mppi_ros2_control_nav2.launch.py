@@ -222,16 +222,23 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ========== 4. ros_gz_bridge ==========
+    bridge_args = [
+        '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+        '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+    ]
+    if is_swerve:
+        # Gazebo ground truth odom → ROS2 (OdometryPublisher 플러그인)
+        bridge_args.append(
+            f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
+        )
+
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         name='ros_gz_bridge',
         output='screen',
         parameters=[{'use_sim_time': True}],
-        arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-        ]
+        arguments=bridge_args,
     )
 
     # ========== 5. Controller Spawners ==========
@@ -313,7 +320,7 @@ def launch_setup(context, *args, **kwargs):
 
     # cmd_vel relay: Swerve → SwerveKinematicsNode, Diff → TwistStamper
     if is_swerve:
-        # SwerveKinematicsNode: Twist → IK → joint commands + FK → odom + TF
+        # SwerveKinematicsNode: IK 전용 (Gazebo ground truth odom 사용 시 FK/odom/TF 비활성화)
         cmd_vel_relay = Node(
             package='mpc_controller_ros2',
             executable='swerve_kinematics_node.py',
@@ -326,7 +333,20 @@ def launch_setup(context, *args, **kwargs):
                 'wheel_y': 0.22,
                 'publish_rate': 50.0,
                 'cmd_vel_timeout': 0.5,
+                'use_gazebo_odom': True,  # Gazebo ground truth → FK/odom/TF 비활성화
             }],
+        )
+
+        # Gazebo ground truth odom → odom→base_link TF broadcast
+        odom_to_tf = Node(
+            package='mpc_controller_ros2',
+            executable='odom_to_tf.py',
+            name='odom_to_tf',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+            remappings=[
+                ('odom', f'/model/{robot_name}/odometry'),
+            ],
         )
     else:
         # Twist → TwistStamped 변환 (inline Python)
@@ -455,9 +475,9 @@ rclpy.spin(TwistStamper())
                 LogInfo(msg='Starting controllers...'),
                 joint_state_broadcaster_spawner,
                 *controller_spawners,
-                # Swerve: odom→base_link TF를 빨리 시작해야 AMCL/costmap이
-                # lidar scan을 변환 가능 (18s까지 미루면 TF 부재로 scan 드롭)
                 cmd_vel_relay,
+                # Swerve: Gazebo ground truth odom → TF (AMCL/costmap에 필요)
+                *([odom_to_tf] if is_swerve else []),
             ]
         ),
 
