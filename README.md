@@ -16,7 +16,12 @@ This project demonstrates:
 - MPPI (Model Predictive Path Integral) 샘플링 기반 제어
   - Vanilla MPPI (M1)
   - Tube-MPPI, Adaptive Temperature, Colored Noise, ControlRateCost (M2)
-  - Log-MPPI, Tsallis-MPPI (M3)
+  - Log-MPPI, Tsallis-MPPI, Risk-Aware CVaR, SVMPC (M3)
+  - Smooth-MPPI, Spline-MPPI, SVG-MPPI (M3.5)
+  - MPPI-CBF 통합 (Safety Filter + Barrier Cost)
+- **GPU 가속** (JAX JIT + lax.scan + vmap) — K=4096 샘플 실시간 처리
+- Swerve / Non-coaxial Swerve 다중 모션 모델
+- ROS2 nav2 플러그인 (8종 컨트롤러)
 - 2D simulation with visualization
 - Automated CI/CD with Claude integration
 
@@ -42,6 +47,9 @@ python examples/log_mppi_demo.py --live
 # Tsallis-MPPI q 파라미터 비교
 python examples/tsallis_mppi_demo.py --trajectory circle --live
 python examples/tsallis_mppi_demo.py --trajectory circle --live --q 0.5 1.0 1.2 1.5
+
+# GPU 벤치마크
+python examples/gpu_benchmark.py --K 512,1024,2048,4096
 ```
 
 ## Project Structure
@@ -55,7 +63,7 @@ mpc_controller/
 ├── controllers/
 │   ├── mpc/                      # CasADi/IPOPT 기반 MPC
 │   ├── mppi/                     # MPPI 샘플링 기반 제어
-│   │   ├── base_mppi.py          #   Vanilla MPPI (M1)
+│   │   ├── base_mppi.py          #   Vanilla MPPI (M1) + GPU/CPU 분기
 │   │   ├── tube_mppi.py          #   Tube-MPPI (M2)
 │   │   ├── ancillary_controller.py #  Body frame 피드백 보정 (M2)
 │   │   ├── adaptive_temperature.py #  ESS 기반 λ 자동 튜닝 (M2)
@@ -65,7 +73,12 @@ mpc_controller/
 │   │   ├── sampling.py           #   Gaussian + Colored Noise 샘플러
 │   │   ├── dynamics_wrapper.py   #   배치 동역학 (RK4 벡터화)
 │   │   ├── mppi_params.py        #   파라미터 데이터클래스
-│   │   └── utils.py              #   유틸리티 (q_exponential 등)
+│   │   ├── utils.py              #   유틸리티 (q_exponential 등)
+│   │   ├── gpu_backend.py        #   JAX/NumPy 백엔드 추상화
+│   │   ├── gpu_dynamics.py       #   JIT rollout (lax.scan + vmap)
+│   │   ├── gpu_costs.py          #   JIT 비용 함수 fusion
+│   │   ├── gpu_sampling.py       #   JAX PRNG 샘플러
+│   │   └── gpu_mppi_kernel.py    #   통합 GPU MPPI 커널
 │   ├── swerve_mpc/               # 스워브 MPC
 │   └── non_coaxial_swerve_mpc/   # 비동축 스워브 MPC
 ├── ros2/                         # ROS2 노드 및 RVIZ 시각화
@@ -112,6 +125,39 @@ MPPIController (base_mppi.py) — Vanilla MPPI
 ```
 
 자세한 알고리즘 설명은 [docs/mppi/MPPI_GUIDE.md](docs/mppi/MPPI_GUIDE.md) 참조.
+
+## GPU 가속 (JAX)
+
+`use_gpu=True` 설정으로 JAX 기반 GPU 가속을 활성화할 수 있습니다.
+
+```
+현재 (CPU NumPy)                        GPU 가속 후 (JAX)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ rollout_batch()     ~65%  ──────►  lax.scan + vmap  (~1-2ms)  ★
+ cost.compute()      ~25%  ──────►  단일 JIT fusion  (~0.5ms)  ★
+ sampler + softmax   ~10%  ──────►  jax.random + jnp (~0.4ms)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ 합계: ~20ms (K=1024)                  합계: ~2-4ms (K=4096)
+```
+
+```python
+from mpc_controller.controllers.mppi.mppi_params import MPPIParams
+from mpc_controller.controllers.mppi.base_mppi import MPPIController
+
+# GPU 활성화 (JAX 미설치 시 자동 CPU fallback)
+params = MPPIParams(K=4096, N=30, use_gpu=True)
+ctrl = MPPIController(robot_params, params)
+u, info = ctrl.compute_control(state, ref)
+```
+
+```bash
+# JAX 설치
+pip install jax                          # CPU only
+pip install "jax[cuda12]>=0.4.20"        # GPU (CUDA 12)
+
+# 벤치마크 실행
+python examples/gpu_benchmark.py --K 512,1024,2048,4096
+```
 
 ## Development Workflow
 
@@ -383,8 +429,9 @@ source ~/.bashrc
 - NumPy >= 1.24
 - Matplotlib >= 3.7
 - CasADi >= 3.6 (MPC 컨트롤러용)
+- JAX >= 0.4.20 (optional, GPU 가속용)
 
-MPPI 컨트롤러는 순수 NumPy로 구현되어 CasADi 없이도 동작합니다.
+MPPI 컨트롤러는 순수 NumPy로 구현되어 CasADi/JAX 없이도 동작합니다.
 
 ## Testing
 
@@ -394,6 +441,9 @@ pytest tests/ -v
 
 # MPPI 테스트만 실행
 pytest tests/test_mppi*.py tests/test_log_mppi.py tests/test_tsallis_mppi.py tests/test_tube_mppi.py tests/test_ancillary_controller.py -v
+
+# GPU MPPI 테스트
+pytest tests/test_gpu_mppi.py -v --override-ini="addopts="
 
 # 특정 테스트
 pytest tests/test_tsallis_mppi.py -v -k "circle_tracking"
