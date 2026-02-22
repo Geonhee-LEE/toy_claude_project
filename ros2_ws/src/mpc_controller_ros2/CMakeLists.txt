@@ -131,6 +131,7 @@ install(PROGRAMS
   scripts/verify_robot_motion.py
   scripts/odom_to_tf.py
   scripts/swerve_kinematics_node.py
+  scripts/swerve_e2e_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
