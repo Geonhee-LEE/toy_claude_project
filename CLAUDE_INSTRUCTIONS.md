@@ -5,8 +5,11 @@ This document provides guidelines for Claude when implementing features in this 
 ## Project Overview
 
 Mobile robot MPC controller with:
-- Differential drive kinematic model
+- Differential drive, Swerve, Non-coaxial Swerve kinematic models
 - CasADi-based nonlinear MPC
+- MPPI sampling-based control (9 variants + GPU acceleration)
+- MPPI-CBF safety integration (Control Barrier Function)
+- ROS2 nav2 plugin (8 C++ controllers)
 - 2D simulation environment
 - Visualization tools
 
@@ -164,5 +167,7 @@ All PRs must pass:
 ## Performance Considerations
 
 - MPC solve time should be < 50ms for real-time control
+- MPPI solve time: ~20ms (CPU, K=1024), ~2-4ms (GPU, K=4096)
 - Use warm starting for consecutive solves
+- GPU acceleration: `MPPIParams(use_gpu=True)` for JAX JIT backend
 - Profile with `cProfile` for optimization bottlenecks

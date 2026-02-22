@@ -18,14 +18,19 @@ mpc_controller/
 ├── controllers/
 │   ├── mpc/                 # CasADi/IPOPT 기반 MPC
 │   ├── mppi/                # MPPI 샘플링 기반 제어
-│   │   ├── base_mppi.py           # Vanilla MPPI (M1)
+│   │   ├── base_mppi.py           # Vanilla MPPI (M1) + GPU/CPU 분기
 │   │   ├── tube_mppi.py           # Tube-MPPI (M2)
 │   │   ├── ancillary_controller.py # Body frame 피드백 보정 (M2)
 │   │   ├── adaptive_temperature.py # ESS 기반 λ 자동 튜닝 (M2)
 │   │   ├── cost_functions.py      # 비용 함수 (Tracking, Obstacle, TubeAware 등)
 │   │   ├── sampling.py            # Gaussian + Colored Noise 샘플러
 │   │   ├── dynamics_wrapper.py    # 배치 동역학 (RK4 벡터화)
-│   │   └── mppi_params.py         # 파라미터 데이터클래스
+│   │   ├── mppi_params.py         # 파라미터 데이터클래스
+│   │   ├── gpu_backend.py         # JAX/NumPy 백엔드 추상화
+│   │   ├── gpu_dynamics.py        # JIT rollout (lax.scan + vmap)
+│   │   ├── gpu_costs.py           # JIT 비용 함수 fusion
+│   │   ├── gpu_sampling.py        # JAX PRNG 샘플러
+│   │   └── gpu_mppi_kernel.py     # 통합 GPU MPPI 커널
 │   ├── swerve_mpc/          # 스워브 MPC
 │   └── non_coaxial_swerve_mpc/
 ├── ros2/                    # ROS2 노드 및 RVIZ 시각화
@@ -35,9 +40,14 @@ mpc_controller/
 
 ## 마일스톤 진행 현황
 - M1 Vanilla MPPI: 완료
-- M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료 (GPU 가속 잔여)
-- M3 SOTA 변형 (Tsallis, Risk-Aware, Log-MPPI, Stein Variational): 예정
-- M4 ROS2 통합 (nav2 플러그인, 실제 로봇, 파라미터 서버): 예정
+- M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료
+- M3 SOTA 변형 (Log, Tsallis, Risk-Aware, SVMPC): 완료
+- M3.5 확장 (Smooth, Spline, SVG-MPPI): 완료
+- M4 ROS2 nav2 통합 (8종 C++ 플러그인 + Swerve): 완료
+- M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
+- GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
+- MPPI-CBF 통합 (Python + C++): 완료
+- 궤적 안정화 (SG Filter + IT 정규화): 완료
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

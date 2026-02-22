@@ -169,7 +169,7 @@ MPPI 알고리즘 흐름:
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
 - **NFR-2**: K=1024 샘플, N=30 호라이즌에서 실행 가능
 - **NFR-3**: 기존 `compute_control(state, ref) -> (control, info)` 시그니처 준수
-- **NFR-4**: for-loop 금지, NumPy broadcasting으로 배치 처리
+- **NFR-4**: for-loop 금지, NumPy broadcasting으로 배치 처리 (GPU: JAX lax.scan + vmap)
 - **NFR-5**: 원형 궤적 추적 Position RMSE < 0.2m
 - **NFR-6**: Tube-MPPI tube_enabled=False 시 Vanilla와 100% 동일 동작 (하위 호환)
 
@@ -324,6 +324,11 @@ mpc_controller/controllers/mppi/
   spline_mppi.py                # SplineMPPIController (B-spline basis 보간) [M3.5b]
   svg_mppi.py                   # SVGMPPIController (Guide particle SVGD) [M3.5c]
   utils.py                      # normalize_angle, log_sum_exp, q_exponential, rbf_kernel 등
+  gpu_backend.py                # JAX/NumPy 백엔드 추상화 + CPU fallback
+  gpu_dynamics.py               # JIT rollout (lax.scan + vmap, 3종 모델)
+  gpu_costs.py                  # JIT 비용 함수 fusion (장애물 벡터화)
+  gpu_sampling.py               # JAX PRNG (Gaussian + Colored Noise)
+  gpu_mppi_kernel.py            # 통합 GPU MPPI 커널 (전체 스텝)
 
 mpc_controller/ros2/
   mppi_rviz_visualizer.py       # RVIZ 시각화
@@ -342,6 +347,7 @@ tests/
   test_smooth_mppi.py           # SmoothMPPIController 테스트 (17개) [M3.5a]
   test_spline_mppi.py           # SplineMPPIController 테스트 (23개) [M3.5b]
   test_svg_mppi.py              # SVGMPPIController 테스트 (21개) [M3.5c]
+  test_gpu_mppi.py              # GPU MPPI 정확도 + 성능 테스트 (22개)
 
 examples/
   mppi_basic_demo.py            # Vanilla MPPI 데모
@@ -355,6 +361,7 @@ examples/
   spline_mppi_demo.py            # Spline-MPPI knot 수 비교 [M3.5b]
   svg_mppi_demo.py               # SVG-MPPI vs SVMPC 비교 (장애물) [M3.5c]
   mppi_all_variants_benchmark.py # 9종 변형 동시 비교 벤치마크 (--live, --trajectory)
+  gpu_benchmark.py               # GPU vs CPU K별 비교 벤치마크
 
 configs/
   mppi_params.yaml              # 기본 설정
@@ -372,13 +379,13 @@ M1: Vanilla MPPI ✅ 완료
 ├── RVIZ 시각화
 └── 원형 궤적 추적 테스트 (RMSE=0.1534m < 0.2m)
 
-M2: 고도화 ✅ 완료 (GPU 가속 잔여)
+M2: 고도화 ✅ 완료
 ├── ✅ Colored Noise 샘플링 (OU 프로세스 기반)
 ├── ✅ Tube-MPPI (AncillaryController + TubeMPPIController)
 ├── ✅ Adaptive temperature (ESS 기반 λ auto-tuning)
 ├── ✅ ControlRateCost (제어 변화율 비용)
 ├── ✅ TubeAwareCost (tube margin 확장)
-└── ⬜ GPU 가속 (PyTorch/Numba) — 잔여
+└── ✅ GPU 가속 (JAX JIT + lax.scan + vmap) — PR #103
 
 M3: SOTA 변형 ✅ 완료
 ├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
@@ -416,10 +423,15 @@ M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
 ├── ✅ Spline-MPPI C++ 플러그인 (B-spline basis, de Boor 재귀)
 └── ✅ SVG-MPPI C++ 플러그인 (Guide particle SVGD + follower resampling)
 
-GPU 가속 (예정)
-├── CuPy/JAX 기반 rollout + cost 병렬화
-├── SVMPC pairwise kernel CUDA 가속
-└── K=4096+ 대규모 샘플 벤치마크
+GPU 가속 ✅ 완료 (PR #103)
+├── ✅ JAX JIT + lax.scan + vmap 기반 rollout + cost 병렬화
+├── ✅ 비용 함수 fusion (8종 → 단일 JIT kernel)
+├── ✅ diff_drive / swerve / non_coaxial_swerve 3종 모델 지원
+├── ✅ GPU↔CPU 전송 최소화 (호출당 2회)
+├── ✅ use_gpu=False 기본값 → 기존 코드 100% 보존
+├── ✅ 테스트 22개 + 벤치마크 스크립트
+├── ⬜ SVMPC pairwise kernel GPU 가속 (Phase 4c)
+└── ⬜ MPPI 변형별 GPU 확장 (Phase 4a~4d)
 ```
 
 ## 5. 참조

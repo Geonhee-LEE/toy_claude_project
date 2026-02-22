@@ -378,6 +378,62 @@ MPPIControllerPlugin (base, virtual computeControl)
     └── SVGMPPIControllerPlugin (computeControl: Guide SVGD)
 ```
 
+### 2.10 GPU 가속 (JAX JIT + lax.scan + vmap)
+
+```
+CPU (NumPy) → GPU (JAX) 전환 구조:
+
+  ┌──────────────────────────────────────────────────────┐
+  │ CPU 측                          GPU 측               │
+  │  x0, U, ref ──── 1회 전송 ────► mppi_step_jit()    │
+  │                                  ├ sample noise      │
+  │                                  ├ perturb + clip    │
+  │                                  ├ rollout (scan)    │
+  │                                  ├ cost (fused)      │
+  │                                  ├ softmax weights   │
+  │                                  └ weighted update   │
+  │  u_opt, info ◄── 1회 전송 ────── return             │
+  └──────────────────────────────────────────────────────┘
+
+핵심 최적화:
+  ┌───────────────────┬─────────────────────────────────┐
+  │ 병목               │ JAX 최적화                     │
+  ├───────────────────┼─────────────────────────────────┤
+  │ rollout (~65%)    │ lax.scan: for-loop → XLA fused  │
+  │                   │ vmap: K 차원 자동 벡터화         │
+  ├───────────────────┼─────────────────────────────────┤
+  │ cost (~25%)       │ 8종 비용 함수 단일 @jit fusion  │
+  │                   │ 장애물: (K,N+1,M) 벡터화        │
+  ├───────────────────┼─────────────────────────────────┤
+  │ sampling (~2%)    │ jax.random + static_argnums     │
+  └───────────────────┴─────────────────────────────────┘
+```
+
+**파일 구조**:
+| 파일 | 역할 |
+|------|------|
+| `gpu_backend.py` | JAX 가용성 감지 + NumPy↔JAX 변환 |
+| `gpu_dynamics.py` | RK4 + lax.scan + vmap rollout |
+| `gpu_costs.py` | 비용 함수 JIT fusion |
+| `gpu_sampling.py` | JAX PRNG (Gaussian + Colored) |
+| `gpu_mppi_kernel.py` | 통합 MPPI 커널 (전체 스텝) |
+
+**사용법**:
+```python
+params = MPPIParams(K=4096, N=30, use_gpu=True)
+ctrl = MPPIController(robot_params, params)
+u, info = ctrl.compute_control(state, ref)  # 자동 GPU 경로
+```
+
+**파라미터**:
+| 파라미터 | 설명 | 기본값 |
+|---------|------|--------|
+| use_gpu | GPU 경로 활성화 | False |
+| gpu_warmup | JIT 사전 컴파일 | True |
+| gpu_float32 | float32 사용 (2x 빠름) | False |
+
+**지원 모델**: diff_drive, swerve, non_coaxial_swerve
+
 ---
 
 ## 4. 비용 함수 구성
@@ -389,7 +445,8 @@ CompositeMPPICost (합산)
 ├── ControlEffortCost   ─  Σ u_t^T R u_t
 ├── ControlRateCost     ─  Σ Δu_t^T R_rate Δu_t         [M2]
 ├── ObstacleCost        ─  Σ max(0, d_safe - dist)²
-└── TubeAwareCost       ─  ObstacleCost + tube_margin    [M2]
+├── TubeAwareCost       ─  ObstacleCost + tube_margin    [M2]
+└── CBFCost             ─  DCBF 조건 위반 soft penalty   [CBF]
 ```
 
 ---
@@ -496,7 +553,24 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svg
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=nav2
 ```
 
-### 6.4 MPC 기본 데모
+### 6.4 GPU 벤치마크
+
+```bash
+# JAX 설치
+pip install jax                          # CPU only
+pip install "jax[cuda12]>=0.4.20"        # GPU (CUDA 12)
+
+# K별 CPU/GPU 비교 벤치마크
+python examples/gpu_benchmark.py --K 512,1024,2048,4096
+
+# GPU MPPI 테스트
+pytest tests/test_gpu_mppi.py -v --override-ini="addopts="
+
+# CPU fallback 테스트 (GPU 없이)
+JAX_PLATFORMS=cpu pytest tests/test_gpu_mppi.py -v --override-ini="addopts="
+```
+
+### 6.5 MPC 기본 데모
 
 ```bash
 python examples/path_tracking_demo.py          # MPC 경로 추종

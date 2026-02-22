@@ -10,7 +10,7 @@
 
 ## 🟠 Medium Priority (P1)
 
-- [ ] MPPI GPU 가속 — CuPy/JAX 기반 rollout + cost 병렬화 (M2 잔여)
+- [x] MPPI GPU 가속 — JAX JIT + lax.scan + vmap (PR #103, Issue #63)
 - [ ] MPPI SVMPC GPU 가속 — pairwise kernel (K²) + rollout CUDA 병렬화
 - [x] MPPI-CBF 통합 — Control Barrier Function 안전성 보장 (PR #98, Issue #97)
 - [x] MPPI 궤적 안정화 — SG Filter + IT 정규화 + Exploitation/Exploration (PR #98)
@@ -52,6 +52,22 @@
 ---
 
 ## ✅ Completed
+
+### 2026-02-22 (GPU 가속)
+- [x] #63 MPPI GPU 가속 — JAX JIT + lax.scan + vmap (PR #103)
+  * JAX 기반 GPU 가속: rollout (~65%) + cost (~25%) 핵심 병목 해결
+  * lax.scan: N=30 순차 rollout → XLA fused kernel (1회 커널 실행)
+  * vmap: K 샘플 차원 자동 벡터화 (수동 broadcasting 불필요)
+  * 비용 함수 fusion: 8종 비용 함수를 단일 JIT kernel로 통합
+  * 장애물 벡터화: (K,N+1,1,2)-(1,1,M,2) → Python for-loop 제거
+  * GPU↔CPU 전송 최소화: 호출당 2회 (입력 전송 + 결과 반환)
+  * 신규 파일: gpu_backend.py, gpu_dynamics.py, gpu_costs.py, gpu_sampling.py, gpu_mppi_kernel.py
+  * mppi_params.py: use_gpu, gpu_warmup, gpu_float32 파라미터 추가
+  * base_mppi.py: GPU/CPU 분기 (_init_gpu, _compute_control_gpu)
+  * use_gpu=False 기본값 → 기존 CPU 코드 100% 보존, 회귀 없음
+  * diff_drive / swerve / non_coaxial_swerve 3종 모델 지원
+  * 테스트 22개 통과 (동역학 5, 비용 6, 샘플링 2, 커널 5, 백엔드 4)
+  * 벤치마크: examples/gpu_benchmark.py (K별 CPU/GPU 비교 테이블)
 
 ### 2026-02-22
 - [x] Swerve MPPI 오실레이션 진단 + 옵티마이저 수렴 수정 (Phase C)
