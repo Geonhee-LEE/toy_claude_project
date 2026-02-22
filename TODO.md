@@ -12,13 +12,15 @@
 
 - [ ] MPPI GPU 가속 — CuPy/JAX 기반 rollout + cost 병렬화 (M2 잔여)
 - [ ] MPPI SVMPC GPU 가속 — pairwise kernel (K²) + rollout CUDA 병렬화
-- [ ] MPPI-CBF 통합 — Control Barrier Function 안전성 보장
+- [x] MPPI-CBF 통합 — Control Barrier Function 안전성 보장 (PR #98, Issue #97)
+- [x] MPPI 궤적 안정화 — SG Filter + IT 정규화 + Exploitation/Exploration (PR #98)
 - [ ] MPPI vs MPPI-CBF 비교 데모 — 안전성 및 성능 벤치마크
 - [ ] MPC vs MPPI 비교 데모 파라미터 공정화 — 호라이즌 통일 (MPC 2.0s vs MPPI 1.0s)
 - [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
 - [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
 - [ ] 속도 제약 고려 MPC — 가속도/저크 제한
-- [ ] CI/CD 파이프라인 개선 — 자동 테스트 및 배포
+- [ ] CI/CD 파이프라인 — GitHub Actions ROS2 빌드 + 테스트 자동화
+- [ ] Swerve E2E 시뮬레이션 검증 — nav2 goal 주행 + 궤적안정화/CBF 비교
 - [ ] pybind11 Python 바인딩 — C++ ↔ Python 연동
 
 ## 🟢 Low Priority (P2)
