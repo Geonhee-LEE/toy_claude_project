@@ -6,12 +6,16 @@
 #
 # Swerve Drive 로봇 (홀로노믹, vx/vy/omega 3축 제어)
 # Spline-MPPI: B-spline basis로 P개 knot → N개 보간 (C² 연속 보장)
+#
+# 튜닝 참조: MizuhoAOKI/mppi_swerve_drive_ros (IROS 2024)
+#   K=3000, dt=0.033, lambda=200, sigma=[0.55,0.55,0.96]
+#   collision_penalty=50 (단일), sg_filter half=4 poly=6
 # ============================================================
 
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 10.0
+    controller_frequency: 20.0    # 10→20Hz (Aoki: 20Hz = 1/0.05s)
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -39,83 +43,83 @@ controller_server:
       plugin: "mpc_controller_ros2::SplineMPPIControllerPlugin"
       motion_model: "swerve"
 
-      # Prediction horizon
-      N: 30
-      dt: 0.1
+      # Prediction horizon — 2초 예측 (Aoki: N=30*0.033=1s, 우리: 40*0.05=2s)
+      N: 40
+      dt: 0.05
 
-      # Sampling
-      K: 1024
-      lambda: 10.0
+      # Sampling — 샘플 수 증가로 좁은 통로 탐색 강화
+      K: 2048
+      lambda: 100.0     # 10→100 (Aoki: 200, 최적 궤적 집중도 향상)
 
-      # Noise parameters (vx, vy, omega)
+      # Noise parameters (vx, vy, omega) — 탐색 범위 확대
       noise_sigma_v: 0.5
-      noise_sigma_vy: 0.2
-      noise_sigma_omega: 0.2
+      noise_sigma_vy: 0.4       # 0.2→0.4 (lateral 탐색 강화)
+      noise_sigma_omega: 0.8    # 0.2→0.8 (Aoki: 0.96, 회전 탐색 핵심)
 
-      # Control limits (diff_drive 파라미터 유지 — swerve는 내부적으로 vx/vy/omega 사용)
+      # Control limits
       v_max: 1.5
-      v_min: -0.1   # 후진 거의 차단 (-0.5 → -0.1)
+      v_min: -0.3    # -0.1→-0.3 (좁은 통로 빠져나오기 위해 후진 허용)
       omega_max: 2.0
       omega_min: -2.0
 
       # State tracking cost weights (Q: x, y, theta)
       Q_x: 10.0
       Q_y: 10.0
-      Q_theta: 3.0
+      Q_theta: 5.0     # 3→5 (Aoki angular_error=30, heading 추종 강화)
 
       # Terminal cost weights (Qf)
       Qf_x: 20.0
       Qf_y: 20.0
-      Qf_theta: 6.0
+      Qf_theta: 10.0   # 6→10 (terminal heading 보정)
 
       # Control effort weights (R: vx, vy, omega)
       R_v: 0.3
-      R_vy: 1.0
-      R_omega: 0.8
+      R_vy: 0.5       # 1.0→0.5 (lateral 사용 덜 억제 → 홀로노믹 활용)
+      R_omega: 0.5     # 0.8→0.5 (회전 덜 억제)
 
       # Control rate weights (R_rate: vx, vy, omega)
       R_rate_v: 0.5
       R_rate_vy: 0.5
-      R_rate_omega: 1.0
+      R_rate_omega: 0.8   # 1.0→0.8
 
-      # Obstacle avoidance
-      obstacle_weight: 300.0
-      safety_distance: 0.5
+      # Obstacle avoidance — 단일 costmap 비용으로 통합 (3중 페널티 제거)
+      obstacle_weight: 0.0         # 300→0 (costmap cost로 통합)
+      safety_distance: 0.4         # 0.5→0.4
 
-      # Costmap obstacle cost
+      # Costmap obstacle cost — 참조 대비 적절한 단일 페널티
       use_costmap_cost: true
-      costmap_lethal_cost: 5000.0
-      costmap_critical_cost: 500.0
-      lookahead_dist: 1.5   # 고정 lookahead (0=auto=v_max*N*dt=4.5, 너무 긺)
+      costmap_lethal_cost: 200.0   # 5000→200 (Aoki: 50, 우리 costmap은 해상도 다름)
+      costmap_critical_cost: 50.0  # 500→50
+      lookahead_dist: 2.0          # 1.5→2.0 (N*dt=2s에 맞춤)
       min_lookahead: 0.5
       goal_slowdown_dist: 0.5
 
-      # Forward preference (Spline-MPPI는 구조적 평활성으로 후진 억제 효과)
-      prefer_forward_weight: 10.0   # 후진 페널티 강화 (5.0 → 10.0)
+      # Forward preference
+      prefer_forward_weight: 5.0          # 10→5 (과도한 후진 억제 완화)
       prefer_forward_linear_ratio: 0.5
-      prefer_forward_velocity_incentive: 2.0  # 전진 인센티브 (vx>0 보상)
+      prefer_forward_velocity_incentive: 1.0  # 2.0→1.0
 
       # Control smoothing (EMA 출력 필터 — SG 필터 활성 시 무시됨)
-      control_smoothing_alpha: 0.7  # EMA 완화 (0.5 → 0.7, 응답성 개선)
+      control_smoothing_alpha: 0.7
 
-      # Trajectory Stability
-      sg_filter_enabled: true       # SG 필터 ON (EMA 대체)
-      sg_half_window: 3             # 과거3 + 현재 + 미래3 = 7점 윈도우
-      sg_poly_order: 3              # 3차 다항식
-      it_alpha: 0.975               # IT 정규화 ON (보수적)
-      exploration_ratio: 0.1        # 10% 탐색 샘플
+      # Trajectory Stability — SG filter 강화 (Aoki: half=4, poly=6)
+      sg_filter_enabled: true
+      sg_half_window: 4            # 3→4 (Aoki: 4)
+      sg_poly_order: 5             # 3→5 (Aoki: 6, N=40이면 5차가 적절)
+      it_alpha: 0.975
+      exploration_ratio: 0.1
 
       # Adaptive Temperature
       adaptive_temperature: true
-      target_ess_ratio: 0.2   # 가중치 집중도 증가 (0.5→0.2, 상위 20% 샘플에 집중)
+      target_ess_ratio: 0.3        # 0.2→0.3 (다양성 약간 증가)
       adaptation_rate: 0.1
-      lambda_min: 0.1
-      lambda_max: 100.0
+      lambda_min: 1.0              # 0.1→1.0 (최소 lambda 상향)
+      lambda_max: 500.0            # 100→500 (범위 확대)
 
       # Spline-MPPI 전용 파라미터
-      spline_num_knots: 12              # B-spline 제어점 수 (P << N, 12 knots → 30 steps)
-      spline_degree: 3                  # B-spline 차수 (cubic → C² 연속)
-      spline_auto_knot_sigma: true      # basis 감쇠 자동 보정
+      spline_num_knots: 15              # 12→15 (N=40에 맞춤)
+      spline_degree: 3
+      spline_auto_knot_sigma: true
 
       # SOTA 변형 (기본값)
       tsallis_q: 1.5
@@ -125,7 +129,7 @@ controller_server:
       svgd_bandwidth: -1.0
       smooth_R_jerk_v: 0.1
       smooth_R_jerk_omega: 0.1
-      smooth_action_cost_weight: 1.0    # Spline-MPPI: smooth cost 활성화
+      smooth_action_cost_weight: 1.0
       svg_num_guide_particles: 10
       svg_guide_iterations: 3
       svg_guide_step_size: 0.1
@@ -141,10 +145,10 @@ controller_server:
       # CBF (Control Barrier Function) 안전성 보장
       cbf_enabled: false
       cbf_gamma: 1.0
-      cbf_safety_margin: 0.3
+      cbf_safety_margin: 0.2      # 0.3→0.2 (좁은 통로 통과 허용)
       cbf_robot_radius: 0.2
-      cbf_activation_distance: 3.0
-      cbf_cost_weight: 500.0
+      cbf_activation_distance: 2.0  # 3.0→2.0 (활성 장벽 수 감소)
+      cbf_cost_weight: 100.0       # 500→100 (costmap과 이중 페널티 방지)
       cbf_use_safety_filter: true
 
       # Collision Debug (기본 OFF, ros2 param set으로 실시간 활성화)
