@@ -1794,6 +1794,40 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
         RCLCPP_INFO(node_->get_logger(), "Updated visualize_cbf: %s",
           params_.visualize_cbf ? "ON" : "OFF");
       }
+      // cbf_enabled — 런타임 활성화 시 CBF 컴포넌트 초기화
+      else if (short_name == "cbf_enabled") {
+        bool new_val = param.as_bool();
+        if (new_val && !params_.cbf_enabled) {
+          // OFF→ON: barrier_set_ 재구성 + safety filter 생성
+          barrier_set_ = BarrierFunctionSet(
+            params_.cbf_robot_radius, params_.cbf_safety_margin,
+            params_.cbf_activation_distance);
+
+          if (params_.cbf_use_safety_filter && dynamics_ && !cbf_safety_filter_) {
+            int nu_dim = dynamics_->model().controlDim();
+            Eigen::VectorXd u_min(nu_dim), u_max(nu_dim);
+            bool is_nc = (params_.motion_model == "non_coaxial_swerve");
+            if (is_nc) {
+              u_min << params_.v_min, params_.omega_min, -params_.max_steering_rate;
+              u_max << params_.v_max, params_.omega_max,  params_.max_steering_rate;
+            } else if (nu_dim >= 3) {
+              u_min << params_.v_min, -params_.v_max, params_.omega_min;
+              u_max << params_.v_max,  params_.v_max, params_.omega_max;
+            } else {
+              u_min << params_.v_min, params_.omega_min;
+              u_max << params_.v_max, params_.omega_max;
+            }
+            cbf_safety_filter_ = std::make_unique<CBFSafetyFilter>(
+              &barrier_set_, params_.cbf_gamma, params_.dt, u_min, u_max);
+          }
+          RCLCPP_INFO(node_->get_logger(),
+            "CBF enabled at runtime (safety_filter=%s)",
+            cbf_safety_filter_ ? "ON" : "OFF");
+        }
+        params_.cbf_enabled = new_val;
+        RCLCPP_INFO(node_->get_logger(), "Updated cbf_enabled: %s",
+          new_val ? "ON" : "OFF");
+      }
 
     } catch (const rclcpp::ParameterTypeException& e) {
       result.successful = false;
