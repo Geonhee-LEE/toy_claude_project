@@ -57,6 +57,7 @@ controller_server:
       v_min: -0.1   # 후진 거의 차단 (-0.5 → -0.1)
       omega_max: 2.0
       omega_min: -2.0
+      vy_max: 0.5     # lateral 속도 제한 (v_max 대비 1/3 → crab motion 억제)
 
       # State tracking cost weights (Q: x, y, theta)
       Q_x: 10.0
@@ -89,6 +90,11 @@ controller_server:
       lookahead_dist: 1.5   # 고정 lookahead (0=auto=v_max*N*dt=4.5, 너무 긺)
       min_lookahead: 0.5
       goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5  # Reference theta 양자화 노이즈 제거 (circular MA)
+
+      # Velocity Tracking Cost (경로 방향 속도 추적)
+      velocity_tracking_weight: 10.0   # 경로 방향 전진 인센티브
+      reference_velocity: 1.0          # 목표 경로 방향 속도 (m/s)
 
       # Forward preference (Spline-MPPI는 구조적 평활성으로 후진 억제 효과)
       prefer_forward_weight: 10.0   # 후진 페널티 강화 (5.0 → 10.0)

@@ -17,10 +17,9 @@ std::unique_ptr<MotionModel> MotionModelFactory::create(
   }
   else if (model_type == "swerve") {
     // Swerve: vx_min, vx_max, vy_max, omega_max
-    // 현재 MPPIParams에 vy_max 없으므로 v_max를 공유
     double vx_min = params.v_min;
     double vx_max = params.v_max;
-    double vy_max = params.v_max;  // TODO: params.vy_max 추가 시 교체
+    double vy_max = (params.vy_max > 0.0) ? params.vy_max : params.v_max;
     double omega_max = params.omega_max;
     return std::make_unique<SwerveDriveModel>(vx_min, vx_max, vy_max, omega_max);
   }

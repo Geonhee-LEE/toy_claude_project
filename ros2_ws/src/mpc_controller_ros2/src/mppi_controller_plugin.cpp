@@ -116,8 +116,9 @@ void MPPIControllerPlugin::configure(
         u_max << params_.v_max, params_.omega_max,  params_.max_steering_rate;
       } else if (nu_dim >= 3) {
         // Swerve: [vx, vy, omega]
-        u_min << params_.v_min, -params_.v_max, params_.omega_min;
-        u_max << params_.v_max,  params_.v_max, params_.omega_max;
+        double effective_vy_max = (params_.vy_max > 0) ? params_.vy_max : params_.v_max;
+        u_min << params_.v_min, -effective_vy_max, params_.omega_min;
+        u_max << params_.v_max,  effective_vy_max, params_.omega_max;
       } else {
         // DiffDrive: [v, omega]
         u_min << params_.v_min, params_.omega_min;
@@ -131,6 +132,15 @@ void MPPIControllerPlugin::configure(
       "CBF enabled (gamma=%.2f, safety_margin=%.2f, cost_weight=%.0f, safety_filter=%s)",
       params_.cbf_gamma, params_.cbf_safety_margin, params_.cbf_cost_weight,
       params_.cbf_use_safety_filter ? "ON" : "OFF");
+  }
+
+  // VelocityTrackingCost 등록 (경로 방향 속도 추적)
+  if (params_.velocity_tracking_weight > 0.0) {
+    cost_function_->addCost(std::make_unique<VelocityTrackingCost>(
+      params_.velocity_tracking_weight, params_.reference_velocity, params_.dt));
+    RCLCPP_INFO(node_->get_logger(),
+      "VelocityTrackingCost enabled (weight=%.1f, ref_vel=%.2f m/s)",
+      params_.velocity_tracking_weight, params_.reference_velocity);
   }
 
   // Initialize control sequence (nu from model)
@@ -695,6 +705,25 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
     }
   }
 
+  // Reference theta smoothing (circular moving average)
+  if (params_.ref_theta_smooth_window >= 3) {
+    int half_w = params_.ref_theta_smooth_window / 2;
+    int num_pts = params_.N + 1;
+    std::vector<double> raw_theta(num_pts);
+    for (int t = 0; t < num_pts; ++t) raw_theta[t] = reference(t, 2);
+
+    for (int t = 0; t < num_pts; ++t) {
+      double sin_sum = 0.0, cos_sum = 0.0;
+      int lo = std::max(0, t - half_w);
+      int hi = std::min(num_pts - 1, t + half_w);
+      for (int j = lo; j <= hi; ++j) {
+        sin_sum += std::sin(raw_theta[j]);
+        cos_sum += std::cos(raw_theta[j]);
+      }
+      reference(t, 2) = std::atan2(sin_sum, cos_sum);
+    }
+  }
+
   return reference;
 }
 
@@ -1030,6 +1059,7 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "v_min", params_.v_min);
   node_->declare_parameter(prefix + "omega_max", params_.omega_max);
   node_->declare_parameter(prefix + "omega_min", params_.omega_min);
+  node_->declare_parameter(prefix + "vy_max", params_.vy_max);
 
   // Cost weights - Q
   node_->declare_parameter(prefix + "Q_x", params_.Q(0, 0));
@@ -1083,6 +1113,11 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "lookahead_dist", params_.lookahead_dist);
   node_->declare_parameter(prefix + "min_lookahead", params_.min_lookahead);
   node_->declare_parameter(prefix + "goal_slowdown_dist", params_.goal_slowdown_dist);
+  node_->declare_parameter(prefix + "ref_theta_smooth_window", params_.ref_theta_smooth_window);
+
+  // Velocity Tracking Cost
+  node_->declare_parameter(prefix + "velocity_tracking_weight", params_.velocity_tracking_weight);
+  node_->declare_parameter(prefix + "reference_velocity", params_.reference_velocity);
 
   // Phase 1: Colored Noise
   node_->declare_parameter(prefix + "colored_noise", params_.colored_noise);
@@ -1211,6 +1246,7 @@ void MPPIControllerPlugin::loadParameters()
   params_.v_min = node_->get_parameter(prefix + "v_min").as_double();
   params_.omega_max = node_->get_parameter(prefix + "omega_max").as_double();
   params_.omega_min = node_->get_parameter(prefix + "omega_min").as_double();
+  params_.vy_max = node_->get_parameter(prefix + "vy_max").as_double();
 
   // Cost weights - Q
   params_.Q(0, 0) = node_->get_parameter(prefix + "Q_x").as_double();
@@ -1276,6 +1312,11 @@ void MPPIControllerPlugin::loadParameters()
   params_.lookahead_dist = node_->get_parameter(prefix + "lookahead_dist").as_double();
   params_.min_lookahead = node_->get_parameter(prefix + "min_lookahead").as_double();
   params_.goal_slowdown_dist = node_->get_parameter(prefix + "goal_slowdown_dist").as_double();
+  params_.ref_theta_smooth_window = node_->get_parameter(prefix + "ref_theta_smooth_window").as_int();
+
+  // Velocity Tracking Cost
+  params_.velocity_tracking_weight = node_->get_parameter(prefix + "velocity_tracking_weight").as_double();
+  params_.reference_velocity = node_->get_parameter(prefix + "reference_velocity").as_double();
 
   // Phase 1: Colored Noise
   params_.colored_noise = node_->get_parameter(prefix + "colored_noise").as_bool();

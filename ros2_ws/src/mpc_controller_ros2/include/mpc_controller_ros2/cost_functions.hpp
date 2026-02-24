@@ -218,6 +218,31 @@ private:
 };
 
 /**
+ * @brief 경로 방향 속도 추적 비용
+ *
+ * cost = weight × Σ_t (v_along(t) - reference_velocity)²
+ * v_along = dot(path_tangent, world_velocity)
+ *
+ * 경로 방향으로의 전진 속도를 장려하여 crab motion 억제.
+ * nav2 MPPI의 PathAlignCritic + PathFollowCritic에 대응.
+ */
+class VelocityTrackingCost : public MPPICostFunction
+{
+public:
+  VelocityTrackingCost(double weight, double reference_velocity, double dt);
+  std::string name() const override { return "velocity_tracking"; }
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  double weight_;
+  double reference_velocity_;
+  double dt_;
+};
+
+/**
  * @brief 복합 비용 함수 (모든 비용 합산)
  */
 class CompositeMPPICost

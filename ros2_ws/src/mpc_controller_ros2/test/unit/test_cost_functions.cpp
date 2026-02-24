@@ -803,6 +803,103 @@ TEST_F(CostBreakdownTest, CostmapPerPointLethalValues)
   EXPECT_NEAR(per_point(0, 0), lethal_cost, 1e-9);
 }
 
+// ============================================================================
+// VelocityTrackingCost Tests
+// ============================================================================
+
+class VelocityTrackingCostTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    N_ = 5;
+    dt_ = 0.1;
+
+    // 직선 경로: x=0→0.5 (step=0.1), y=0, theta=0
+    reference_ = Eigen::MatrixXd::Zero(N_ + 1, 3);
+    for (int t = 0; t <= N_; ++t) {
+      reference_(t, 0) = t * 0.1;
+      reference_(t, 1) = 0.0;
+      reference_(t, 2) = 0.0;
+    }
+  }
+
+  int N_;
+  double dt_;
+  Eigen::MatrixXd reference_;
+};
+
+TEST_F(VelocityTrackingCostTest, PerfectTracking)
+{
+  // 궤적이 경로 방향으로 ref_vel=1.0 m/s로 이동
+  double ref_vel = 1.0;
+  VelocityTrackingCost cost(10.0, ref_vel, dt_);
+
+  // 궤적: 매 스텝 x += ref_vel * dt = 0.1
+  Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(N_ + 1, 3);
+  for (int t = 0; t <= N_; ++t) {
+    traj(t, 0) = t * ref_vel * dt_;
+  }
+
+  std::vector<Eigen::MatrixXd> trajs = {traj};
+  std::vector<Eigen::MatrixXd> ctrls = {Eigen::MatrixXd::Zero(N_, 2)};
+
+  auto costs = cost.compute(trajs, ctrls, reference_);
+  EXPECT_NEAR(costs(0), 0.0, 1e-6);
+}
+
+TEST_F(VelocityTrackingCostTest, SlowTrajectory)
+{
+  // 정지 궤적 → cost > 0
+  double ref_vel = 1.0;
+  VelocityTrackingCost cost(10.0, ref_vel, dt_);
+
+  Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(N_ + 1, 3);  // 정지
+  std::vector<Eigen::MatrixXd> trajs = {traj};
+  std::vector<Eigen::MatrixXd> ctrls = {Eigen::MatrixXd::Zero(N_, 2)};
+
+  auto costs = cost.compute(trajs, ctrls, reference_);
+  // cost = 10.0 * N * (0 - 1.0)^2 = 10.0 * 5 * 1.0 = 50.0
+  EXPECT_NEAR(costs(0), 50.0, 1e-6);
+}
+
+TEST_F(VelocityTrackingCostTest, LateralMotion)
+{
+  // y 방향으로만 이동 (경로는 x 방향) → 경로 방향 속도=0 → cost 높음
+  double ref_vel = 1.0;
+  VelocityTrackingCost cost(10.0, ref_vel, dt_);
+
+  Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(N_ + 1, 3);
+  for (int t = 0; t <= N_; ++t) {
+    traj(t, 1) = t * 0.1;  // y 방향 이동
+  }
+
+  std::vector<Eigen::MatrixXd> trajs = {traj};
+  std::vector<Eigen::MatrixXd> ctrls = {Eigen::MatrixXd::Zero(N_, 2)};
+
+  auto costs = cost.compute(trajs, ctrls, reference_);
+  // 접선=(1,0), 속도=(0,1) → v_along=0 → err=-1.0
+  EXPECT_NEAR(costs(0), 50.0, 1e-6);
+}
+
+TEST_F(VelocityTrackingCostTest, ZeroWeight)
+{
+  VelocityTrackingCost cost(0.0, 1.0, dt_);
+
+  Eigen::MatrixXd traj = Eigen::MatrixXd::Zero(N_ + 1, 3);
+  std::vector<Eigen::MatrixXd> trajs = {traj};
+  std::vector<Eigen::MatrixXd> ctrls = {Eigen::MatrixXd::Zero(N_, 2)};
+
+  auto costs = cost.compute(trajs, ctrls, reference_);
+  EXPECT_NEAR(costs(0), 0.0, 1e-10);
+}
+
+TEST_F(VelocityTrackingCostTest, NameIsCorrect)
+{
+  VelocityTrackingCost cost(10.0, 1.0, 0.1);
+  EXPECT_EQ(cost.name(), "velocity_tracking");
+}
+
 }  // namespace mpc_controller_ros2
 
 int main(int argc, char** argv)
