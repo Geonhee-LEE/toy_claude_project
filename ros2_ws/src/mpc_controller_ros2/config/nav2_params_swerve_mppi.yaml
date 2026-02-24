@@ -63,24 +63,25 @@ controller_server:
       omega_min: -2.0
 
       # State tracking cost weights (Q: x, y, theta)
+      # theta: 경로 접선 방향 추종 (nav2 orientation이 아닌 path tangent 사용)
       Q_x: 10.0
       Q_y: 10.0
-      Q_theta: 5.0     # 3→5 (Aoki angular_error=30, heading 추종 강화)
+      Q_theta: 15.0    # 5→15 (Aoki angular_error=30, heading=경로 접선 추종 핵심)
 
       # Terminal cost weights (Qf)
       Qf_x: 20.0
       Qf_y: 20.0
-      Qf_theta: 10.0   # 6→10 (terminal heading 보정)
+      Qf_theta: 20.0   # 10→20 (goal 도달 시 heading 정렬)
 
       # Control effort weights (R: vx, vy, omega)
-      R_v: 0.3
-      R_vy: 0.5       # 1.0→0.5 (lateral 사용 덜 억제 → 홀로노믹 활용)
-      R_omega: 0.5     # 0.8→0.5 (회전 덜 억제)
+      R_v: 0.1         # 0.3→0.1 (전진 속도 덜 억제 → 더 빠르게 경로 추종)
+      R_vy: 1.0        # 0.5→1.0 (lateral 억제 → 전진 위주 모션 유도)
+      R_omega: 0.3     # 0.5→0.3 (회전 허용 → heading 정렬 촉진)
 
       # Control rate weights (R_rate: vx, vy, omega)
-      R_rate_v: 0.5
-      R_rate_vy: 0.5
-      R_rate_omega: 0.8   # 1.0→0.8
+      R_rate_v: 0.3    # 0.5→0.3
+      R_rate_vy: 0.8   # 0.5→0.8 (lateral 변화 억제 → 오실레이션 감소)
+      R_rate_omega: 1.0 # 0.8→1.0 (omega 급변 억제)
 
       # Obstacle avoidance — 단일 costmap 비용으로 통합 (3중 페널티 제거)
       obstacle_weight: 0.0         # 300→0 (costmap cost로 통합)
