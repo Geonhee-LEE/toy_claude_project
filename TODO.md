@@ -53,6 +53,19 @@
 
 ## ✅ Completed
 
+### 2026-02-25
+- [x] #112 Swerve MPPI 모션 품질 개선 (PR #113)
+  * P1: Reference theta circular moving average (ref_theta_smooth_window=5)
+    - atan2 양자화 노이즈를 Q_theta=15가 증폭 → heading 진동 해소
+    - pathToReferenceTrajectory() return 직전 스무딩 적용
+  * P2: vy_max 파라미터 분리 (swerve: 0.5 m/s, 기존 v_max=1.5 공유)
+    - vy_max<0 → v_max 사용 (하위호환)
+    - MotionModelFactory + CBF safety filter bounds 반영
+  * P3: VelocityTrackingCost (weight=10, ref_vel=1.0 m/s)
+    - 경로 접선 방향 속도 추적 비용 (v_along - ref_velocity)²
+    - nav2 MPPI PathAlignCritic + PathFollowCritic에 대응
+  * 테스트: 219 gtest 통과 (+8 신규: VyMax 3 + VelocityTracking 5)
+
 ### 2026-02-22 (GPU 가속)
 - [x] #63 MPPI GPU 가속 — JAX JIT + lax.scan + vmap (PR #103)
   * JAX 기반 GPU 가속: rollout (~65%) + cost (~25%) 핵심 병목 해결
@@ -287,6 +300,7 @@
 
 - 강화학습 기반 MPC 튜닝
 - ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~, ~~M3.5 C++ 완료~~, ~~MotionModel 추상화 완료~~
+- ~~Swerve 모션 품질 개선~~ → theta smoothing + vy_max + velocity tracking (PR #113)
 - 실제 로봇 테스트 환경 구축
 - 슬립 모델 적용
 - 적응형 MPC 가중치 튜닝

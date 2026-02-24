@@ -48,6 +48,7 @@ mpc_controller/
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
 - MPPI-CBF 통합 (Python + C++): 완료
 - 궤적 안정화 (SG Filter + IT 정규화): 완료
+- Swerve 모션 품질 개선 (theta smoothing + vy_max + velocity tracking): 완료 (PR #113)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
