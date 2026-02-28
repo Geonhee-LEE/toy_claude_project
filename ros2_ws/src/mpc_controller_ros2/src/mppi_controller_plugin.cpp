@@ -679,7 +679,7 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
     }
 
     if (path_idx >= path_size - 1) {
-      // 경로 끝 도달: 마지막 점 반복
+      // 경로 끝 도달: 마지막 점 반복 (goal orientation 사용)
       reference(t, 0) = path.poses[path_size - 1].pose.position.x;
       reference(t, 1) = path.poses[path_size - 1].pose.position.y;
       reference(t, 2) = quaternionToYaw(path.poses[path_size - 1].pose.orientation);
@@ -689,15 +689,25 @@ Eigen::MatrixXd MPPIControllerPlugin::pathToReferenceTrajectory(
       double alpha = (seg_len > 1e-6) ?
         (target_arc - arc_lengths[path_idx]) / seg_len : 0.0;
 
-      reference(t, 0) = (1.0 - alpha) * path.poses[path_idx].pose.position.x +
+      double x_interp = (1.0 - alpha) * path.poses[path_idx].pose.position.x +
                         alpha * path.poses[path_idx + 1].pose.position.x;
-      reference(t, 1) = (1.0 - alpha) * path.poses[path_idx].pose.position.y +
+      double y_interp = (1.0 - alpha) * path.poses[path_idx].pose.position.y +
                         alpha * path.poses[path_idx + 1].pose.position.y;
+      reference(t, 0) = x_interp;
+      reference(t, 1) = y_interp;
 
-      double theta_lower = quaternionToYaw(path.poses[path_idx].pose.orientation);
-      double theta_upper = quaternionToYaw(path.poses[path_idx + 1].pose.orientation);
-      double theta_diff = normalizeAngle(theta_upper - theta_lower);
-      reference(t, 2) = normalizeAngle(theta_lower + alpha * theta_diff);
+      // 경로 접선 방향을 theta로 사용 (nav2 planner orientation은 goal 고정이므로)
+      double dx = path.poses[path_idx + 1].pose.position.x
+                - path.poses[path_idx].pose.position.x;
+      double dy = path.poses[path_idx + 1].pose.position.y
+                - path.poses[path_idx].pose.position.y;
+      double tangent_len = std::sqrt(dx * dx + dy * dy);
+      if (tangent_len > 1e-6) {
+        reference(t, 2) = std::atan2(dy, dx);
+      } else {
+        // 정지 구간: 이전 스텝의 heading 유지
+        reference(t, 2) = (t > 0) ? reference(t - 1, 2) : 0.0;
+      }
     }
   }
 
