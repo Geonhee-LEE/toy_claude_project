@@ -34,6 +34,7 @@ from mpc_controller.controllers.mppi.gpu_sampling import (
     colored_noise_sample_jit,
 )
 from mpc_controller.controllers.mppi.gpu_backend import to_jax, to_numpy
+from mpc_controller.controllers.mppi.gpu_weights import vanilla_softmax_weights
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class GPUMPPIKernel:
         model_name: str = "diff_drive",
         use_float32: bool = False,
         warmup: bool = True,
+        weight_fn=None,
     ):
         self.N = N
         self.K = K
@@ -91,6 +93,9 @@ class GPUMPPIKernel:
             to_jax(r_rate_diag).astype(dtype) if r_rate_diag is not None else None
         )
         self._dtype = dtype
+
+        # 가중치 함수 (변형별 Strategy 주입)
+        self._weight_fn = weight_fn or vanilla_softmax_weights
 
         # PRNG key 초기화
         self._rng_key = random.PRNGKey(42)
@@ -202,11 +207,8 @@ class GPUMPPIKernel:
 
         costs = self._cost_fn(trajectories, perturbed, reference, cost_params)
 
-        # 6. Softmax 가중치
-        shifted = -costs / self.lambda_
-        shifted = shifted - jnp.max(shifted)
-        exp_vals = jnp.exp(shifted)
-        weights = exp_vals / jnp.sum(exp_vals)
+        # 6. 가중치 계산 (변형별 Strategy)
+        weights = self._weight_fn(costs, self.lambda_)
 
         # 7. 가중 평균으로 제어열 업데이트
         weighted_noise = weights[:, None, None] * noise  # (K, N, nu)
@@ -233,6 +235,171 @@ class GPUMPPIKernel:
         }
 
         return U_new, info
+
+    def smooth_mppi_step(self, x0, DU, u_prev, reference, r_jerk, jerk_weight):
+        """Smooth-MPPI 1스텝 (GPU): Δu space 최적화.
+
+        Args:
+            x0: (nx,) 현재 상태
+            DU: (N, nu) 현재 Δu 시퀀스
+            u_prev: (nu,) 이전 적용 제어 (cumsum 기준점)
+            reference: (N+1, nx) 참조 궤적
+            r_jerk: (nu,) jerk 가중치
+            jerk_weight: 전체 스케일
+
+        Returns:
+            (DU_new, info_dict)
+        """
+        from mpc_controller.controllers.mppi.gpu_costs import jerk_cost_jit
+
+        K = self.K
+        N = self.N
+        nu = self.nu
+
+        # 1. PRNG key 분할
+        self._rng_key, subkey = random.split(self._rng_key)
+
+        # 2. Δu space 노이즈 샘플링
+        if self._colored_noise:
+            noise = colored_noise_sample_jit(
+                subkey, K, N, nu, self._sigma, self._noise_beta
+            )
+        else:
+            noise = gaussian_sample_jit(subkey, K, N, nu, self._sigma)
+        noise = noise.astype(self._dtype)
+
+        # 3. perturbed Δu
+        perturbed_du = DU[None, :, :] + noise  # (K, N, nu)
+
+        # 4. cumsum으로 u 시퀀스 복원: u[t] = u_prev + Σ Δu
+        u_sequences = u_prev[None, None, :] + jnp.cumsum(perturbed_du, axis=1)
+
+        # 5. 클리핑
+        u_sequences = clip_controls_jit(u_sequences, self._max_velocity, self._max_omega)
+
+        # 6. 배치 rollout
+        trajectories = self._rollout_fn(x0, u_sequences)
+
+        # 7. 비용 계산 (기본 cost)
+        cost_params = {
+            "q_diag": self._q_diag,
+            "qf_diag": self._qf_diag,
+            "r_diag": self._r_diag,
+        }
+        if self._has_r_rate:
+            cost_params["r_rate_diag"] = self._r_rate_diag
+        if self._has_obstacles and self._obstacles is not None:
+            cost_params["obstacles"] = self._obstacles
+            cost_params["obs_weight"] = self._obs_weight
+            cost_params["safety_margin"] = self._safety_margin
+
+        costs = self._cost_fn(trajectories, u_sequences, reference, cost_params)
+
+        # 8. jerk cost 추가
+        if jerk_weight > 0 and N > 1:
+            costs = costs + jerk_cost_jit(perturbed_du, r_jerk, jerk_weight)
+
+        # 9. 가중치 계산
+        weights = self._weight_fn(costs, self.lambda_)
+
+        # 10. Δu space 가중 평균 업데이트
+        weighted_noise = weights[:, None, None] * noise
+        DU_new = DU + jnp.sum(weighted_noise, axis=0)
+
+        # info dict
+        best_idx = jnp.argmin(costs)
+        weighted_traj = jnp.sum(weights[:, None, None] * trajectories, axis=0)
+        ess = 1.0 / jnp.sum(weights ** 2)
+
+        info = {
+            "trajectories": trajectories,
+            "costs": costs,
+            "weights": weights,
+            "best_idx": best_idx,
+            "best_trajectory": trajectories[best_idx],
+            "weighted_trajectory": weighted_traj,
+            "ess": ess,
+        }
+
+        return DU_new, info
+
+    def spline_mppi_step(self, x0, U_knots, reference, basis, knot_sigma):
+        """Spline-MPPI 1스텝 (GPU): knot space 최적화.
+
+        Args:
+            x0: (nx,) 현재 상태
+            U_knots: (P, nu) 현재 knot 시퀀스
+            reference: (N+1, nx) 참조 궤적
+            basis: (N, P) B-spline basis matrix
+            knot_sigma: (nu,) knot 노이즈 표준편차
+
+        Returns:
+            (U_knots_new, info_dict)
+        """
+        K = self.K
+        N = self.N
+        nu = self.nu
+        P = U_knots.shape[0]
+
+        # 1. PRNG key 분할
+        self._rng_key, subkey = random.split(self._rng_key)
+
+        # 2. knot space 노이즈 (K, P, nu)
+        knot_noise = random.normal(subkey, shape=(K, P, nu), dtype=self._dtype)
+        knot_noise = knot_noise * knot_sigma[None, None, :]
+
+        # 3. perturbed knots
+        perturbed_knots = U_knots[None, :, :] + knot_noise  # (K, P, nu)
+
+        # 4. B-spline 보간: (N, P) @ (K, P, nu) → (K, N, nu)
+        perturbed_controls = jnp.einsum("np,kpd->knd", basis, perturbed_knots)
+
+        # 5. 클리핑
+        perturbed_controls = clip_controls_jit(
+            perturbed_controls, self._max_velocity, self._max_omega
+        )
+
+        # 6. 배치 rollout
+        trajectories = self._rollout_fn(x0, perturbed_controls)
+
+        # 7. 비용 계산
+        cost_params = {
+            "q_diag": self._q_diag,
+            "qf_diag": self._qf_diag,
+            "r_diag": self._r_diag,
+        }
+        if self._has_r_rate:
+            cost_params["r_rate_diag"] = self._r_rate_diag
+        if self._has_obstacles and self._obstacles is not None:
+            cost_params["obstacles"] = self._obstacles
+            cost_params["obs_weight"] = self._obs_weight
+            cost_params["safety_margin"] = self._safety_margin
+
+        costs = self._cost_fn(trajectories, perturbed_controls, reference, cost_params)
+
+        # 8. 가중치 계산
+        weights = self._weight_fn(costs, self.lambda_)
+
+        # 9. knot space 가중 평균 업데이트
+        weighted_noise = weights[:, None, None] * knot_noise
+        U_knots_new = U_knots + jnp.sum(weighted_noise, axis=0)
+
+        # info dict
+        best_idx = jnp.argmin(costs)
+        weighted_traj = jnp.sum(weights[:, None, None] * trajectories, axis=0)
+        ess = 1.0 / jnp.sum(weights ** 2)
+
+        info = {
+            "trajectories": trajectories,
+            "costs": costs,
+            "weights": weights,
+            "best_idx": best_idx,
+            "best_trajectory": trajectories[best_idx],
+            "weighted_trajectory": weighted_traj,
+            "ess": ess,
+        }
+
+        return U_knots_new, info
 
     def update_lambda(self, lambda_: float):
         """온도 파라미터 업데이트."""

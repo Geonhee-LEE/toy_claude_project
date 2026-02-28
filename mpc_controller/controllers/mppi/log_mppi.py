@@ -39,3 +39,8 @@ class LogMPPIController(MPPIController):
         log_weights = -costs / lambda_
         log_weights -= log_sum_exp(log_weights)  # log-space 정규화
         return np.exp(log_weights)
+
+    def _get_gpu_weight_fn(self):
+        """GPU log-softmax 가중치 함수."""
+        from mpc_controller.controllers.mppi.gpu_weights import log_softmax_weights
+        return log_softmax_weights

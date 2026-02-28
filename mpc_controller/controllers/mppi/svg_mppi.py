@@ -45,6 +45,182 @@ class SVGMPPIController(SteinVariationalMPPIController):
     G << K로 SVGD 계산량을 줄이면서 다중 모드 탐색 능력 유지.
     """
 
+    def _compute_control_gpu(
+        self,
+        current_state: np.ndarray,
+        reference_trajectory: np.ndarray,
+    ) -> Tuple[np.ndarray, dict]:
+        """GPU 경로: Guide particle SVGD + follower resampling."""
+        from mpc_controller.controllers.mppi.gpu_backend import to_numpy, to_jax
+        from mpc_controller.controllers.mppi.gpu_svgd import (
+            svgd_step_jit,
+            median_bandwidth_jit,
+            compute_diversity_jit,
+        )
+        from mpc_controller.controllers.mppi.gpu_weights import vanilla_softmax_weights
+        from mpc_controller.controllers.mppi.gpu_dynamics import clip_controls_jit
+        from mpc_controller.controllers.mppi.gpu_sampling import gaussian_sample_jit
+        from jax import random
+        import jax.numpy as jnp
+
+        G = self.params.svg_num_guide_particles
+        K = self.params.K
+        L = self.params.svg_guide_iterations
+
+        solve_start = time.perf_counter()
+        N = self.params.N
+        nu = self.dynamics.nu
+        D = N * nu
+
+        # shift
+        self.U[:-1] = self.U[1:]
+        self.U[-1] = 0.0
+
+        # CPU → GPU
+        x0_jax = self._to_jax(current_state)
+        U_jax = self._to_jax(self.U)
+        ref_jax = self._to_jax(reference_trajectory)
+
+        current_lambda = self._get_current_lambda()
+        kernel = self._gpu_kernel
+        kernel.update_lambda(current_lambda)
+
+        # Phase 1: 전체 K개 샘플링
+        kernel._rng_key, subkey = random.split(kernel._rng_key)
+        noise = gaussian_sample_jit(subkey, K, N, nu, kernel._sigma)
+        noise = noise.astype(kernel._dtype)
+
+        perturbed = U_jax[None, :, :] + noise
+        perturbed = clip_controls_jit(perturbed, kernel._max_velocity, kernel._max_omega)
+
+        trajectories = kernel._rollout_fn(x0_jax, perturbed)
+
+        cost_params = {"q_diag": kernel._q_diag, "qf_diag": kernel._qf_diag, "r_diag": kernel._r_diag}
+        if kernel._has_r_rate:
+            cost_params["r_rate_diag"] = kernel._r_rate_diag
+        if kernel._has_obstacles and kernel._obstacles is not None:
+            cost_params["obstacles"] = kernel._obstacles
+            cost_params["obs_weight"] = kernel._obs_weight
+            cost_params["safety_margin"] = kernel._safety_margin
+
+        costs = kernel._cost_fn(trajectories, perturbed, ref_jax, cost_params)
+
+        # Phase 2: Guide particle 선택
+        G = min(G, K)
+        costs_np = to_numpy(costs)
+        guide_idx = np.argpartition(costs_np, G)[:G]
+        guide_idx_jax = jnp.array(guide_idx)
+
+        guide_particles = perturbed[guide_idx_jax].reshape(G, D)
+        guide_costs = costs[guide_idx_jax]
+
+        diversity_before = float(to_numpy(compute_diversity_jit(guide_particles)))
+
+        # Phase 3: SVGD on guides (G×G)
+        step_size = self.params.svg_guide_step_size
+
+        for svgd_iter in range(L):
+            guide_weights = vanilla_softmax_weights(guide_costs, kernel.lambda_)
+
+            if self.params.svgd_bandwidth is not None:
+                h = self.params.svgd_bandwidth
+            else:
+                h = float(to_numpy(median_bandwidth_jit(guide_particles)))
+
+            guide_particles = svgd_step_jit(
+                guide_particles, guide_weights, h, step_size
+            )
+
+            guide_controls = guide_particles.reshape(G, N, nu)
+            guide_controls = clip_controls_jit(guide_controls, kernel._max_velocity, kernel._max_omega)
+            guide_particles = guide_controls.reshape(G, D)
+
+            guide_trajs = kernel._rollout_fn(x0_jax, guide_controls)
+            guide_costs = kernel._cost_fn(guide_trajs, guide_controls, ref_jax, cost_params)
+
+        diversity_after = float(to_numpy(compute_diversity_jit(guide_particles)))
+
+        # Phase 4: Follower resampling
+        guide_controls = guide_particles.reshape(G, N, nu)
+        n_followers = K - G
+        followers_per_guide = max(1, n_followers // G)
+        resample_std = self.params.svg_resample_std
+
+        all_controls_list = [guide_controls]
+        for g in range(G):
+            n_f = followers_per_guide if g < G - 1 else (n_followers - followers_per_guide * (G - 1))
+            if n_f <= 0:
+                continue
+            kernel._rng_key, subkey = random.split(kernel._rng_key)
+            f_noise = gaussian_sample_jit(subkey, n_f, N, nu, kernel._sigma) * resample_std
+            follower = guide_controls[g:g+1, :, :] + f_noise
+            follower = clip_controls_jit(follower, kernel._max_velocity, kernel._max_omega)
+            all_controls_list.append(follower)
+
+        all_controls = jnp.concatenate(all_controls_list, axis=0)
+        K_total = all_controls.shape[0]
+
+        # Phase 5: 전체 rollout & weight
+        all_trajectories = kernel._rollout_fn(x0_jax, all_controls)
+        all_costs = kernel._cost_fn(all_trajectories, all_controls, ref_jax, cost_params)
+        weights = kernel._weight_fn(all_costs, kernel.lambda_)
+
+        effective_noise = all_controls - U_jax[None, :, :]
+        weighted_noise = weights[:, None, None] * effective_noise
+        U_new = U_jax + jnp.sum(weighted_noise, axis=0)
+        U_new = clip_controls_jit(U_new[None, :, :], kernel._max_velocity, kernel._max_omega)[0]
+
+        # GPU → CPU
+        self.U = to_numpy(U_new)
+        u_opt = self.U[0].copy()
+        solve_time = time.perf_counter() - solve_start
+
+        all_costs_np = to_numpy(all_costs)
+        weights_np = to_numpy(weights)
+        all_traj_np = to_numpy(all_trajectories)
+        best_idx = int(np.argmin(all_costs_np))
+        ess = float(1.0 / np.sum(weights_np ** 2))
+        weighted_traj = to_numpy(jnp.sum(weights[:, None, None] * all_trajectories, axis=0))
+        guide_costs_np = to_numpy(guide_costs)
+
+        if self._adaptive_temp is not None:
+            current_lambda = self._adaptive_temp.update(ess, K_total)
+
+        self._iteration_count += 1
+        logger.info(
+            f"SVG-MPPI-GPU iteration {self._iteration_count}: "
+            f"solve_time={solve_time*1000:.2f}ms, "
+            f"min_cost={all_costs_np[best_idx]:.4f}, "
+            f"guides={G}, followers={n_followers}, "
+            f"diversity={diversity_before:.4f}→{diversity_after:.4f}, "
+            f"ESS={ess:.1f}/{K_total}"
+        )
+
+        info = {
+            "predicted_trajectory": weighted_traj,
+            "predicted_controls": self.U.copy(),
+            "cost": float(all_costs_np[best_idx]),
+            "mean_cost": float(np.mean(all_costs_np)),
+            "solve_time": solve_time,
+            "solver_status": "optimal",
+            "sample_trajectories": all_traj_np,
+            "sample_weights": weights_np,
+            "sample_costs": all_costs_np,
+            "best_trajectory": all_traj_np[best_idx],
+            "best_index": best_idx,
+            "ess": ess,
+            "temperature": current_lambda,
+            "num_guides": G,
+            "num_followers": n_followers,
+            "guide_iterations": L,
+            "guide_diversity_before": diversity_before,
+            "guide_diversity_after": diversity_after,
+            "guide_costs": guide_costs_np.copy(),
+            "backend": "gpu",
+        }
+
+        return u_opt, info
+
     def compute_control(
         self,
         current_state: np.ndarray,
@@ -58,6 +234,10 @@ class SVGMPPIController(SteinVariationalMPPIController):
         # G=0 또는 L=0이면 Vanilla fallback
         if G <= 0 or L <= 0:
             return MPPIController_compute_control(self, current_state, reference_trajectory)
+
+        # GPU 분기
+        if self._use_gpu:
+            return self._compute_control_gpu(current_state, reference_trajectory)
 
         solve_start = time.perf_counter()
 

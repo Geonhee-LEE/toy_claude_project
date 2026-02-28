@@ -113,6 +113,14 @@ class SplineMPPIController(MPPIController):
         seed: Optional[int] = None,
         obstacles: Optional[np.ndarray] = None,
     ):
+        # GPU 초기화를 지연시키기 위해 use_gpu를 임시 비활성화
+        _use_gpu = mppi_params.use_gpu if mppi_params else False
+        if mppi_params and mppi_params.use_gpu:
+            mppi_params = MPPIParams(**{
+                f.name: getattr(mppi_params, f.name) for f in mppi_params.__dataclass_fields__.values()
+            })
+            mppi_params.use_gpu = False
+
         super().__init__(robot_params, mppi_params, seed, obstacles)
 
         self._P = self.params.spline_num_knots
@@ -144,12 +152,117 @@ class SplineMPPIController(MPPIController):
             seed + 1000 if seed is not None else None
         )
 
+        # 지연된 GPU 초기화
+        if _use_gpu:
+            self.params.use_gpu = True
+            from mpc_controller.controllers.mppi.gpu_backend import is_jax_available
+            if is_jax_available():
+                self._use_gpu = True
+                self._init_gpu()
+            else:
+                logger.warning("use_gpu=True but JAX not available. Falling back to CPU.")
+
+    def _init_gpu(self):
+        """GPU 커널 초기화 (Spline-MPPI용 JAX 배열 추가 준비)."""
+        super()._init_gpu()
+        from mpc_controller.controllers.mppi.gpu_backend import to_jax
+        self._basis_jax = to_jax(self._basis)
+        self._knot_sigma_jax = to_jax(self._knot_sigma)
+
+    def _compute_control_gpu(
+        self,
+        current_state: np.ndarray,
+        reference_trajectory: np.ndarray,
+    ) -> Tuple[np.ndarray, dict]:
+        """GPU 경로: Spline-MPPI knot space 최적화."""
+        from mpc_controller.controllers.mppi.gpu_backend import to_numpy
+
+        solve_start = time.perf_counter()
+
+        # 1. Warm-start: LS 재투영
+        U_shifted = self.U.copy()
+        U_shifted[:-1] = U_shifted[1:]
+        U_shifted[-1] = 0.0
+        self.U_knots = self._basis_pinv @ U_shifted
+
+        # 2. CPU → GPU
+        x0_jax = self._to_jax(current_state)
+        U_knots_jax = self._to_jax(self.U_knots)
+        ref_jax = self._to_jax(reference_trajectory)
+
+        # Adaptive temperature
+        current_lambda = self._get_current_lambda()
+        self._gpu_kernel.update_lambda(current_lambda)
+
+        # 3. GPU spline_mppi_step
+        U_knots_new_jax, gpu_info = self._gpu_kernel.spline_mppi_step(
+            x0_jax, U_knots_jax, ref_jax,
+            self._basis_jax, self._knot_sigma_jax,
+        )
+
+        # 4. GPU → CPU
+        self.U_knots = to_numpy(U_knots_new_jax)
+        self.U = self._basis @ self.U_knots
+        self.U = self.dynamics.clip_controls(self.U[np.newaxis, :, :])[0]
+
+        u_opt = self.U[0].copy()
+        solve_time = time.perf_counter() - solve_start
+
+        # info 변환
+        costs = to_numpy(gpu_info["costs"])
+        weights = to_numpy(gpu_info["weights"])
+        trajectories = to_numpy(gpu_info["trajectories"])
+        best_idx = int(to_numpy(gpu_info["best_idx"]))
+        ess = float(to_numpy(gpu_info["ess"]))
+        weighted_traj = to_numpy(gpu_info["weighted_trajectory"])
+
+        if self._adaptive_temp is not None:
+            current_lambda = self._adaptive_temp.update(ess, self.params.K)
+
+        du = np.diff(self.U, axis=0)
+        control_rate = float(np.mean(np.abs(du))) if len(du) > 0 else 0.0
+
+        self._iteration_count += 1
+        logger.info(
+            f"Spline-MPPI-GPU iteration {self._iteration_count}: "
+            f"solve_time={solve_time*1000:.2f}ms, "
+            f"min_cost={costs[best_idx]:.4f}, "
+            f"knots={self._P}, control_rate={control_rate:.4f}, "
+            f"ESS={ess:.1f}/{self.params.K}"
+        )
+
+        info = {
+            "predicted_trajectory": weighted_traj,
+            "predicted_controls": self.U.copy(),
+            "cost": float(costs[best_idx]),
+            "mean_cost": float(np.mean(costs)),
+            "solve_time": solve_time,
+            "solver_status": "optimal",
+            "sample_trajectories": trajectories,
+            "sample_weights": weights,
+            "sample_costs": costs,
+            "best_trajectory": trajectories[best_idx],
+            "best_index": best_idx,
+            "ess": ess,
+            "temperature": current_lambda,
+            "knot_controls": self.U_knots.copy(),
+            "spline_basis": self._basis,
+            "num_knots": self._P,
+            "control_rate": control_rate,
+            "backend": "gpu",
+        }
+
+        return u_opt, info
+
     def compute_control(
         self,
         current_state: np.ndarray,
         reference_trajectory: np.ndarray,
     ) -> Tuple[np.ndarray, dict]:
         """Knot space에서 최적화 후 B-spline 보간."""
+        if self._use_gpu:
+            return self._compute_control_gpu(current_state, reference_trajectory)
+
         solve_start = time.perf_counter()
 
         N = self.params.N
