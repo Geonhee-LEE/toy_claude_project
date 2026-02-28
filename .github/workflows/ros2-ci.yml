@@ -38,7 +38,10 @@ jobs:
             ros-jazzy-tf2-geometry-msgs \
             ros-jazzy-pluginlib \
             ros-jazzy-ament-cmake-gtest \
-            ros-jazzy-ament-lint-auto
+            ros-jazzy-ament-lint-auto \
+            ros-jazzy-pybind11-vendor \
+            python3-numpy \
+            python3-pytest
           rm -rf /var/lib/apt/lists/*
 
       - name: Build
@@ -59,6 +62,14 @@ jobs:
             --event-handlers console_cohesion+ \
             --ctest-args -R "^test_" --exclude-regex "test_mpc_controller_node" \
             --return-code-on-test-failure
+
+      - name: Run Python binding tests
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          source install/setup.bash
+          python3 -m pytest src/mpc_controller_ros2/test/python/ -v \
+            --override-ini="addopts="
 
       - name: Show test results
         if: always()
