@@ -52,6 +52,8 @@ mpc_controller/
 - MPPI-CBF 통합 (Python + C++): 완료
 - 궤적 안정화 (SG Filter + IT 정규화): 완료
 - Swerve 모션 품질 개선 (theta smoothing + vy_max + velocity tracking): 완료 (PR #113)
+- pybind11 Python 바인딩 (C++ MPPI 코어 Python 노출): 완료 (PR #115)
+- Python vs C++ MPPI 벤치마크 스위트: 완료 (PR #117)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
