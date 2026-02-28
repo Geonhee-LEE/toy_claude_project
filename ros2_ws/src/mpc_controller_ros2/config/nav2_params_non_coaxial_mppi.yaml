@@ -57,6 +57,7 @@ controller_server:
       v_min: -0.1        # 후진 거의 차단 (-0.5 → -0.1)
       omega_max: 2.0
       omega_min: -2.0
+      vy_max: -1.0     # 기본값 (non_coaxial은 vy 없음, v_max 사용)
 
       # Non-Coaxial 전용 스티어링 한계
       max_steering_rate: 2.0     # rad/s
@@ -98,6 +99,11 @@ controller_server:
       lookahead_dist: 1.5   # 고정 lookahead (0=auto=v_max*N*dt=4.5, 너무 긺)
       min_lookahead: 0.5
       goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5  # Reference theta 양자화 노이즈 제거 (circular MA)
+
+      # Velocity Tracking Cost (경로 방향 속도 추적)
+      velocity_tracking_weight: 0.0    # non_coaxial은 기본 비활성화 (비홀로노믹)
+      reference_velocity: 1.0          # 목표 경로 방향 속도 (m/s)
 
       # Forward preference
       prefer_forward_weight: 10.0   # 후진 페널티 강화 (5.0 → 10.0)

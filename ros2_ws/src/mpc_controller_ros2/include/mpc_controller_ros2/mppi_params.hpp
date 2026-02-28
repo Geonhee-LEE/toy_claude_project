@@ -48,6 +48,7 @@ struct MPPIParams
   double v_min{0.0};      // 최소 선속도 (m/s), 0.0=후진 차단
   double omega_max{1.0};  // 최대 각속도 (rad/s)
   double omega_min{-1.0}; // 최소 각속도 (rad/s)
+  double vy_max{-1.0};    // 최대 횡방향 속도 (swerve), <0이면 v_max 사용 (하위호환)
 
   // Obstacle avoidance
   double obstacle_weight{100.0};    // 장애물 회피 가중치
@@ -163,6 +164,11 @@ struct MPPIParams
   double lookahead_dist{0.0};           // 0 = auto (v_max * N * dt)
   double min_lookahead{0.5};            // 최소 lookahead 거리 (goal 근처 수렴 보장)
   double goal_slowdown_dist{1.0};       // 목표 근처 감속 시작 거리 (m)
+  int ref_theta_smooth_window{0};       // Reference theta 스무딩 윈도우 (0=OFF, 홀수 권장: 3,5,7)
+
+  // Velocity Tracking Cost (경로 방향 속도 추적)
+  double velocity_tracking_weight{0.0};  // 0=비활성화 (하위호환)
+  double reference_velocity{1.0};        // 목표 경로 방향 속도 (m/s)
 
   // ============================================================================
   // Collision Debug Visualization (기본 OFF — 성능 오버헤드 0)

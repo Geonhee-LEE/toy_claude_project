@@ -579,6 +579,54 @@ TEST(MotionModelFactoryTest, InvalidType)
 }
 
 // ============================================================================
+// vy_max 파라미터 분리 테스트
+// ============================================================================
+
+TEST(VyMaxTest, ClipControlsRespectsVyMax)
+{
+  // vy_max=0.5 → vy ∈ [-0.5, 0.5]로 클리핑
+  auto model = std::make_unique<SwerveDriveModel>(-1.5, 1.5, 0.5, 2.0);
+
+  Eigen::MatrixXd controls(3, 3);
+  controls << 1.0, 1.0, 0.0,    // vy=1.0 → 0.5
+              0.5, -0.3, 0.0,   // vy=-0.3 → 유지
+              0.0, -1.0, 0.0;   // vy=-1.0 → -0.5
+
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 1), 0.5, 1e-10);   // clamped to vy_max
+  EXPECT_NEAR(clipped(1, 1), -0.3, 1e-10);  // within range
+  EXPECT_NEAR(clipped(2, 1), -0.5, 1e-10);  // clamped to -vy_max
+}
+
+TEST(VyMaxTest, FactoryUsesVyMaxParam)
+{
+  MPPIParams params;
+  params.v_max = 1.5;
+  params.vy_max = 0.5;  // 명시적 vy_max 설정
+  auto model = MotionModelFactory::create("swerve", params);
+
+  // vy=1.0 → 0.5로 클리핑 확인
+  Eigen::MatrixXd controls(1, 3);
+  controls << 0.0, 1.0, 0.0;
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 1), 0.5, 1e-10);
+}
+
+TEST(VyMaxTest, DefaultFallbackToVmax)
+{
+  MPPIParams params;
+  params.v_max = 1.5;
+  params.vy_max = -1.0;  // 음수 → v_max 사용
+  auto model = MotionModelFactory::create("swerve", params);
+
+  // vy=1.5 → 1.5 유지 (v_max 사용)
+  Eigen::MatrixXd controls(1, 3);
+  controls << 0.0, 1.5, 0.0;
+  auto clipped = model->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 1), 1.5, 1e-10);
+}
+
+// ============================================================================
 // Cross-Model Comparison: 동일 조건에서 DiffDrive vs Swerve 비교
 // ============================================================================
 

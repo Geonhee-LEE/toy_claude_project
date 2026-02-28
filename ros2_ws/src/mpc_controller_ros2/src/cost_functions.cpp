@@ -385,6 +385,69 @@ Eigen::VectorXd CBFCost::compute(
   return costs;
 }
 
+// VelocityTrackingCost
+VelocityTrackingCost::VelocityTrackingCost(double weight, double reference_velocity, double dt)
+: weight_(weight), reference_velocity_(reference_velocity), dt_(dt)
+{
+}
+
+Eigen::VectorXd VelocityTrackingCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)controls;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (weight_ <= 0.0 || reference.rows() < 2) {
+    return costs;
+  }
+
+  int N = reference.rows() - 1;
+
+  // 경로 접선 벡터 사전 계산 (정규화)
+  std::vector<double> tx(N), ty(N);
+  for (int t = 0; t < N; ++t) {
+    double dx = reference(t + 1, 0) - reference(t, 0);
+    double dy = reference(t + 1, 1) - reference(t, 1);
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len > 1e-6) {
+      tx[t] = dx / len;
+      ty[t] = dy / len;
+    } else {
+      // 정지 구간: 이전 접선 유지
+      tx[t] = (t > 0) ? tx[t - 1] : 1.0;
+      ty[t] = (t > 0) ? ty[t - 1] : 0.0;
+    }
+  }
+
+  for (int k = 0; k < K; ++k) {
+    const auto& traj = trajectories[k];
+    int T = std::min(N, static_cast<int>(traj.rows()) - 1);
+    double cost = 0.0;
+
+    for (int t = 0; t < T; ++t) {
+      // World-frame 속도 (유한 차분)
+      double vel_x = (traj(t + 1, 0) - traj(t, 0)) / dt_;
+      double vel_y = (traj(t + 1, 1) - traj(t, 1)) / dt_;
+
+      // 경로 방향 속도 성분
+      double v_along = tx[t] * vel_x + ty[t] * vel_y;
+
+      // 추적 오차
+      double err = v_along - reference_velocity_;
+      cost += err * err;
+    }
+
+    costs(k) = weight_ * cost;
+  }
+
+  return costs;
+}
+
 // CompositeMPPICost
 void CompositeMPPICost::addCost(std::unique_ptr<MPPICostFunction> cost)
 {

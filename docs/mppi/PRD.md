@@ -164,6 +164,24 @@ MPPI 알고리즘 흐름:
 - **FR-64**: launch 분기 3개 (controller:=smooth/spline/svg)
 - **FR-65**: 단위 테스트 16개 (B-spline basis, cumsum, jerk cost, guide selection 등)
 
+### 2.8 Swerve 모션 품질 개선 (PR #113) ✅ 완료
+
+#### P1: Reference Theta Smoothing
+- **FR-66**: pathToReferenceTrajectory()에 circular moving average 적용
+- **FR-67**: ref_theta_smooth_window 파라미터 (0=OFF, 홀수 권장: 3,5,7)
+- atan2 양자화 노이즈 → Q_theta 증폭 → heading 진동 해소
+
+#### P2: vy_max 파라미터 분리
+- **FR-68**: MPPIParams.vy_max (음수=v_max 사용, 하위호환)
+- **FR-69**: MotionModelFactory + CBF safety filter bounds에 vy_max 반영
+- Swerve lateral crab motion 억제 (vy_max=0.5 vs v_max=1.5)
+
+#### P3: VelocityTrackingCost
+- **FR-70**: VelocityTrackingCost — 경로 접선 방향 속도 추적 비용
+- **FR-71**: cost = weight × Σ(v_along - ref_velocity)², 접선 내적 기반
+- **FR-72**: velocity_tracking_weight, reference_velocity 파라미터
+- nav2 MPPI PathAlignCritic + PathFollowCritic에 대응
+
 ### 2.7 비기능 요구사항
 
 - **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
@@ -270,7 +288,7 @@ ros2_ws/src/mpc_controller_ros2/
 │   ├── weight_computation.hpp             # Strategy 인터페이스 + 4종 구현
 │   ├── mppi_params.hpp                    # 파라미터 (M2+SOTA+SVGD)
 │   ├── batch_dynamics_wrapper.hpp         # 배치 동역학 (Eigen)
-│   ├── cost_functions.hpp                 # 비용 함수 모듈
+│   ├── cost_functions.hpp                 # 비용 함수 모듈 (VelocityTrackingCost 포함)
 │   ├── sampling.hpp                       # 노이즈 샘플러
 │   ├── adaptive_temperature.hpp           # ESS 기반 λ 자동 조정
 │   ├── tube_mppi.hpp                      # Tube-MPPI
@@ -300,7 +318,9 @@ ros2_ws/src/mpc_controller_ros2/
 └── test/unit/
     ├── test_weight_computation.cpp        # 30개 단위 테스트
     ├── test_svmpc.cpp                     # 13개 SVGD 테스트
-    └── test_m35_plugins.cpp              # 16개 M3.5 테스트
+    ├── test_m35_plugins.cpp              # 18개 M3.5 테스트
+    ├── test_cbf.cpp                      # 20개 CBF 테스트
+    └── test_trajectory_stability.cpp     # 25개 궤적 안정화 테스트
 ```
 
 ### Python 파일 구조
@@ -422,6 +442,11 @@ M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
 ├── ✅ Smooth-MPPI C++ 플러그인 (Δu input-lifting + jerk cost)
 ├── ✅ Spline-MPPI C++ 플러그인 (B-spline basis, de Boor 재귀)
 └── ✅ SVG-MPPI C++ 플러그인 (Guide particle SVGD + follower resampling)
+
+Swerve 모션 품질 ✅ 완료 (PR #113)
+├── ✅ Reference theta circular moving average (양자화 노이즈 제거)
+├── ✅ vy_max 파라미터 분리 (swerve vy 독립 제한)
+└── ✅ VelocityTrackingCost (경로 방향 속도 추적 비용)
 
 GPU 가속 ✅ 완료 (PR #103)
 ├── ✅ JAX JIT + lax.scan + vmap 기반 rollout + cost 병렬화

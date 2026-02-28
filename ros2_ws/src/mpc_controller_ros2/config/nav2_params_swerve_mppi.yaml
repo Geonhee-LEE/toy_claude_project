@@ -61,6 +61,7 @@ controller_server:
       v_min: -0.3    # -0.1→-0.3 (좁은 통로 빠져나오기 위해 후진 허용)
       omega_max: 2.0
       omega_min: -2.0
+      vy_max: 0.5     # lateral 속도 제한 (v_max 대비 1/3 → crab motion 억제)
 
       # State tracking cost weights (Q: x, y, theta)
       # theta: 경로 접선 방향 추종 (nav2 orientation이 아닌 path tangent 사용)
@@ -94,6 +95,11 @@ controller_server:
       lookahead_dist: 2.0          # 1.5→2.0 (N*dt=2s에 맞춤)
       min_lookahead: 0.5
       goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5  # Reference theta 양자화 노이즈 제거 (circular MA)
+
+      # Velocity Tracking Cost (경로 방향 속도 추적)
+      velocity_tracking_weight: 10.0   # 경로 방향 전진 인센티브
+      reference_velocity: 1.0          # 목표 경로 방향 속도 (m/s)
 
       # Forward preference
       prefer_forward_weight: 5.0          # 10→5 (과도한 후진 억제 완화)
