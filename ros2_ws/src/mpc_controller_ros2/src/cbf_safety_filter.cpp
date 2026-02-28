@@ -78,6 +78,8 @@ std::pair<Eigen::VectorXd, CBFFilterInfo> CBFSafetyFilter::filter(
   if (active_barriers.empty()) {
     info.filter_applied = false;
     info.qp_success = true;
+    info.u_mppi = u_mppi;
+    info.u_safe = u_mppi;
     return {u_mppi, info};
   }
 
@@ -93,6 +95,8 @@ std::pair<Eigen::VectorXd, CBFFilterInfo> CBFSafetyFilter::filter(
     }
     info.filter_applied = false;
     info.qp_success = true;
+    info.u_mppi = u_mppi;
+    info.u_safe = u_mppi;
     return {u_mppi, info};
   }
 
@@ -190,6 +194,8 @@ std::pair<Eigen::VectorXd, CBFFilterInfo> CBFSafetyFilter::filter(
     info.constraint_margins.push_back(h_dot + gamma_ * h);
   }
 
+  info.u_mppi = u_mppi;
+  info.u_safe = u;
   return {u, info};
 }
 
