@@ -51,8 +51,8 @@ def to_jax(arr: np.ndarray, dtype=None):
 
 
 def to_numpy(arr) -> np.ndarray:
-    """JAX 배열 → NumPy 배열 변환."""
-    return np.asarray(arr)
+    """JAX 배열 → NumPy 배열 변환 (writable copy)."""
+    return np.array(arr)
 
 
 def get_dtype(use_float32: bool = False):

@@ -189,6 +189,7 @@ struct MPPIParams
   bool visualize_text_info{true};         // 텍스트 정보 표시
   bool visualize_control_sequence{true};  // 제어 시퀀스 화살표 표시
   bool visualize_tube{true};              // Tube 경계 표시
+  bool visualize_cbf{false};              // CBF barrier/correction 표시
   int max_visualized_samples{20};         // 최대 표시 샘플 수
 
   // ============================================================================

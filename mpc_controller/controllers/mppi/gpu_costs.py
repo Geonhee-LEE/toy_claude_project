@@ -123,6 +123,24 @@ def obstacle_cost_jit(trajectories, obstacles, weight, safety_margin):
     return cost_per_sample
 
 
+@jax.jit
+def jerk_cost_jit(perturbed_du, r_jerk, jerk_weight):
+    """Smooth-MPPI jerk 비용: ‖ΔΔu‖² (JAX).
+
+    ΔΔu = Δu[t+1] - Δu[t] (제어 변화율의 변화율)
+
+    Args:
+        perturbed_du: (K, N, nu) Δu 시퀀스
+        r_jerk: (nu,) jerk 가중치 대각 원소
+        jerk_weight: 전체 스케일
+
+    Returns:
+        (K,) jerk 비용
+    """
+    ddu = perturbed_du[:, 1:, :] - perturbed_du[:, :-1, :]
+    return jerk_weight * jnp.sum(ddu ** 2 * r_jerk[None, None, :], axis=(1, 2))
+
+
 def make_compute_all_costs_jit(has_r_rate: bool, has_obstacles: bool):
     """비용 함수 통합 JIT kernel 생성.
 

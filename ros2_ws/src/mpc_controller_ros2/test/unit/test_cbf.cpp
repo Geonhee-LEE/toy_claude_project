@@ -441,4 +441,40 @@ TEST(CBFIntegrationTest, CBFCostInComposite)
   EXPECT_EQ(costs.size(), K);
 }
 
+// ============================================================================
+// CBFFilterInfo u_mppi/u_safe 필드 테스트
+// ============================================================================
+
+TEST_F(CBFSafetyFilterTest, FilterInfoStoresControlVectors)
+{
+  // 안전한 상태 → filter_applied=false, u_mppi == u_safe == 입력
+  Eigen::VectorXd state(3);
+  state << 0.0, 0.0, 0.0;  // 원점 (장애물에서 2m 떨어짐)
+  Eigen::VectorXd u(2);
+  u << 0.1, 0.0;
+
+  auto [u_out, info] = filter_->filter(state, u, *dynamics_);
+  EXPECT_EQ(info.u_mppi.size(), 2);
+  EXPECT_EQ(info.u_safe.size(), 2);
+  EXPECT_NEAR(info.u_mppi(0), 0.1, 1e-6);
+  EXPECT_NEAR(info.u_safe(0), u_out(0), 1e-6);
+}
+
+TEST_F(CBFSafetyFilterTest, FilterInfoStoresModifiedControl)
+{
+  // 장애물 근처 → filter_applied=true일 수 있음
+  Eigen::VectorXd state(3);
+  state << 1.5, 0.0, 0.0;  // 장애물 (2,0)에 가까움
+  Eigen::VectorXd u(2);
+  u << 1.0, 0.0;  // 장애물 방향으로 빠른 전진
+
+  auto [u_out, info] = filter_->filter(state, u, *dynamics_);
+  EXPECT_EQ(info.u_mppi.size(), 2);
+  EXPECT_EQ(info.u_safe.size(), 2);
+  // u_mppi는 원래 입력값
+  EXPECT_NEAR(info.u_mppi(0), 1.0, 1e-6);
+  // u_safe는 출력값과 일치
+  EXPECT_NEAR(info.u_safe(0), u_out(0), 1e-6);
+}
+
 }  // namespace mpc_controller_ros2

@@ -11,10 +11,10 @@
 ## 🟠 Medium Priority (P1)
 
 - [x] MPPI GPU 가속 — JAX JIT + lax.scan + vmap (PR #103, Issue #63)
-- [ ] MPPI SVMPC GPU 가속 — pairwise kernel (K²) + rollout CUDA 병렬화
+- [x] MPPI 8종 변형 GPU 가속 — 가중치 Strategy + SVGD JIT + Smooth/Spline GPU step (PR #105)
 - [x] MPPI-CBF 통합 — Control Barrier Function 안전성 보장 (PR #98, Issue #97)
 - [x] MPPI 궤적 안정화 — SG Filter + IT 정규화 + Exploitation/Exploration (PR #98)
-- [ ] MPPI vs MPPI-CBF 비교 데모 — 안전성 및 성능 벤치마크
+- [x] MPPI vs MPPI-CBF 비교 데모 — 안전성 및 성능 벤치마크 (PR #107, Issue #106)
 - [ ] MPC vs MPPI 비교 데모 파라미터 공정화 — 호라이즌 통일 (MPC 2.0s vs MPPI 1.0s)
 - [ ] `--live` 리플레이에 MPPI 샘플 궤적 시각화 추가
 - [ ] Ackermann 조향 모델 추가 — 자동차형 로봇 지원
@@ -65,6 +65,30 @@
     - 경로 접선 방향 속도 추적 비용 (v_along - ref_velocity)²
     - nav2 MPPI PathAlignCritic + PathFollowCritic에 대응
   * 테스트: 219 gtest 통과 (+8 신규: VyMax 3 + VelocityTracking 5)
+
+### 2026-02-22 (MPPI vs CBF-MPPI 벤치마크)
+- [x] MPPI vs CBF-MPPI 비교 데모 + 벤치마크 (PR #107, Issue #106)
+  * 4 시나리오: head_on, narrow, multi, dense
+  * 안전성 메트릭: 충돌 횟수, safety violation, 최소 표면 거리, barrier 위반 비율
+  * 성능 메트릭: RMSE, control rate, jerk, solve time, path length
+  * --live 실시간 리플레이 (Vanilla vs CBF 동시 시각화)
+  * --benchmark 전 시나리오 일괄 비교 + 종합 ASCII 리포트
+  * 3x3 비교 그래프 (궤적, 오차, barrier, 거리, 제어, jerk, solve time)
+  * CBF 효과: 충돌 34→0, violation 974→0, solve +7.3%
+
+### 2026-02-22 (GPU 8종 변형 확장)
+- [x] MPPI 8종 변형 GPU 가속 확장 (PR #105, Issue #104)
+  * gpu_weights.py: 4종 JIT 가중치 전략 (vanilla/log/tsallis/cvar) + registry
+  * gpu_svgd.py: SVGD JIT 커널 (svgd_step, median_bandwidth, diversity, rbf_kernel)
+  * gpu_mppi_kernel.py: weight_fn 주입 + smooth_mppi_step + spline_mppi_step
+  * gpu_costs.py: jerk_cost_jit 추가 (Smooth-MPPI용)
+  * base_mppi.py: _get_gpu_weight_fn() 가상 메서드
+  * Log/Tsallis/CVaR: _get_gpu_weight_fn() 오버라이드 (가중치만 교체)
+  * Tube-MPPI: 부모 GPU 경로 자동 상속 (코드 변경 없음)
+  * Smooth/Spline: 전용 _compute_control_gpu() + 지연 GPU 초기화
+  * SVMPC/SVG-MPPI: gpu_svgd.py SVGD JIT 커널 활용
+  * 신규 테스트 59개 (weights 20 + svgd 13 + variants 26)
+  * 기존 322개 MPPI 테스트 회귀 없음
 
 ### 2026-02-22 (GPU 가속)
 - [x] #63 MPPI GPU 가속 — JAX JIT + lax.scan + vmap (PR #103)
