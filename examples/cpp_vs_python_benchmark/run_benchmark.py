@@ -4,6 +4,7 @@
 실행 예시:
     python examples/cpp_vs_python_benchmark/run_benchmark.py              # 전체
     python examples/cpp_vs_python_benchmark/run_benchmark.py --quick      # K=128,N=10,repeat=3
+    python examples/cpp_vs_python_benchmark/run_benchmark.py --live       # 실시간 시뮬레이션
     python examples/cpp_vs_python_benchmark/run_benchmark.py --pipeline   # 파이프라인만
     python examples/cpp_vs_python_benchmark/run_benchmark.py --component  # 컴포넌트만
     python examples/cpp_vs_python_benchmark/run_benchmark.py --scaling    # 스케일링만
@@ -22,9 +23,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 # MPPI 로거 verbose 억제 (import 전에 설정)
-logging.getLogger("mpc_controller").setLevel(logging.WARNING)
-logging.getLogger("mpc_controller.controllers.mppi").setLevel(logging.WARNING)
-# 핸들러 전파도 차단
 for _name in ["mpc_controller", "mpc_controller.controllers",
               "mpc_controller.controllers.mppi",
               "mpc_controller.controllers.mppi.base_mppi"]:
@@ -34,7 +32,9 @@ for _name in ["mpc_controller", "mpc_controller.controllers",
 
 from examples.cpp_vs_python_benchmark.scenario import circle_scenario
 from examples.cpp_vs_python_benchmark.benchmark_runner import run_all_benchmarks
-from examples.cpp_vs_python_benchmark.visualization import print_summary, plot_dashboard
+from examples.cpp_vs_python_benchmark.visualization import (
+    print_summary, plot_dashboard, live_benchmark,
+)
 
 
 def main():
@@ -44,6 +44,8 @@ def main():
     )
     parser.add_argument("--quick", action="store_true",
                         help="Quick mode: K=128, N=10, repeat=3")
+    parser.add_argument("--live", action="store_true",
+                        help="Live mode: 실시간 Python vs C++ 비교 시뮬레이션")
     parser.add_argument("--pipeline", action="store_true",
                         help="Run pipeline benchmark only")
     parser.add_argument("--component", action="store_true",
@@ -56,6 +58,9 @@ def main():
                         help="Horizon steps (default: 20)")
     parser.add_argument("--repeat", type=int, default=20,
                         help="Repeat count for microbenchmarks (default: 20)")
+    parser.add_argument("--weight", type=str, default="vanilla",
+                        choices=["vanilla", "log", "tsallis", "risk_aware"],
+                        help="Weight strategy for live mode (default: vanilla)")
     parser.add_argument("--save", type=str, default=None,
                         help="Save dashboard plot to file")
     parser.add_argument("--json", type=str, default=None,
@@ -70,6 +75,21 @@ def main():
         args.N = 10
         args.repeat = 3
 
+    scenario = circle_scenario(nx=3)
+
+    # ── Live 모드 ──
+    if args.live:
+        print()
+        print("╔" + "═" * 58 + "╗")
+        print("║   Python vs C++ MPPI Live Benchmark                    ║")
+        print(f"║   K={args.K:<6d}  N={args.N:<4d}  weight={args.weight:<16s}     ║")
+        print(f"║   Mode: LIVE                                           ║")
+        print("╚" + "═" * 58 + "╝")
+        print()
+        live_benchmark(scenario, K=args.K, N=args.N, weight_type=args.weight)
+        return
+
+    # ── Batch 모드 ──
     # 벤치마크 선택
     run_pip = args.pipeline or (not args.pipeline and not args.component and not args.scaling)
     run_comp = args.component or (not args.pipeline and not args.component and not args.scaling)
@@ -79,12 +99,11 @@ def main():
     K_values = [128, 256, 512] if args.quick else None
     N_values = [10, 20] if args.quick else None
 
-    scenario = circle_scenario(nx=3)
-
     print()
     print("╔" + "═" * 58 + "╗")
     print("║   Python vs C++ MPPI Benchmark Suite                    ║")
     print(f"║   K={args.K:<6d}  N={args.N:<4d}  repeat={args.repeat:<4d}                    ║")
+    print(f"║   Mode: BATCH                                          ║")
     print("╚" + "═" * 58 + "╝")
     print()
 
