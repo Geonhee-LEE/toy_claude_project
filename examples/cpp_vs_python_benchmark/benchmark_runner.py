@@ -24,7 +24,10 @@ from mpc_controller.controllers.mppi.risk_aware_mppi import RiskAwareMPPIControl
 from simulation.simulator import Simulator, SimulationConfig
 
 from .cpp_mppi_assembler import CppMPPIAssembler, MODEL_CONFIG
-from .scenario import BenchmarkScenario, LookaheadInterpolator, circle_scenario, get_model_nx
+from .scenario import (
+    BenchmarkScenario, LookaheadInterpolator, circle_scenario,
+    tight_turn_scenario, slalom_scenario, get_model_nx,
+)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -633,5 +636,55 @@ def run_all_benchmarks(
         print("=" * 60)
         results.scaling = run_scaling_benchmark(K_values, N_values, repeat=repeat)
         print(f"  → {len(results.scaling)} scaling curves 완료")
+
+    return results
+
+
+# ─────────────────────────────────────────────────────────────
+# Steering Constraint Comparison (90° vs 60°)
+# ─────────────────────────────────────────────────────────────
+
+def run_steering_compare(
+    scenario: BenchmarkScenario,
+    K: int = 512,
+    N: int = 20,
+    angles_deg: Optional[List[float]] = None,
+    show_plot: bool = True,
+) -> List[RunResult]:
+    """90° vs 60° 스티어링 제한 비교 벤치마크 (C++ NonCoaxialSwerve)."""
+    if angles_deg is None:
+        angles_deg = [90.0, 60.0]
+
+    results = []
+    nx = scenario.trajectory.shape[1]
+
+    for angle_deg in angles_deg:
+        angle_rad = np.radians(angle_deg)
+        model_key = "non_coaxial_swerve"
+        cpp_ctrl = CppMPPIAssembler(
+            model_key, "vanilla", K=K, N=N,
+            obstacles=scenario.obstacles,
+            max_steering_angle=angle_rad,
+        )
+        interp = LookaheadInterpolator(scenario.trajectory, scenario.dt)
+        result = simulate(
+            cpp_ctrl, f"C++/ncs/{angle_deg:.0f}deg",
+            "cpp", model_key, "vanilla",
+            interp, np.zeros(nx), scenario.sim_time, scenario.dt,
+        )
+        results.append(result)
+
+        print(f"  {angle_deg:5.0f}°  RMSE={result.position_rmse:.4f}"
+              f"  solve={result.avg_solve_ms:.2f}ms")
+
+    # ASCII 요약 테이블
+    print()
+    print("┌──────────┬────────────┬────────────┐")
+    print("│  Angle   │ Pos RMSE   │ Solve (ms) │")
+    print("├──────────┼────────────┼────────────┤")
+    for r in results:
+        angle_str = r.name.split("/")[-1]
+        print(f"│ {angle_str:>8s} │ {r.position_rmse:>10.4f} │ {r.avg_solve_ms:>10.2f} │")
+    print("└──────────┴────────────┴────────────┘")
 
     return results

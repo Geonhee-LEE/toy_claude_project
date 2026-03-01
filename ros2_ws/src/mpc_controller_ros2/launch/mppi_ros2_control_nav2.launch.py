@@ -3,6 +3,8 @@
 Gazebo Harmonic + ros2_control + nav2 + MPPI 통합 launch 파일
 
 ros2_control을 통해 odom과 TF가 발행됩니다.
+nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bond를
+비활성화하고 `ros2 lifecycle set` subprocess로 직접 활성화합니다.
 
 실행 방법:
     # 커스텀 MPPI (기본)
@@ -57,6 +59,7 @@ ros2_control을 통해 odom과 TF가 발행됩니다.
     controller:=svg          → SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)
     controller:=swerve       → Swerve Drive MPPI (motion_model=swerve)
     controller:=non_coaxial  → Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)
+    controller:=non_coaxial_60deg → Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)
     controller:=nav2         → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
 """
 
@@ -70,9 +73,10 @@ from launch.actions import (
     LogInfo,
     DeclareLaunchArgument,
     OpaqueFunction,
+    GroupAction,
 )
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 import xacro
 
 
@@ -87,64 +91,40 @@ def launch_setup(context, *args, **kwargs):
     headless = LaunchConfiguration('headless').perform(context).lower() == 'true'
 
     # 컨트롤러별 파라미터 파일 선택
-    if controller_type == 'nav2':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_nav2_mppi.yaml'
-        )
-        controller_label = 'nav2 기본 MPPI (nav2_mppi_controller::MPPIController)'
-    elif controller_type == 'log':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_log_mppi.yaml'
-        )
-        controller_label = 'Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)'
-    elif controller_type == 'tsallis':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_tsallis_mppi.yaml'
-        )
-        controller_label = 'Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)'
-    elif controller_type == 'risk_aware':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_risk_aware_mppi.yaml'
-        )
-        controller_label = 'Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)'
-    elif controller_type == 'svmpc':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_svmpc.yaml'
-        )
-        controller_label = 'SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)'
-    elif controller_type == 'smooth':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_smooth_mppi.yaml'
-        )
-        controller_label = 'Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)'
-    elif controller_type == 'spline':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_spline_mppi.yaml'
-        )
-        controller_label = 'Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)'
-    elif controller_type == 'svg':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_svg_mppi.yaml'
-        )
-        controller_label = 'SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)'
-    elif controller_type == 'swerve':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_swerve_mppi.yaml'
-        )
-        controller_label = 'Swerve MPPI (motion_model=swerve)'
-    elif controller_type == 'non_coaxial':
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_non_coaxial_mppi.yaml'
-        )
-        controller_label = 'Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)'
+    controller_map = {
+        'nav2': ('nav2_params_nav2_mppi.yaml',
+                 'nav2 기본 MPPI (nav2_mppi_controller::MPPIController)'),
+        'log': ('nav2_params_log_mppi.yaml',
+                'Log-MPPI (mpc_controller_ros2::LogMPPIControllerPlugin)'),
+        'tsallis': ('nav2_params_tsallis_mppi.yaml',
+                    'Tsallis-MPPI (mpc_controller_ros2::TsallisMPPIControllerPlugin)'),
+        'risk_aware': ('nav2_params_risk_aware_mppi.yaml',
+                       'Risk-Aware MPPI (mpc_controller_ros2::RiskAwareMPPIControllerPlugin)'),
+        'svmpc': ('nav2_params_svmpc.yaml',
+                  'SVMPC (mpc_controller_ros2::SVMPCControllerPlugin)'),
+        'smooth': ('nav2_params_smooth_mppi.yaml',
+                   'Smooth-MPPI (mpc_controller_ros2::SmoothMPPIControllerPlugin)'),
+        'spline': ('nav2_params_spline_mppi.yaml',
+                   'Spline-MPPI (mpc_controller_ros2::SplineMPPIControllerPlugin)'),
+        'svg': ('nav2_params_svg_mppi.yaml',
+                'SVG-MPPI (mpc_controller_ros2::SVGMPPIControllerPlugin)'),
+        'swerve': ('nav2_params_swerve_mppi.yaml',
+                   'Swerve MPPI (motion_model=swerve)'),
+        'non_coaxial': ('nav2_params_non_coaxial_mppi.yaml',
+                        'Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)'),
+        'non_coaxial_60deg': ('nav2_params_non_coaxial_60deg_mppi.yaml',
+                              'Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)'),
+    }
+    if controller_type in controller_map:
+        params_name, controller_label = controller_map[controller_type]
     else:
-        controller_params_file = os.path.join(
-            pkg_dir, 'config', 'nav2_params_custom_mppi.yaml'
-        )
+        params_name = 'nav2_params_custom_mppi.yaml'
         controller_label = '커스텀 MPPI (mpc_controller_ros2::MPPIControllerPlugin)'
 
+    controller_params_file = os.path.join(pkg_dir, 'config', params_name)
+
     # Swerve drive 판별
-    is_swerve = controller_type in ['swerve', 'non_coaxial']
+    is_swerve = controller_type in ['swerve', 'non_coaxial', 'non_coaxial_60deg']
 
     # URDF / ros2_control config / nav2 공통 파라미터 분기
     if is_swerve:
@@ -241,84 +221,54 @@ def launch_setup(context, *args, **kwargs):
         arguments=bridge_args,
     )
 
-    # ========== 5. Controller Spawners ==========
-    joint_state_broadcaster_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['joint_state_broadcaster', '--controller-manager', '/controller_manager'],
-        output='screen',
+    # ========== 5. Controller Activation ==========
+    # gz_ros2_control이 컨트롤러를 자동 로드/설정하므로, spawner와 레이스 컨디션 발생 가능.
+    # ExecuteProcess로 controller_manager 준비 대기 + spawner + switch_controllers 폴백.
+    def _activate_cmd(ctrl_name, extra_args=''):
+        """단일 컨트롤러 활성화 명령 (spawner 시도 → switch 폴백)."""
+        return (
+            f'echo "[controllers] Activating {ctrl_name}..."; '
+            f'ros2 run controller_manager spawner {ctrl_name}'
+            f' -c /controller_manager --controller-manager-timeout 30'
+            f' {extra_args} 2>&1 || '
+            f'ros2 control switch_controllers'
+            f' --activate {ctrl_name} -c /controller_manager 2>&1 || true; '
+        )
+
+    wait_for_cm = (
+        'echo "[controllers] Waiting for controller_manager..."; '
+        'for i in $(seq 1 30); do '
+        '  ros2 service list 2>/dev/null | grep -q "/controller_manager/list_controllers" && '
+        '  echo "[controllers] controller_manager ready" && break; '
+        '  sleep 1; '
+        'done; '
     )
 
     if is_swerve:
-        # Swerve: ForwardCommandController x2
-        steer_position_controller_spawner = Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=[
-                'steer_position_controller',
-                '--controller-manager', '/controller_manager',
-            ],
-            output='screen',
+        activate_cmd = (
+            wait_for_cm
+            + _activate_cmd('joint_state_broadcaster')
+            + _activate_cmd('steer_position_controller')
+            + _activate_cmd('wheel_velocity_controller')
+            + 'echo "[controllers] All swerve controllers activated"; '
+            + 'ros2 control list_controllers -c /controller_manager 2>&1 || true'
         )
-        wheel_velocity_controller_spawner = Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=[
-                'wheel_velocity_controller',
-                '--controller-manager', '/controller_manager',
-            ],
-            output='screen',
-        )
-        controller_spawners = [steer_position_controller_spawner, wheel_velocity_controller_spawner]
     else:
-        # Diff Drive: DiffDriveController
-        diff_drive_controller_spawner = Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=[
-                'diff_drive_controller',
-                '--controller-manager', '/controller_manager',
-                '--param-file', controller_config
-            ],
-            output='screen',
+        activate_cmd = (
+            wait_for_cm
+            + _activate_cmd('joint_state_broadcaster')
+            + _activate_cmd('diff_drive_controller',
+                            f'--param-file {controller_config}')
+            + 'echo "[controllers] All diff_drive controllers activated"; '
+            + 'ros2 control list_controllers -c /controller_manager 2>&1 || true'
         )
-        controller_spawners = [diff_drive_controller_spawner]
 
-    # ========== 6. Map Server ==========
-    map_server = Node(
-        package='nav2_map_server',
-        executable='map_server',
-        name='map_server',
+    activate_controllers = ExecuteProcess(
+        cmd=['bash', '-c', activate_cmd],
         output='screen',
-        parameters=[{
-            'use_sim_time': True,
-            'yaml_filename': map_file
-        }]
     )
 
-    # ========== 7. AMCL ==========
-    amcl = Node(
-        package='nav2_amcl',
-        executable='amcl',
-        name='amcl',
-        output='screen',
-        parameters=[nav2_params_file]
-    )
-
-    # ========== 8. nav2 Nodes ==========
-    # controller_server: 공통 파라미터(local_costmap 등) + 컨트롤러별 전용 파라미터
-    # nav2의 controller_server는 내부적으로 local_costmap 노드를 생성하므로
-    # 반드시 local_costmap 파라미터가 포함된 공통 파일도 함께 전달해야 함
-    controller_server = Node(
-        package='nav2_controller',
-        executable='controller_server',
-        name='controller_server',
-        output='screen',
-        parameters=[nav2_params_file, controller_params_file],
-        remappings=[('cmd_vel', '/cmd_vel_nav')]
-    )
-
-    # cmd_vel relay: Swerve → SwerveKinematicsNode, Diff → TwistStamper
+    # ========== 6. cmd_vel relay ==========
     if is_swerve:
         # SwerveKinematicsNode: IK 전용 (Gazebo ground truth odom 사용 시 FK/odom/TF 비활성화)
         cmd_vel_relay = Node(
@@ -333,7 +283,7 @@ def launch_setup(context, *args, **kwargs):
                 'wheel_y': 0.22,
                 'publish_rate': 50.0,
                 'cmd_vel_timeout': 0.5,
-                'use_gazebo_odom': True,  # Gazebo ground truth → FK/odom/TF 비활성화
+                'use_gazebo_odom': True,
             }],
         )
 
@@ -377,64 +327,97 @@ rclpy.spin(TwistStamper())
             output='screen'
         )
 
-    planner_server = Node(
+    # ========== 7. Nav2 Nodes + Lifecycle Bringup ==========
+    # nav2_lifecycle_manager의 service call이 비결정적으로 실패하는 문제 우회:
+    # - nav2 노드들은 별도 프로세스로 실행 (non-composition)
+    # - nav2_lifecycle_bringup.py 스크립트가 `ros2 lifecycle set` subprocess로
+    #   configure/activate 수행 (각 호출이 별도 DDS participant → 안정적)
+    # - 동일 스크립트가 bond heartbeat를 publish하여 노드 self-deactivation 방지
+
+    # --- Localization nodes ---
+    # bond_heartbeat_period: 0.0 → bond 생성 건너뜀 (lifecycle_manager 없이 직접 활성화)
+    map_server_node = Node(
+        package='nav2_map_server',
+        executable='map_server',
+        name='map_server',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'yaml_filename': map_file,
+            'bond_heartbeat_period': 0.0,
+        }],
+    )
+    amcl_node = Node(
+        package='nav2_amcl',
+        executable='amcl',
+        name='amcl',
+        output='screen',
+        parameters=[nav2_params_file, {
+            'use_sim_time': True,
+            'bond_heartbeat_period': 0.0,
+        }],
+    )
+
+    # --- Navigation nodes ---
+    controller_server_node = Node(
+        package='nav2_controller',
+        executable='controller_server',
+        name='controller_server',
+        output='screen',
+        parameters=[nav2_params_file, controller_params_file, {
+            'use_sim_time': True,
+            'bond_heartbeat_period': 0.0,
+        }],
+        remappings=[('cmd_vel', '/cmd_vel_nav')],
+    )
+    planner_server_node = Node(
         package='nav2_planner',
         executable='planner_server',
         name='planner_server',
         output='screen',
-        parameters=[nav2_params_file]
+        parameters=[nav2_params_file, {
+            'use_sim_time': True,
+            'bond_heartbeat_period': 0.0,
+        }],
     )
-
-    behavior_server = Node(
+    behavior_server_node = Node(
         package='nav2_behaviors',
         executable='behavior_server',
         name='behavior_server',
         output='screen',
-        parameters=[nav2_params_file]
+        parameters=[nav2_params_file, {
+            'use_sim_time': True,
+            'bond_heartbeat_period': 0.0,
+        }],
     )
-
-    bt_navigator = Node(
+    bt_navigator_node = Node(
         package='nav2_bt_navigator',
         executable='bt_navigator',
         name='bt_navigator',
         output='screen',
-        parameters=[nav2_params_file]
+        parameters=[nav2_params_file, {
+            'use_sim_time': True,
+            'bond_heartbeat_period': 0.0,
+        }],
     )
 
-    # Lifecycle manager for localization (map_server, amcl)
-    lifecycle_manager_localization = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='lifecycle_manager_localization',
+    # --- Lifecycle bringup (bond-free) ---
+    # bond_timeout=0.0으로 bond 비활성화 → subprocess lifecycle set으로 직접 활성화
+    nav2_node_names = 'map_server,amcl,controller_server,planner_server,behavior_server,bt_navigator'
+    lifecycle_bringup = Node(
+        package='mpc_controller_ros2',
+        executable='nav2_lifecycle_bringup.py',
+        name='nav2_lifecycle_bringup',
         output='screen',
-        parameters=[
-            {'use_sim_time': True},
-            {'autostart': True},
-            {'bond_timeout': 4.0},
-            {'node_names': ['map_server', 'amcl']}
-        ]
+        parameters=[{
+            'use_sim_time': True,
+            'node_names': nav2_node_names,
+            'max_retries': 10,
+            'check_interval': 10.0,
+        }],
     )
 
-    # Lifecycle manager for navigation
-    lifecycle_manager_navigation = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='lifecycle_manager_navigation',
-        output='screen',
-        parameters=[
-            {'use_sim_time': True},
-            {'autostart': True},
-            {'bond_timeout': 4.0},
-            {'node_names': [
-                'controller_server',
-                'planner_server',
-                'behavior_server',
-                'bt_navigator'
-            ]}
-        ]
-    )
-
-    # ========== 9. RVIZ ==========
+    # ========== 8. RVIZ ==========
     rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -449,6 +432,9 @@ rclpy.spin(TwistStamper())
         LogInfo(msg=f'[MPPI Controller] {controller_label}'),
         LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
         LogInfo(msg=f'[MPPI Controller] params: {controller_params_file}'),
+
+        # stdout 버퍼링 활성화 (nav2 표준 설정)
+        SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
 
         # 1. Gazebo
         gz_sim,
@@ -468,66 +454,49 @@ rclpy.spin(TwistStamper())
             ]
         ),
 
-        # 5. Controllers (8s delay)
+        # 5. Controllers (12s delay — Gazebo spawn 후 gz_ros2_control 안정화 대기)
         TimerAction(
-            period=8.0,
+            period=12.0,
             actions=[
-                LogInfo(msg='Starting controllers...'),
-                joint_state_broadcaster_spawner,
-                *controller_spawners,
+                LogInfo(msg='Activating ros2_control controllers...'),
+                activate_controllers,
                 cmd_vel_relay,
                 # Swerve: Gazebo ground truth odom → TF (AMCL/costmap에 필요)
                 *([odom_to_tf] if is_swerve else []),
             ]
         ),
 
-        # 6. Localization nodes (map_server, amcl) - 10s delay
+        # 6. Nav2 Localization nodes (20s delay)
         TimerAction(
-            period=10.0,
+            period=20.0,
             actions=[
-                LogInfo(msg='Starting localization nodes (map_server, amcl)...'),
-                map_server,
-                amcl,
+                LogInfo(msg='Starting nav2 localization nodes...'),
+                map_server_node,
+                amcl_node,
             ]
         ),
 
-        # 7. Localization lifecycle manager - 13s delay
+        # 7. Nav2 Navigation nodes + lifecycle bringup (30s delay)
         TimerAction(
-            period=13.0,
+            period=30.0,
             actions=[
-                LogInfo(msg='Activating localization lifecycle...'),
-                lifecycle_manager_localization,
-            ]
-        ),
-
-        # 8. Navigation nodes - 18s delay
-        TimerAction(
-            period=18.0,
-            actions=[
-                LogInfo(msg=f'Starting navigation nodes ({controller_type} MPPI)...'),
-                controller_server,
-                planner_server,
-                behavior_server,
-                bt_navigator,
-            ]
-        ),
-
-        # 9. Navigation lifecycle manager - 21s delay
-        TimerAction(
-            period=21.0,
-            actions=[
-                LogInfo(msg='Activating navigation lifecycle...'),
-                lifecycle_manager_navigation,
+                LogInfo(msg=f'Starting nav2 navigation nodes ({controller_type} MPPI)...'),
+                controller_server_node,
+                planner_server_node,
+                behavior_server_node,
+                bt_navigator_node,
+                # Lifecycle bringup: subprocess로 configure/activate + bond 유지
+                lifecycle_bringup,
             ]
         ),
 
     ]
 
-    # 10. RVIZ (25s delay) - headless 모드에서는 비활성화
+    # 8. RVIZ (60s delay) - headless 모드에서는 비활성화
     if not headless:
         nodes.append(
             TimerAction(
-                period=25.0,
+                period=60.0,
                 actions=[
                     LogInfo(msg='Starting RVIZ...'),
                     rviz
@@ -554,7 +523,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'controller',
             default_value='custom',
-            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", "svmpc", "smooth", "spline", "svg", "swerve", "non_coaxial", or "nav2"'
+            description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
+                        '"svmpc", "smooth", "spline", "svg", "swerve", "non_coaxial", '
+                        '"non_coaxial_60deg", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

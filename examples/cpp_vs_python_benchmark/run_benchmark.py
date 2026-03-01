@@ -34,8 +34,12 @@ for _name in ["mpc_controller", "mpc_controller.controllers",
     _lg.setLevel(logging.WARNING)
     _lg.propagate = False
 
-from examples.cpp_vs_python_benchmark.scenario import circle_scenario
-from examples.cpp_vs_python_benchmark.benchmark_runner import run_all_benchmarks
+from examples.cpp_vs_python_benchmark.scenario import (
+    circle_scenario, tight_turn_scenario, slalom_scenario, figure8_scenario,
+)
+from examples.cpp_vs_python_benchmark.benchmark_runner import (
+    run_all_benchmarks, run_steering_compare,
+)
 from examples.cpp_vs_python_benchmark.visualization import (
     print_summary, plot_dashboard, live_benchmark, live_ref_comparison,
 )
@@ -79,6 +83,13 @@ def main():
     parser.add_argument("--ref-mode", type=str, default="time",
                         choices=["time", "lookahead", "both"],
                         help="Reference trajectory mode: time-based, lookahead, or both (default: time)")
+    parser.add_argument("--max-steering-angle", type=float, default=90.0,
+                        help="Max steering angle in degrees (default: 90)")
+    parser.add_argument("--steering-compare", action="store_true",
+                        help="Compare 90° vs 60° steering constraints")
+    parser.add_argument("--scenario", type=str, default="circle",
+                        choices=["circle", "tight", "slalom", "figure8"],
+                        help="Scenario for steering compare (default: circle)")
     parser.add_argument("--no-plot", action="store_true",
                         help="Skip matplotlib plots")
     args = parser.parse_args()
@@ -91,6 +102,27 @@ def main():
 
     scenario = circle_scenario(nx=3)
     scenario.sim_time = args.sim_time
+
+    # ── Steering Compare 모드 (90° vs 60°) ──
+    if args.steering_compare:
+        scenario_map = {
+            "circle": lambda: circle_scenario(nx=4),
+            "tight": lambda: tight_turn_scenario(nx=4),
+            "slalom": lambda: slalom_scenario(nx=4),
+            "figure8": lambda: figure8_scenario(nx=4),
+        }
+        sc = scenario_map[args.scenario]()
+        sc.sim_time = args.sim_time
+        print()
+        print("╔" + "═" * 58 + "╗")
+        print("║   Steering Constraint Comparison (90° vs 60°)            ║")
+        print(f"║   Scenario: {args.scenario:<12s}  K={args.K:<6d}  N={args.N:<4d}       ║")
+        print("╚" + "═" * 58 + "╝")
+        print()
+        results = run_steering_compare(
+            sc, K=args.K, N=args.N, show_plot=not args.no_plot,
+        )
+        return
 
     # ── Compare-ref 모드 (Time vs Lookahead) ──
     if args.compare_ref:

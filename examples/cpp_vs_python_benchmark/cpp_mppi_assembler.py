@@ -58,6 +58,14 @@ MODEL_CONFIG = {
         "noise_sigma": np.array([0.3, 0.3, 0.2]),
         "model_factory": lambda: NonCoaxialSwerveModel(0.0, 1.0, 1.5, 2.0),
     },
+    "non_coaxial_swerve_60deg": {
+        "nx": 4, "nu": 3,
+        "Q": np.diag([10.0, 10.0, 5.0, 0.1]),
+        "R": np.diag([0.01, 0.01, 0.005]),
+        "Qf": np.diag([100.0, 100.0, 50.0, 1.0]),
+        "noise_sigma": np.array([0.3, 0.3, 0.4]),
+        "model_factory": lambda: NonCoaxialSwerveModel(0.0, 1.0, 1.5, 2.0, np.pi / 3.0),
+    },
 }
 
 
@@ -105,6 +113,8 @@ class CppMPPIAssembler:
         랜덤 시드
     obstacles : Optional[np.ndarray]
         장애물 (M, 3) [x, y, radius]
+    max_steering_angle : Optional[float]
+        NonCoaxialSwerve 스티어링 제한 (rad). None이면 기본값 사용.
     """
 
     def __init__(
@@ -118,8 +128,14 @@ class CppMPPIAssembler:
         adaptive_temperature: bool = True,
         seed: int = 42,
         obstacles: Optional[np.ndarray] = None,
+        max_steering_angle: Optional[float] = None,
     ):
-        cfg = MODEL_CONFIG[model_type]
+        # max_steering_angle 지정 시 자동으로 60deg config 선택
+        effective_type = model_type
+        if max_steering_angle is not None and model_type == "non_coaxial_swerve":
+            if abs(max_steering_angle - np.pi / 3.0) < 0.01:
+                effective_type = "non_coaxial_swerve_60deg"
+        cfg = MODEL_CONFIG.get(effective_type, MODEL_CONFIG[model_type])
         self.model_type = model_type
         self.weight_type = weight_type
         self.nx = cfg["nx"]
@@ -130,7 +146,10 @@ class CppMPPIAssembler:
         self.lambda_ = lambda_
 
         # C++ 모션 모델
-        self.model = cfg["model_factory"]()
+        if max_steering_angle is not None and model_type == "non_coaxial_swerve" and effective_type == model_type:
+            self.model = NonCoaxialSwerveModel(0.0, 1.0, 1.5, 2.0, max_steering_angle)
+        else:
+            self.model = cfg["model_factory"]()
 
         # C++ MPPIParams (BatchDynamicsWrapper 생성용)
         self._params = MPPIParams()
