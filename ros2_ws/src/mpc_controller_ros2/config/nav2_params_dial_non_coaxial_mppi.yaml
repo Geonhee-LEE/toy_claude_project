@@ -1,0 +1,166 @@
+# ============================================================
+# nav2 파라미터 - Non-Coaxial Swerve DIAL-MPPI
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial_non_coaxial use_rviz:=true
+#
+# Non-Coaxial Swerve Drive 로봇 (비홀로노믹, state=[x,y,θ,δ], control=[v,ω,δ_dot])
+# DIAL-MPPI: 다중 스텝 어닐링 + 이중 감쇠 노이즈 스케줄
+#
+# Reference: Xue et al. (2024) "DIAL-MPC" arXiv:2409.15610 (ICRA 2025)
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 10.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.5
+    transform_tolerance: 1.0
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.1
+      movement_time_allowance: 60.0
+
+    # Goal checker
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.4
+      stateful: true
+
+    # ---- Non-Coaxial Swerve DIAL-MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::DialMPPIControllerPlugin"
+      motion_model: "non_coaxial_swerve"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling (어닐링 반복으로 적은 샘플로도 효과적)
+      K: 512
+      lambda: 10.0
+
+      # Noise parameters — Non-Coaxial: control=[v, omega, delta_dot]
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.3
+      noise_sigma_delta_dot: 0.3
+
+      # Control limits
+      v_max: 1.5
+      v_min: -0.5
+      omega_max: 2.0
+      omega_min: -2.0
+      vy_max: -1.0
+
+      # Non-Coaxial 전용 스티어링 한계
+      max_steering_rate: 2.0
+      max_steering_angle: 1.5707
+
+      # State tracking cost weights (Q: x, y, theta)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 3.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 6.0
+
+      # Control effort weights — Non-Coaxial: R=[v, omega, delta_dot]
+      R_v: 0.3
+      R_omega: 0.3
+      R_delta_dot: 0.5
+      R_vy: 0.1
+
+      # Control rate weights
+      R_rate_v: 0.5
+      R_rate_omega: 1.0
+      R_rate_delta_dot: 1.5
+      R_rate_vy: 1.0
+
+      # Swerve 전용 noise (declare 필수, non_coaxial에서 무시)
+      noise_sigma_vy: 0.2
+
+      # Obstacle avoidance
+      obstacle_weight: 20.0
+      safety_distance: 0.2
+
+      # Costmap obstacle cost
+      use_costmap_cost: true
+      costmap_lethal_cost: 200.0
+      costmap_critical_cost: 20.0
+      lookahead_dist: 1.5
+      min_lookahead: 0.5
+      goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5
+
+      # Velocity Tracking Cost
+      velocity_tracking_weight: 0.0
+      reference_velocity: 1.0
+
+      # Forward preference
+      prefer_forward_weight: 3.0
+      prefer_forward_linear_ratio: 0.5
+      prefer_forward_velocity_incentive: 2.0
+
+      # Control smoothing
+      control_smoothing_alpha: 0.7
+
+      # Trajectory Stability
+      sg_filter_enabled: true
+      sg_half_window: 3
+      sg_poly_order: 3
+      it_alpha: 0.9
+      exploration_ratio: 0.1
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.2
+      adaptation_rate: 0.1
+      lambda_min: 0.1
+      lambda_max: 100.0
+
+      # ---- DIAL-MPPI 전용 파라미터 ----
+      dial_enabled: true
+      dial_n_diffuse: 5
+      dial_beta1: 0.8
+      dial_beta2: 0.5
+      dial_min_noise: 0.01
+
+      # Shield-DIAL (CBF)
+      dial_shield_enabled: false
+
+      # Adaptive-DIAL
+      dial_adaptive_enabled: false
+      dial_adaptive_cost_tol: 0.01
+      dial_adaptive_min_iter: 2
+      dial_adaptive_max_iter: 10
+
+      # CBF
+      cbf_enabled: false
+      cbf_gamma: 1.0
+      cbf_safety_margin: 0.3
+      cbf_robot_radius: 0.2
+      cbf_activation_distance: 3.0
+      cbf_cost_weight: 500.0
+      cbf_use_safety_filter: true
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      visualize_tube: false
+      visualize_cbf: false
+      max_visualized_samples: 20

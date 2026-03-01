@@ -120,6 +120,10 @@ def launch_setup(context, *args, **kwargs):
                    'Biased-MPPI (mpc_controller_ros2::BiasedMPPIControllerPlugin)'),
         'dial': ('nav2_params_dial_mppi.yaml',
                  'DIAL-MPPI (mpc_controller_ros2::DialMPPIControllerPlugin)'),
+        'dial_swerve': ('nav2_params_dial_swerve_mppi.yaml',
+                        'DIAL-MPPI Swerve (motion_model=swerve)'),
+        'dial_non_coaxial': ('nav2_params_dial_non_coaxial_mppi.yaml',
+                             'DIAL-MPPI Non-Coaxial (motion_model=non_coaxial_swerve)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -130,7 +134,10 @@ def launch_setup(context, *args, **kwargs):
     controller_params_file = os.path.join(pkg_dir, 'config', params_name)
 
     # Swerve drive 판별
-    is_swerve = controller_type in ['swerve', 'non_coaxial', 'non_coaxial_60deg']
+    is_swerve = controller_type in [
+        'swerve', 'non_coaxial', 'non_coaxial_60deg',
+        'dial_swerve', 'dial_non_coaxial',
+    ]
 
     # URDF / ros2_control config / nav2 공통 파라미터 분기
     if is_swerve:
