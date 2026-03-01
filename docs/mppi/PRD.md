@@ -62,7 +62,7 @@ MPPI 알고리즘 흐름:
 
 ## 2. 기능 요구사항
 
-### 2.1 핵심 기능 (Milestone 1: Vanilla MPPI)
+### 2.1 핵심 기능 (Milestone 1: Vanilla MPPI) ✅
 
 - **FR-1**: MPPIParams 데이터클래스 (N, dt, K, lambda, sigma, Q, R, Qf)
 - **FR-2**: BatchDynamicsWrapper - DifferentialDriveModel을 K개 샘플 벡터화
@@ -72,7 +72,7 @@ MPPI 알고리즘 흐름:
 - **FR-6**: RVIZ 시각화 (샘플 궤적, 가중 궤적, 비용 히트맵)
 - **FR-7**: 원형 궤적 추적 데모
 
-### 2.2 고도화 기능 (Milestone 2: M2 MPPI) ✅ 완료
+### 2.2 고도화 기능 (Milestone 2: M2 MPPI) ✅
 
 - **FR-8**: ControlRateCost — 제어 변화율(Δu) 비용으로 부드러운 제어 유도
 - **FR-9**: AdaptiveTemperature — ESS 기반 λ 자동 튜닝 (목표 ESS 비율 유지)
@@ -81,173 +81,111 @@ MPPI 알고리즘 흐름:
 - **FR-12**: TubeAwareCost — 장애물 safety_margin + tube_margin 확장
 - **FR-13**: Vanilla vs M2 / Vanilla vs Tube 비교 데모 (--live, --noise 지원)
 
-### 2.3 SOTA 변형 (Milestone 3: M3 MPPI)
+### 2.3 SOTA 변형 (Milestone 3) ✅
 
-#### M3a: Log-MPPI ✅ 완료
-- **FR-14**: LogMPPIController — log-space softmax 가중치 (참조 구현)
-- **FR-15**: Vanilla와 수학적 동등성 확인 (기존 max-shift trick과 동일)
+- **FR-14~15**: Log-MPPI — log-space softmax 가중치
+- **FR-16~20**: Tsallis-MPPI — q-exponential 가중치 (heavy/light-tail 제어)
+- **FR-21~22**: Risk-Aware MPPI (CVaR) — alpha 기반 가중치 절단
+- **FR-23~25**: SVMPC — SVGD 커널 기반 샘플 다양성 유도
 
-#### M3b: Tsallis-MPPI ✅ 완료
-- **FR-16**: TsallisMPPIController — q-exponential 가중치 (heavy/light-tail 제어)
-- **FR-17**: q_exponential(), q_logarithm() 유틸리티 함수
-- **FR-18**: tsallis_q 파라미터 (기본 1.0 = Vanilla 하위 호환)
-- **FR-19**: 비용 min-centering (q-exp translation-invariance 보정)
-- **FR-20**: q값 비교 데모 (q=0.5, 1.0, 1.2, 1.5)
+### 2.4 SOTA 변형 확장 (Milestone 3.5) ✅
 
-#### M3c: Risk-Aware MPPI (CVaR) ✅ 완료
-- **FR-21**: RiskAwareMPPIController — CVaR 가중치 절단 (최저 비용 ceil(alpha*K)개만 softmax)
-- **FR-22**: cvar_alpha 파라미터 (1.0=risk-neutral/Vanilla, <1=risk-averse, 실용 범위 [0.1, 1.0])
+- **FR-26~28**: Smooth MPPI — Δu space 최적화 + cumsum 복원 (input-lifting)
+- **FR-29~31**: Spline-MPPI — P개 knot 노이즈 → B-spline basis(N,P) 보간
+- **FR-32~34**: SVG-MPPI — G개 guide particle SVGD + (K-G)개 follower resampling
 
-#### M3d: Stein Variational MPPI (SVMPC) ✅ 완료
-- **FR-23**: SteinVariationalMPPIController — SVGD 기반 샘플 다양성 유도
-- **FR-24**: rbf_kernel, rbf_kernel_grad, median_bandwidth 유틸리티
-- **FR-25**: svgd_num_iterations=0 → Vanilla 하위 호환
+### 2.5 ROS2 C++ nav2 플러그인 (Milestone 4/5) ✅
 
-### 2.4 SOTA 변형 확장 (Milestone 3.5: M3.5 MPPI)
+- **FR-39~44**: M4 ROS2 nav2 통합 (Vanilla MPPI, Gazebo, costmap, 파라미터)
+- **FR-45~54**: M5a C++ SOTA (WeightComputation Strategy, Log/Tsallis/CVaR/SVMPC)
+- **FR-55~57**: M5b C++ M2 (Colored Noise, Adaptive Temp, Tube-MPPI)
+- **FR-58~65**: M3.5 C++ (Smooth/Spline/SVG-MPPI)
+- **FR-66~72**: Swerve 모션 품질 (theta smoothing, vy_max, VelocityTrackingCost)
 
-#### M3.5a: Smooth MPPI (SMPPI) ✅ 완료
-- **FR-26**: SmoothMPPIController — Δu space 최적화 + cumsum 복원 (input-lifting)
-- **FR-27**: Jerk cost (ΔΔu 페널티, smooth_R_jerk 가중치)
-- **FR-28**: smooth_action_cost_weight 스케일링 파라미터
+### 2.6 벤치마크 도구 ✅
 
-#### M3.5b: Spline-MPPI ✅ 완료
-- **FR-29**: SplineMPPIController — P개 knot 노이즈 → B-spline basis(N,P) 보간
-- **FR-30**: _bspline_basis() — 순수 NumPy de Boor 재귀 (scipy 미사용, NFR-1 준수)
-- **FR-31**: spline_num_knots, spline_degree, spline_knot_sigma, spline_auto_knot_sigma 파라미터
+- **FR-35~38**: 9종 변형 벤치마크 + Python vs C++ 벤치마크
 
-#### M3.5c: SVG-MPPI ✅ 완료
-- **FR-32**: SVGMPPIController — G개 guide particle SVGD + (K-G)개 follower resampling
-- **FR-33**: svg_num_guide_particles, svg_guide_step_size, svg_guide_iterations 파라미터
-- **FR-34**: G << K로 SVGD 계산량 O(G²D) << O(K²D) — SVMPC 대비 고속
+---
 
-### 2.5 벤치마크 도구
+### 2.7 [신규] C++ 컨트롤러 고도화 로드맵 (M7~)
 
-- **FR-35**: mppi_all_variants_benchmark.py — 9종 변형 동시 비교 벤치마크
-- **FR-36**: Position RMSE, Max Error, Control Rate, Solve Time, ESS 등 메트릭 수집
-- **FR-37**: `--live` 실시간 시뮬레이션 모드 + `--trajectory` 궤적 선택
-- **FR-38**: ASCII 요약 테이블 + 6패널 정적 비교 차트
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ROS2 C++ 컨트롤러 고도화 방향                               │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  M7: Biased-MPPI C++ nav2 플러그인 (#121)                   │
+│  ├── ancillary 컨트롤러 편향 샘플링                         │
+│  ├── J deterministic + (K-J) Gaussian 하이브리드             │
+│  └── 기존 WeightComputation Strategy 재사용                  │
+│                                                              │
+│  M8: Ackermann MotionModel C++                               │
+│  ├── nx=4 (x, y, θ, δ), nu=2 (v, δ_dot)                   │
+│  ├── MotionModelFactory 확장                                 │
+│  ├── Ackermann 전용 nav2 파라미터 YAML                      │
+│  └── 전체 플러그인 8종 자동 호환                             │
+│                                                              │
+│  M9: C++ MPPI 성능 최적화                                    │
+│  ├── perf/vtune hotspot 프로파일링                           │
+│  ├── Eigen SIMD 최적화 (Map + aligned alloc)                │
+│  ├── 캐시 지역성 개선 (SoA layout)                          │
+│  ├── 멀티스레드 rollout (OpenMP 심화)                        │
+│  └── 벤치마크: 제어 주파수 20Hz → 50Hz 목표                 │
+│                                                              │
+│  M10: 최신 MPPI 변형 C++                                     │
+│  ├── Covariance Steering MPPI (공분산 제어)                  │
+│  ├── π-MPPI (policy gradient + MPPI 융합)                   │
+│  ├── BR-MPPI (Barrier-Regularized MPPI)                     │
+│  └── SOPPI (Second-Order Path Integral)                      │
+│                                                              │
+│  M11: 안전성 고도화 C++                                      │
+│  ├── CLF-CBF-QP 통합 컨트롤러                               │
+│  ├── 다중 CBF 합성 (교집합/합집합)                           │
+│  └── 적응형 CBF 감마 자동 조정                               │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
 
-### 2.6 ROS2 C++ nav2 플러그인 (Milestone 4/5)
+#### M7: Biased-MPPI C++ nav2 플러그인 (Issue #121)
+- **FR-73**: BiasedMPPIControllerPlugin — MPPIControllerPlugin 상속
+- **FR-74**: AncillaryController 샘플 주입 (J deterministic + (K-J) Gaussian)
+- **FR-75**: bias_ratio 파라미터 (J/K 비율, 기본 0.3)
+- **FR-76**: ancillary_type 파라미터 ("tube", "pid", "lqr")
+- **FR-77**: 기존 WeightComputation 전략과 조합 가능 (Biased + Log, Biased + CVaR 등)
+- **FR-78**: nav2_params_biased_mppi.yaml 설정 파일
+- **FR-79**: 단위 테스트 (bias injection, weight 호환, Vanilla 동등성)
 
-#### M4: ROS2 nav2 통합 ✅ 완료
-- **FR-39**: C++ Vanilla MPPI nav2 플러그인 (MPPIControllerPlugin)
-- **FR-40**: Gazebo Harmonic + ros2_control + nav2 통합 launch
-- **FR-41**: 커스텀 MPPI vs nav2 기본 MPPI 비교 전환 환경 (`controller:=custom|nav2`)
-- **FR-42**: local_costmap 장애물 추출 + ObstacleCost
-- **FR-43**: PreferForwardCost (후진 편향 해소)
-- **FR-44**: 동적 파라미터 재설정 (ROS2 parameter callback)
+#### M8: Ackermann MotionModel C++
+- **FR-80**: AckermannModel 클래스 — MotionModel 인터페이스 구현
+- **FR-81**: nx=4 (x, y, θ, δ), nu=2 (velocity, steering_rate)
+- **FR-82**: 최소 회전 반경 제약 (δ_max)
+- **FR-83**: MotionModelFactory에 "ackermann" 등록
+- **FR-84**: nav2_params_ackermann_mppi.yaml 설정 파일
+- **FR-85**: launch `controller:=ackermann` 분기
+- **FR-86**: Ackermann URDF + Gazebo 모델
 
-#### M5a: C++ MPPI SOTA 변형 ✅ 완료
-- **FR-45**: WeightComputation Strategy 인터페이스 (가중치 계산 분리) — PR #82
-- **FR-46**: VanillaMPPIWeights, LogMPPIWeights 구현 — PR #82
-- **FR-47**: LogMPPIControllerPlugin (Log-MPPI nav2 플러그인) — PR #82
-- **FR-48**: logSumExp 유틸리티 함수 — PR #82
-- **FR-49**: TsallisMPPIWeights (q-exponential 가중치) — PR #84
-- **FR-50**: RiskAwareMPPIWeights (CVaR 가중치 절단) — PR #84
-- **FR-51**: TsallisMPPIControllerPlugin, RiskAwareMPPIControllerPlugin — PR #84
-- **FR-52**: SVMPCControllerPlugin (SVGD 커널 기반 computeControl override) — PR #86
-- **FR-53**: computeControl() virtual화 + private→protected 리팩터링 — PR #86
-- **FR-54**: SVGD Force (attractive + repulsive), medianBandwidth, computeDiversity — PR #86
+#### M9: C++ MPPI 성능 최적화
+- **FR-87**: hotspot 프로파일 + 분석 레포트 생성 스크립트
+- **FR-88**: Eigen Map 기반 zero-copy 데이터 전달
+- **FR-89**: OpenMP parallel_for rollout 최적화
+- **FR-90**: SoA (Structure of Arrays) 메모리 레이아웃
+- **FR-91**: 성능 벤치마크 (제어 주파수, 레이턴시 p50/p99)
 
-#### M5b: C++ MPPI M2 고도화 ✅ 완료 (PR #74)
-- **FR-55**: C++ Colored Noise Sampler (OU 프로세스)
-- **FR-56**: C++ Adaptive Temperature (ESS 기반 λ 자동 조정)
-- **FR-57**: C++ Tube-MPPI (AncillaryController)
+### 2.8 비기능 요구사항
 
-#### M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
-- **FR-58**: SmoothMPPIControllerPlugin — Δu space 최적화 + cumsum 복원 + jerk cost
-- **FR-59**: SplineMPPIControllerPlugin — B-spline basis (de Boor 재귀) + P knot → N 보간
-- **FR-60**: SVGMPPIControllerPlugin — G guide SVGD + (K-G) follower resampling
-- **FR-61**: svmpc_controller_plugin.hpp private→protected (SVGD 메서드 재사용)
-- **FR-62**: mppi_params.hpp M3.5 전용 12개 파라미터 추가
-- **FR-63**: nav2_params_{smooth,spline,svg}_mppi.yaml 설정 파일
-- **FR-64**: launch 분기 3개 (controller:=smooth/spline/svg)
-- **FR-65**: 단위 테스트 16개 (B-spline basis, cumsum, jerk cost, guide selection 등)
-
-### 2.8 Swerve 모션 품질 개선 (PR #113) ✅ 완료
-
-#### P1: Reference Theta Smoothing
-- **FR-66**: pathToReferenceTrajectory()에 circular moving average 적용
-- **FR-67**: ref_theta_smooth_window 파라미터 (0=OFF, 홀수 권장: 3,5,7)
-- atan2 양자화 노이즈 → Q_theta 증폭 → heading 진동 해소
-
-#### P2: vy_max 파라미터 분리
-- **FR-68**: MPPIParams.vy_max (음수=v_max 사용, 하위호환)
-- **FR-69**: MotionModelFactory + CBF safety filter bounds에 vy_max 반영
-- Swerve lateral crab motion 억제 (vy_max=0.5 vs v_max=1.5)
-
-#### P3: VelocityTrackingCost
-- **FR-70**: VelocityTrackingCost — 경로 접선 방향 속도 추적 비용
-- **FR-71**: cost = weight × Σ(v_along - ref_velocity)², 접선 내적 기반
-- **FR-72**: velocity_tracking_weight, reference_velocity 파라미터
-- nav2 MPPI PathAlignCritic + PathFollowCritic에 대응
-
-### 2.7 비기능 요구사항
-
-- **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음)
+- **NFR-1**: 순수 NumPy 구현 (CasADi 의존성 없음) — Python
 - **NFR-2**: K=1024 샘플, N=30 호라이즌에서 실행 가능
 - **NFR-3**: 기존 `compute_control(state, ref) -> (control, info)` 시그니처 준수
 - **NFR-4**: for-loop 금지, NumPy broadcasting으로 배치 처리 (GPU: JAX lax.scan + vmap)
 - **NFR-5**: 원형 궤적 추적 Position RMSE < 0.2m
 - **NFR-6**: Tube-MPPI tube_enabled=False 시 Vanilla와 100% 동일 동작 (하위 호환)
+- **NFR-7**: [신규] C++ 신규 플러그인은 기존 nav2 파라미터 체계와 100% 호환
+- **NFR-8**: [신규] MotionModel 추가 시 기존 8종 플러그인 코드 변경 불필요
 
 ## 3. 아키텍처
 
-```
-시스템 아키텍처:
-
-┌──────────────────────────────────────────────────────────────────┐
-│                     MPPIController (base_mppi.py)                │
-│                                                                  │
-│  ┌──────────────┐  ┌───────────────┐  ┌────────────────────┐   │
-│  │ MPPIParams    │  │ GaussianSampler│  │ CompositeMPPICost  │   │
-│  │ (mppi_params) │  │ (sampling.py)  │  │ (cost_functions.py)│   │
-│  └──────┬───────┘  └───────┬───────┘  └────────┬───────────┘   │
-│         │                  │                    │               │
-│         │     ┌────────────▼────────────┐       │               │
-│         └────►│ BatchDynamicsWrapper    │◄──────┘               │
-│               │ (dynamics_wrapper.py)   │                       │
-│               └────────────┬────────────┘                       │
-│                            │                                    │
-│                  ┌─────────▼─────────┐                          │
-│                  │ DifferentialDrive  │ (기존 모델 재사용)       │
-│                  │ Model             │                           │
-│                  └───────────────────┘                           │
-│                                                                  │
-│  compute_control(state, ref) -> (control, info)                 │
-│    info: {sample_trajectories, sample_weights, best_trajectory} │
-└──────────────────────────────────┬───────────────────────────────┘
-                                   │
-            ┌──────────────────────┼──────────────────────┐
-            │                      │                      │
-┌───────────▼───────────┐  ┌──────▼──────────────┐  ┌────▼────────────────────┐
-│ TubeMPPIController    │  │ AdaptiveTemperature │  │ MPPIRVizVisualizer      │
-│ (tube_mppi.py) [M2]   │  │ (adaptive_temp.py)  │  │ (mppi_rviz_visualizer)  │
-│ - MPPIController 상속 │  │ - ESS 기반 λ 튜닝  │  │ - 샘플 궤적 (투명도)   │
-│ - 명목 상태 전파      │  │ - 목표 ESS 비율    │  │ - 가중 평균 궤적 (시안)│
-│ - AncillaryController │  └─────────────────────┘  │ - 비용 히트맵           │
-│   (body frame 피드백) │                           │ - 온도/ESS 텍스트       │
-│ - TubeAwareCost       │                           └─────────────────────────┘
-│ - tube 경계 시각화    │
-└───────────────────────┘
-┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────────┐
-│ LogMPPIController     │  │ TsallisMPPIController │  │ RiskAwareMPPIController    │
-│ (log_mppi.py) [M3a]   │  │ (tsallis_mppi.py)[M3b]│  │ (risk_aware_mppi.py) [M3c] │
-│ - log-space softmax   │  │ - q-exponential 가중치│  │ - CVaR 가중치 절단         │
-│ - 참조 구현           │  │ - min-centering       │  │ - alpha=1→Vanilla          │
-│   (Vanilla와 동등)    │  │ - q>1=탐색, q<1=집중 │  │ - alpha<1→risk-averse      │
-└───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
-┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────────┐
-│ SmoothMPPIController  │  │ SplineMPPIController  │  │ SVGMPPIController          │
-│ (smooth_mppi.py)      │  │ (spline_mppi.py)      │  │ (svg_mppi.py) [M3.5c]      │
-│ [M3.5a]               │  │ [M3.5b]               │  │ - G guide SVGD             │
-│ - Δu input-lifting    │  │ - B-spline basis 보간 │  │ - (K-G) follower resample  │
-│ - cumsum 복원         │  │ - P knot << N horizon │  │ - SVMPC 상속 (고속화)      │
-│ - jerk cost 페널티    │  │ - de Boor 재귀 (NumPy)│  │ - O(G²D) << O(K²D)        │
-└───────────────────────┘  └───────────────────────┘  └───────────────────────────┘
-```
-
-### C++ nav2 플러그인 아키텍처
+### C++ nav2 플러그인 아키텍처 (핵심)
 
 ```
 nav2_core::Controller
@@ -258,10 +196,12 @@ MPPIControllerPlugin (base)                                   │
   │ protected: computeControl() (virtual)                     │
   │ protected: params_, control_sequence_, dynamics_, ...     │
   │ uses WeightComputation strategy                           │
+  │ uses MotionModel (DiffDrive/Swerve/NonCoaxial/Ackermann) │
   │                                                           │
   ├── LogMPPIControllerPlugin (상속 + LogMPPIWeights)         │
   ├── TsallisMPPIControllerPlugin (상속 + TsallisMPPIWeights) │
   ├── RiskAwareMPPIControllerPlugin (상속 + RiskAwareMPPIWeights)
+  ├── BiasedMPPIControllerPlugin (M7: ancillary bias inject)  │  ← 신규
   ├── SmoothMPPIControllerPlugin (Δu space + jerk cost)      │
   ├── SplineMPPIControllerPlugin (B-spline basis 보간)       │
   └── SVMPCControllerPlugin (상속 + computeControl override)  │
@@ -273,6 +213,12 @@ MPPIControllerPlugin (base)                                   │
   ├── LogMPPIWeights (log-space 정규화)                       │
   ├── TsallisMPPIWeights (q-exponential)                      │
   └── RiskAwareMPPIWeights (CVaR 절단)                        │
+                                                              │
+  MotionModel (다형성 인터페이스)                              │
+  ├── DiffDriveModel (nx=3, nu=2)                             │
+  ├── SwerveDriveModel (nx=3, nu=3)                           │
+  ├── NonCoaxialSwerveModel (nx=4, nu=3)                      │
+  └── AckermannModel (M8: nx=4, nu=2)                         │  ← 신규
 
 C++ 파일 구조:
 ros2_ws/src/mpc_controller_ros2/
@@ -286,12 +232,19 @@ ros2_ws/src/mpc_controller_ros2/
 │   ├── spline_mppi_controller_plugin.hpp  # Spline-MPPI 플러그인 (B-spline)
 │   ├── svg_mppi_controller_plugin.hpp     # SVG-MPPI 플러그인 (Guide SVGD)
 │   ├── weight_computation.hpp             # Strategy 인터페이스 + 4종 구현
-│   ├── mppi_params.hpp                    # 파라미터 (M2+SOTA+SVGD)
+│   ├── mppi_params.hpp                    # 파라미터 (M2+SOTA+SVGD+CBF+Stability)
 │   ├── batch_dynamics_wrapper.hpp         # 배치 동역학 (Eigen)
 │   ├── cost_functions.hpp                 # 비용 함수 모듈 (VelocityTrackingCost 포함)
 │   ├── sampling.hpp                       # 노이즈 샘플러
 │   ├── adaptive_temperature.hpp           # ESS 기반 λ 자동 조정
 │   ├── tube_mppi.hpp                      # Tube-MPPI
+│   ├── motion_model.hpp                   # MotionModel 인터페이스 + Factory
+│   ├── diff_drive_model.hpp               # DiffDrive 모델
+│   ├── swerve_drive_model.hpp             # Swerve 모델
+│   ├── non_coaxial_swerve_model.hpp       # NonCoaxial Swerve 모델
+│   ├── barrier_function.hpp               # CBF 장벽 함수
+│   ├── cbf_safety_filter.hpp              # CBF 안전 필터
+│   ├── savitzky_golay_filter.hpp          # SG 필터
 │   └── utils.hpp                          # logSumExp, softmaxWeights 등
 ├── src/
 │   ├── mppi_controller_plugin.cpp
@@ -303,160 +256,99 @@ ros2_ws/src/mpc_controller_ros2/
 │   ├── spline_mppi_controller_plugin.cpp
 │   ├── svg_mppi_controller_plugin.cpp
 │   ├── weight_computation.cpp
-│   └── ...
+│   ├── batch_dynamics_wrapper.cpp
+│   ├── cost_functions.cpp
+│   ├── sampling.cpp
+│   ├── adaptive_temperature.cpp
+│   ├── ancillary_controller.cpp
+│   ├── tube_mppi.cpp
+│   ├── motion_model.cpp / diff_drive_model.cpp / ...
+│   ├── barrier_function.cpp / cbf_safety_filter.cpp
+│   └── savitzky_golay_filter.cpp
 ├── plugins/
 │   └── mppi_controller_plugin.xml         # 8종 플러그인 등록
 ├── config/
-│   ├── nav2_params_custom_mppi.yaml       # Vanilla MPPI 설정
-│   ├── nav2_params_log_mppi.yaml          # Log-MPPI 설정
-│   ├── nav2_params_tsallis_mppi.yaml      # Tsallis-MPPI 설정
-│   ├── nav2_params_risk_aware_mppi.yaml   # Risk-Aware MPPI 설정
-│   ├── nav2_params_svmpc.yaml             # SVMPC 설정
-│   ├── nav2_params_smooth_mppi.yaml      # Smooth-MPPI 설정
-│   ├── nav2_params_spline_mppi.yaml      # Spline-MPPI 설정
-│   └── nav2_params_svg_mppi.yaml         # SVG-MPPI 설정
+│   ├── nav2_params.yaml                   # DiffDrive Vanilla
+│   ├── nav2_params_swerve_mppi.yaml       # Swerve MPPI
+│   ├── nav2_params_non_coaxial_mppi.yaml  # NonCoaxial MPPI
+│   ├── nav2_params_log_mppi.yaml          # Log-MPPI
+│   ├── nav2_params_tsallis_mppi.yaml      # Tsallis-MPPI
+│   ├── nav2_params_risk_aware_mppi.yaml   # Risk-Aware MPPI
+│   ├── nav2_params_svmpc.yaml             # SVMPC
+│   ├── nav2_params_smooth_mppi.yaml       # Smooth-MPPI
+│   ├── nav2_params_spline_mppi.yaml       # Spline-MPPI
+│   └── nav2_params_svg_mppi.yaml          # SVG-MPPI
 └── test/unit/
-    ├── test_weight_computation.cpp        # 30개 단위 테스트
-    ├── test_svmpc.cpp                     # 13개 SVGD 테스트
-    ├── test_m35_plugins.cpp              # 18개 M3.5 테스트
-    ├── test_cbf.cpp                      # 20개 CBF 테스트
-    └── test_trajectory_stability.cpp     # 25개 궤적 안정화 테스트
-```
-
-### Python 파일 구조
-
-```
-mpc_controller/controllers/mppi/
-  __init__.py                   # MPPIController, TubeMPPIController 등 export
-  mppi_params.py                # MPPIParams 데이터클래스 (tube 필드 포함)
-  dynamics_wrapper.py           # BatchDynamicsWrapper (RK4 벡터화)
-  cost_functions.py             # 비용 함수 모듈 (ControlRateCost, TubeAwareCost 포함)
-  sampling.py                   # GaussianSampler, ColoredNoiseSampler
-  base_mppi.py                  # Vanilla MPPI 핵심 알고리즘 (_compute_weights 오버라이드 포인트)
-  adaptive_temperature.py       # AdaptiveTemperature (ESS 기반 λ 자동 튜닝) [M2]
-  ancillary_controller.py       # AncillaryController (body frame 피드백 보정) [M2]
-  tube_mppi.py                  # TubeMPPIController (명목 상태 전파 + 피드백) [M2]
-  log_mppi.py                   # LogMPPIController (log-space softmax 참조 구현) [M3a]
-  tsallis_mppi.py               # TsallisMPPIController (q-exponential 가중치) [M3b]
-  risk_aware_mppi.py            # RiskAwareMPPIController (CVaR 가중치 절단) [M3c]
-  stein_variational_mppi.py     # SteinVariationalMPPIController (SVGD 샘플 다양성) [M3d]
-  smooth_mppi.py                # SmoothMPPIController (Δu input-lifting, jerk cost) [M3.5a]
-  spline_mppi.py                # SplineMPPIController (B-spline basis 보간) [M3.5b]
-  svg_mppi.py                   # SVGMPPIController (Guide particle SVGD) [M3.5c]
-  utils.py                      # normalize_angle, log_sum_exp, q_exponential, rbf_kernel 등
-  gpu_backend.py                # JAX/NumPy 백엔드 추상화 + CPU fallback
-  gpu_dynamics.py               # JIT rollout (lax.scan + vmap, 3종 모델)
-  gpu_costs.py                  # JIT 비용 함수 fusion (장애물 벡터화)
-  gpu_sampling.py               # JAX PRNG (Gaussian + Colored Noise)
-  gpu_mppi_kernel.py            # 통합 GPU MPPI 커널 (전체 스텝)
-
-mpc_controller/ros2/
-  mppi_rviz_visualizer.py       # RVIZ 시각화
-
-tests/
-  test_mppi.py                  # Vanilla MPPI 유닛 + 통합 테스트
-  test_mppi_cost_functions.py   # 비용 함수 테스트
-  test_mppi_sampling.py         # 샘플링 테스트
-  test_mppi_live_demo.py        # 라이브 데모 테스트
-  test_ancillary_controller.py  # AncillaryController 테스트 (14개) [M2]
-  test_tube_mppi.py             # TubeMPPIController 테스트 (13개) [M2]
-  test_log_mppi.py              # LogMPPIController 테스트 (15개) [M3a]
-  test_tsallis_mppi.py          # TsallisMPPIController 테스트 (24개) [M3b]
-  test_risk_aware_mppi.py       # RiskAwareMPPIController 테스트 (22개) [M3c]
-  test_stein_variational_mppi.py # SteinVariationalMPPIController 테스트 (23개) [M3d]
-  test_smooth_mppi.py           # SmoothMPPIController 테스트 (17개) [M3.5a]
-  test_spline_mppi.py           # SplineMPPIController 테스트 (23개) [M3.5b]
-  test_svg_mppi.py              # SVGMPPIController 테스트 (21개) [M3.5c]
-  test_gpu_mppi.py              # GPU MPPI 정확도 + 성능 테스트 (22개)
-
-examples/
-  mppi_basic_demo.py            # Vanilla MPPI 데모
-  mppi_vanilla_vs_m2_demo.py    # Vanilla vs M2 비교 데모 [M2]
-  mppi_vanilla_vs_tube_demo.py  # Vanilla vs Tube 비교 데모 [M2]
-  log_mppi_demo.py              # Vanilla vs Log-MPPI 비교 데모 [M3a]
-  tsallis_mppi_demo.py          # Tsallis q 파라미터 비교 데모 [M3b]
-  risk_aware_mppi_demo.py       # Risk-Aware alpha 비교 데모 (장애물 회피) [M3c]
-  stein_variational_mppi_demo.py # SVMPC SVGD iteration 비교 데모 [M3d]
-  smooth_mppi_demo.py            # Vanilla vs SMPPI jerk weight 비교 [M3.5a]
-  spline_mppi_demo.py            # Spline-MPPI knot 수 비교 [M3.5b]
-  svg_mppi_demo.py               # SVG-MPPI vs SVMPC 비교 (장애물) [M3.5c]
-  mppi_all_variants_benchmark.py # 9종 변형 동시 비교 벤치마크 (--live, --trajectory)
-  gpu_benchmark.py               # GPU vs CPU K별 비교 벤치마크
-
-configs/
-  mppi_params.yaml              # 기본 설정
+    ├── test_batch_dynamics.cpp            # 8개
+    ├── test_cost_functions.cpp            # 38개
+    ├── test_sampling.cpp                  # 8개
+    ├── test_mppi_algorithm.cpp            # 7개
+    ├── test_adaptive_temperature.cpp      # 9개
+    ├── test_tube_mppi.cpp                 # 13개
+    ├── test_weight_computation.cpp        # 30개
+    ├── test_svmpc.cpp                     # 13개
+    ├── test_m35_plugins.cpp               # 18개
+    ├── test_motion_model.cpp              # 48개
+    ├── test_cbf.cpp                       # 20개
+    └── test_trajectory_stability.cpp      # 25개
+    (총 237 gtest)
 ```
 
 ## 4. 마일스톤 로드맵
 
 ```
-M1: Vanilla MPPI ✅ 완료
-├── MPPIParams 데이터클래스
-├── BatchDynamicsWrapper
-├── StateTracking / Obstacle 비용 함수
-├── Gaussian 샘플링
-├── Vanilla MPPI 컨트롤러
-├── RVIZ 시각화
-└── 원형 궤적 추적 테스트 (RMSE=0.1534m < 0.2m)
+═══════════════════════════════════════════════════════
+  완료된 마일스톤 (M1~M5 + 부가)
+═══════════════════════════════════════════════════════
 
-M2: 고도화 ✅ 완료
-├── ✅ Colored Noise 샘플링 (OU 프로세스 기반)
-├── ✅ Tube-MPPI (AncillaryController + TubeMPPIController)
-├── ✅ Adaptive temperature (ESS 기반 λ auto-tuning)
-├── ✅ ControlRateCost (제어 변화율 비용)
-├── ✅ TubeAwareCost (tube margin 확장)
-└── ✅ GPU 가속 (JAX JIT + lax.scan + vmap) — PR #103
+M1: Vanilla MPPI ✅
+M2: 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI) ✅
+M3: SOTA 변형 (Log, Tsallis, CVaR, SVMPC) ✅
+M3.5: 확장 (Smooth, Spline, SVG-MPPI) ✅
+M4: ROS2 nav2 통합 (C++ Vanilla MPPI) ✅
+M5a: C++ SOTA (Log/Tsallis/CVaR/SVMPC) ✅
+M5b: C++ M2 고도화 ✅
+M3.5 C++: Smooth/Spline/SVG-MPPI ✅
+MotionModel 추상화: DiffDrive/Swerve/NonCoaxial ✅
+MPPI-CBF: Python + C++ ✅
+궤적 안정화: SG Filter + IT 정규화 ✅
+Swerve 모션 품질: theta smoothing + vy_max ✅
+GPU 가속: JAX JIT (8종 확장) ✅
+pybind11 바인딩 + 벤치마크 ✅
 
-M3: SOTA 변형 ✅ 완료
-├── ✅ M3a: Log-MPPI (log-space softmax, 참조 구현)
-├── ✅ M3b: Tsallis-MPPI (q-exponential, min-centering)
-├── ✅ M3c: Risk-Aware MPPI (CVaR 가중치 절단)
-└── ✅ M3d: Stein Variational MPPI (SVMPC — SVGD 커널 기반)
+═══════════════════════════════════════════════════════
+  진행 예정 마일스톤 — ROS2 C++ 중심
+═══════════════════════════════════════════════════════
 
-M3.5: SOTA 변형 확장 ✅ 완료
-├── ✅ M3.5a: Smooth MPPI (SMPPI — Δu input-lifting, jerk cost)
-├── ✅ M3.5b: Spline-MPPI (B-spline basis 보간, P << N)
-└── ✅ M3.5c: SVG-MPPI (Guide particle SVGD + follower resampling)
+M7: Biased-MPPI C++ (Issue #121)          ◀ 다음
+├── BiasedMPPIControllerPlugin
+├── Ancillary 편향 샘플 주입
+├── J/K 비율 파라미터 (bias_ratio)
+├── 기존 WeightComputation 조합 가능
+└── 단위 테스트 + 벤치마크
 
-M4: ROS2 nav2 통합 ✅ 완료
-├── ✅ C++ Vanilla MPPI nav2 플러그인 (PR #72)
-├── ✅ Gazebo + ros2_control + nav2 통합 launch
-├── ✅ 커스텀 vs nav2 기본 MPPI 비교 환경 (PR #76)
-├── ✅ local_costmap 장애물 추출 + ObstacleCost
-├── ✅ PreferForwardCost 후진 편향 해소 (PR #80)
-└── ✅ 동적 파라미터 재설정 콜백
+M8: Ackermann MotionModel C++
+├── AckermannModel (nx=4, nu=2)
+├── MotionModelFactory 확장
+├── 최소 회전 반경 제약
+└── URDF + launch 분기
 
-M5a: C++ MPPI SOTA 변형 ✅ 완료
-├── ✅ WeightComputation Strategy 패턴 (PR #82)
-├── ✅ Log-MPPI C++ nav2 플러그인 (PR #82)
-├── ✅ Tsallis-MPPI C++ 플러그인 (PR #84)
-├── ✅ Risk-Aware (CVaR) C++ 플러그인 (PR #84)
-└── ✅ SVMPC C++ 플러그인 (PR #86)
+M9: C++ MPPI 성능 최적화
+├── hotspot 프로파일링
+├── Eigen SIMD/Map 최적화
+├── OpenMP 병렬 rollout 심화
+└── 제어 주파수 50Hz 목표
 
-M5b: C++ MPPI M2 고도화 ✅ 완료 (PR #74)
-├── ✅ Colored Noise Sampler (OU 프로세스)
-├── ✅ Adaptive Temperature (ESS 기반 λ)
-└── ✅ Tube-MPPI (AncillaryController)
+M10: 최신 MPPI 변형 C++
+├── Covariance Steering MPPI
+├── π-MPPI
+├── BR-MPPI
+└── SOPPI
 
-M3.5 C++: C++ M3.5 변형 ✅ 완료 (PR #88)
-├── ✅ Smooth-MPPI C++ 플러그인 (Δu input-lifting + jerk cost)
-├── ✅ Spline-MPPI C++ 플러그인 (B-spline basis, de Boor 재귀)
-└── ✅ SVG-MPPI C++ 플러그인 (Guide particle SVGD + follower resampling)
-
-Swerve 모션 품질 ✅ 완료 (PR #113)
-├── ✅ Reference theta circular moving average (양자화 노이즈 제거)
-├── ✅ vy_max 파라미터 분리 (swerve vy 독립 제한)
-└── ✅ VelocityTrackingCost (경로 방향 속도 추적 비용)
-
-GPU 가속 ✅ 완료 (PR #103)
-├── ✅ JAX JIT + lax.scan + vmap 기반 rollout + cost 병렬화
-├── ✅ 비용 함수 fusion (8종 → 단일 JIT kernel)
-├── ✅ diff_drive / swerve / non_coaxial_swerve 3종 모델 지원
-├── ✅ GPU↔CPU 전송 최소화 (호출당 2회)
-├── ✅ use_gpu=False 기본값 → 기존 코드 100% 보존
-├── ✅ 테스트 22개 + 벤치마크 스크립트
-├── ⬜ SVMPC pairwise kernel GPU 가속 (Phase 4c)
-└── ⬜ MPPI 변형별 GPU 확장 (Phase 4a~4d)
+M11: 안전성 고도화 C++
+├── CLF-CBF-QP 통합
+├── 다중 CBF 합성
+└── 적응형 CBF
 ```
 
 ## 5. 참조
@@ -470,6 +362,7 @@ GPU 가속 ✅ 완료 (PR #103)
 - Kim et al. (2021) - "Smooth MPPI" (SMPPI — input-lifting)
 - Bhardwaj et al. (2024) - "Spline-MPPI" (ICRA 2024, B-spline interpolation)
 - Kondo et al. (2024) - "SVG-MPPI" (ICRA 2024, Guide particle SVGD)
+- Sacks et al. (2024) - "Biased-MPPI" (RA-L 2024, ancillary controller bias)
 
 ### 참조 구현
 - `pytorch_mppi` - PyTorch GPU 가속 MPPI
