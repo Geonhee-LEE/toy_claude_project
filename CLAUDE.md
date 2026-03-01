@@ -66,6 +66,7 @@ mpc_controller/
 - 60° 스티어링 제한 데모 + 벤치마크: 완료 (PR #118)
 - Biased-MPPI C++ nav2 플러그인: 완료 (PR #123)
 - DIAL-MPPI C++ nav2 플러그인 (Diffusion Annealing, ICRA 2025): 완료 (PR #125)
+- DIAL-MPPI 실시간 성능 최적화 (AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝): 완료 (PR #129)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
