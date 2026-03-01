@@ -74,7 +74,9 @@ from launch.actions import (
     DeclareLaunchArgument,
     OpaqueFunction,
     GroupAction,
+    RegisterEventHandler,
 )
+from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
 import xacro
@@ -224,67 +226,62 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ========== 5. Controller Activation ==========
-    # gz_ros2_control이 controller_manager를 생성하고, spawner가 컨트롤러를
-    # load → configure → activate.
+    # 공식 Jazzy gz_ros2_control 패턴:
+    #   OnProcessExit(spawn_robot) → JSB spawner → DD/Swerve spawner
     #
-    # 문제: spawner 기본 서비스 호출 타임아웃이 짧아 Gazebo 하드웨어 초기화
-    #       완료 전에 configure가 실패 (레이스 컨디션).
-    # 해결: --service-call-timeout 30 + 하드웨어 인터페이스 대기 + 재시도.
-    def _activate_cmd(ctrl_name, extra_args=''):
-        """단일 컨트롤러 활성화 (spawner + 재시도)."""
-        return (
-            f'echo "[controllers] Activating {ctrl_name}..."; '
-            f'for attempt in 1 2 3 4 5; do '
+    # spawner가 내부적으로 controller_manager 서비스를 대기하므로
+    # 별도 wait 스크립트가 필요하지 않음.
+    # configure_controller 실패 시 bash retry loop로 폴백.
+
+    def _make_spawner_cmd(ctrl_name, extra_args=''):
+        """spawner를 bash retry loop로 감싼 명령어 생성.
+
+        gz_ros2_control이 URDF <parameters>에서 컨트롤러를 자동 로드하면
+        spawner는 "already loaded"로 parameter 설정을 건너뛰고 configure가 실패.
+        → 매 시도마다 unload 후 clean load로 해결.
+        """
+        return [
+            'bash', '-c',
+            f'for attempt in 1 2 3 4 5 6 7 8 9 10; do '
+            f'  echo "[controllers] Spawning {ctrl_name} (attempt $attempt)..."; '
+            # 자동 로드된 컨트롤러 unload (spawner가 clean load 가능하도록)
+            f'  ros2 control unload_controller {ctrl_name}'
+            f'    -c /controller_manager 2>/dev/null || true; '
+            f'  sleep 0.5; '
             f'  ros2 run controller_manager spawner {ctrl_name}'
-            f'  -c /controller_manager'
-            f'  --controller-manager-timeout 60'
-            f'  --service-call-timeout 30'
-            f'  {extra_args} 2>&1 && '
-            f'  echo "[controllers] {ctrl_name} activated (attempt $attempt)" && break; '
+            f'    -c /controller_manager'
+            f'    --controller-manager-timeout 120'
+            f'    {extra_args} 2>&1 && '
+            f'  echo "[controllers] {ctrl_name} activated" && exit 0; '
             f'  echo "[controllers] {ctrl_name} attempt $attempt failed, retrying in 3s..."; '
             f'  sleep 3; '
             f'done; '
-        )
+            f'echo "[controllers] WARNING: {ctrl_name} failed after 10 attempts"; '
+            f'exit 1; '
+        ]
 
-    wait_for_cm = (
-        'echo "[controllers] Waiting for controller_manager..."; '
-        'for i in $(seq 1 30); do '
-        '  ros2 service list 2>/dev/null | grep -q "/controller_manager/list_controllers" && '
-        '  echo "[controllers] controller_manager ready" && break; '
-        '  sleep 1; '
-        'done; '
-        # Gazebo 하드웨어 인터페이스 초기화 대기
-        'echo "[controllers] Waiting for hardware interfaces..."; '
-        'for i in $(seq 1 15); do '
-        '  ros2 control list_hardware_interfaces -c /controller_manager 2>/dev/null | '
-        '  grep -q "velocity" && '
-        '  echo "[controllers] Hardware interfaces ready" && break; '
-        '  sleep 2; '
-        'done; '
+    jsb_spawner = ExecuteProcess(
+        cmd=_make_spawner_cmd('joint_state_broadcaster'),
+        output='screen',
     )
 
     if is_swerve:
-        activate_cmd = (
-            wait_for_cm
-            + _activate_cmd('joint_state_broadcaster')
-            + _activate_cmd('steer_position_controller')
-            + _activate_cmd('wheel_velocity_controller')
-            + 'echo "[controllers] All swerve controllers activated"; '
-            + 'ros2 control list_controllers -c /controller_manager 2>&1 || true'
+        steer_spawner = ExecuteProcess(
+            cmd=_make_spawner_cmd('steer_position_controller',
+                                  f'--param-file {controller_config}'),
+            output='screen',
+        )
+        wheel_spawner = ExecuteProcess(
+            cmd=_make_spawner_cmd('wheel_velocity_controller',
+                                  f'--param-file {controller_config}'),
+            output='screen',
         )
     else:
-        activate_cmd = (
-            wait_for_cm
-            + _activate_cmd('joint_state_broadcaster')
-            + _activate_cmd('diff_drive_controller')
-            + 'echo "[controllers] All diff_drive controllers activated"; '
-            + 'ros2 control list_controllers -c /controller_manager 2>&1 || true'
+        dd_spawner = ExecuteProcess(
+            cmd=_make_spawner_cmd('diff_drive_controller',
+                                  f'--param-file {controller_config}'),
+            output='screen',
         )
-
-    activate_controllers = ExecuteProcess(
-        cmd=['bash', '-c', activate_cmd],
-        output='screen',
-    )
 
     # ========== 6. cmd_vel relay ==========
     if is_swerve:
@@ -446,6 +443,16 @@ rclpy.spin(TwistStamper())
     )
 
     # ========== Launch Nodes ==========
+    #
+    # 실행 순서:
+    #   1. Gazebo + RSP + Bridge (즉시)
+    #   2. spawn_robot (5s 딜레이)
+    #   3. spawn_robot 종료 → wait_for_hw_active → JSB spawner → DD spawner
+    #      (OnProcessExit 이벤트 체인, 공식 Jazzy 패턴)
+    #   4. nav2 localization (20s 딜레이)
+    #   5. nav2 navigation + lifecycle (30s 딜레이)
+    #   6. RVIZ (60s 딜레이, headless 제외)
+
     nodes = [
         LogInfo(msg=f'[MPPI Controller] {controller_label}'),
         LogInfo(msg=f'[MPPI Controller] headless: {headless}'),
@@ -468,22 +475,68 @@ rclpy.spin(TwistStamper())
             period=5.0,
             actions=[
                 LogInfo(msg='Spawning robot...'),
-                spawn_robot
+                spawn_robot,
             ]
         ),
 
-        # 5. Controllers (12s delay — Gazebo spawn 후 gz_ros2_control 안정화 대기)
-        TimerAction(
-            period=12.0,
-            actions=[
-                LogInfo(msg='Activating ros2_control controllers...'),
-                activate_controllers,
-                cmd_vel_relay,
-                # Swerve: Gazebo ground truth odom → TF (AMCL/costmap에 필요)
-                *([odom_to_tf] if is_swerve else []),
-            ]
+        # 5. Controller event chain: spawn_robot → JSB → DD/Swerve
+        #    spawner 내부 bash retry loop가 controller_manager 대기 + 재시도 처리
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=spawn_robot,
+                on_exit=[
+                    LogInfo(msg='Robot spawned — activating controllers...'),
+                    jsb_spawner,
+                    # cmd_vel relay는 컨트롤러와 독립 — 병렬 시작
+                    cmd_vel_relay,
+                    *([odom_to_tf] if is_swerve else []),
+                ],
+            )
         ),
+    ]
 
+    if is_swerve:
+        nodes.extend([
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=jsb_spawner,
+                    on_exit=[steer_spawner],
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=steer_spawner,
+                    on_exit=[wheel_spawner],
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=wheel_spawner,
+                    on_exit=[
+                        LogInfo(msg='All swerve controllers activated'),
+                    ],
+                )
+            ),
+        ])
+    else:
+        nodes.extend([
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=jsb_spawner,
+                    on_exit=[dd_spawner],
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=dd_spawner,
+                    on_exit=[
+                        LogInfo(msg='All diff_drive controllers activated'),
+                    ],
+                )
+            ),
+        ])
+
+    nodes.extend([
         # 6. Nav2 Localization nodes (20s delay)
         TimerAction(
             period=20.0,
@@ -507,8 +560,7 @@ rclpy.spin(TwistStamper())
                 lifecycle_bringup,
             ]
         ),
-
-    ]
+    ])
 
     # 8. RVIZ (60s delay) - headless 모드에서는 비활성화
     if not headless:
