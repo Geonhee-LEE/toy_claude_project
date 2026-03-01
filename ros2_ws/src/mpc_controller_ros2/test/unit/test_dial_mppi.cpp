@@ -59,7 +59,7 @@ public:
     return computeAnnealingSchedule(iteration, n_diffuse, horizon);
   }
 
-  double callAnnealingStep(
+  AnnealingResult callAnnealingStep(
     Eigen::MatrixXd& control_seq,
     const Eigen::VectorXd& state,
     const Eigen::MatrixXd& ref_traj,
@@ -201,7 +201,8 @@ TEST_F(DialMPPITest, SingleIterationEqualsScaledMPPI)
   // annealingStep 1회 실행
   Eigen::MatrixXd cs = Eigen::MatrixXd::Zero(params_.N, 2);
   auto noise_schedule = accessor.callComputeAnnealingSchedule(1, 1, params_.N);
-  double cost = accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, 1);
+  auto result = accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, 1);
+  double cost = result.mean_cost;
 
   // 비용이 유한하고, 제어 시퀀스가 변경됨
   EXPECT_TRUE(std::isfinite(cost));
@@ -232,9 +233,9 @@ TEST_F(DialMPPITest, MultipleIterationsReduceCost)
   std::vector<double> costs;
   for (int i = 1; i <= N_diff; ++i) {
     auto noise_schedule = accessor.callComputeAnnealingSchedule(i, N_diff, params_.N);
-    double mean_cost = accessor.callAnnealingStep(
+    auto ar = accessor.callAnnealingStep(
       cs, state_, ref_traj_, noise_schedule, i);
-    costs.push_back(mean_cost);
+    costs.push_back(ar.mean_cost);
   }
 
   // 최소한 마지막 반복 비용이 첫 번째보다 작거나 같아야 함 (단조 감소는 보장 안됨)
@@ -265,7 +266,8 @@ TEST_F(DialMPPITest, ControlSequenceConverges)
   for (int i = 1; i <= N_diff; ++i) {
     Eigen::MatrixXd cs_prev = cs;
     auto noise_schedule = accessor.callComputeAnnealingSchedule(i, N_diff, params_.N);
-    accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, i);
+    auto ar_c = accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, i);
+    (void)ar_c;
     double delta = (cs - cs_prev).norm();
     deltas.push_back(delta);
   }
@@ -300,7 +302,8 @@ TEST_F(DialMPPITest, IterationCountMatchesParam)
   for (int i = 1; i <= params_.dial_n_diffuse; ++i) {
     auto noise_schedule = accessor.callComputeAnnealingSchedule(
       i, params_.dial_n_diffuse, params_.N);
-    accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, i);
+    auto ar_i = accessor.callAnnealingStep(cs, state_, ref_traj_, noise_schedule, i);
+    (void)ar_i;
     ++count;
   }
   EXPECT_EQ(count, 7);
@@ -338,8 +341,9 @@ TEST_F(DialMPPITest, EarlyTermination)
   for (int i = 1; i <= params_.dial_adaptive_max_iter; ++i) {
     auto noise_schedule = accessor.callComputeAnnealingSchedule(
       i, params_.dial_adaptive_max_iter, params_.N);
-    double mean_cost = accessor.callAnnealingStep(
+    auto ar_a = accessor.callAnnealingStep(
       cs, state_, ref_traj_, noise_schedule, i);
+    double mean_cost = ar_a.mean_cost;
     actual_iter = i;
 
     if (i >= params_.dial_adaptive_min_iter) {
@@ -383,8 +387,9 @@ TEST_F(DialMPPITest, MinIterationRespected)
   for (int i = 1; i <= params_.dial_adaptive_max_iter; ++i) {
     auto noise_schedule = accessor.callComputeAnnealingSchedule(
       i, params_.dial_adaptive_max_iter, params_.N);
-    double mean_cost = accessor.callAnnealingStep(
+    auto ar_a = accessor.callAnnealingStep(
       cs, state_, ref_traj_, noise_schedule, i);
+    double mean_cost = ar_a.mean_cost;
     actual_iter = i;
 
     if (i >= params_.dial_adaptive_min_iter) {
@@ -428,8 +433,9 @@ TEST_F(DialMPPITest, MaxIterationCap)
   for (int i = 1; i <= params_.dial_adaptive_max_iter; ++i) {
     auto noise_schedule = accessor.callComputeAnnealingSchedule(
       i, params_.dial_adaptive_max_iter, params_.N);
-    double mean_cost = accessor.callAnnealingStep(
+    auto ar_a = accessor.callAnnealingStep(
       cs, state_, ref_traj_, noise_schedule, i);
+    double mean_cost = ar_a.mean_cost;
     actual_iter = i;
 
     if (i >= params_.dial_adaptive_min_iter) {
@@ -577,8 +583,9 @@ TEST_F(DialMPPITest, WorksWithSwerveModel)
   auto noise_schedule = accessor.callComputeAnnealingSchedule(
     1, swerve_params.dial_n_diffuse, swerve_params.N);
 
-  double mean_cost = accessor.callAnnealingStep(
+  auto ar_s = accessor.callAnnealingStep(
     cs, state_, ref_traj_, noise_schedule, 1);
+  double mean_cost = ar_s.mean_cost;
 
   EXPECT_TRUE(std::isfinite(mean_cost));
   EXPECT_EQ(cs.cols(), 3);
