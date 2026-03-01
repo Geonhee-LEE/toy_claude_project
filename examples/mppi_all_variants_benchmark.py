@@ -22,6 +22,7 @@ import numpy as np
 
 from mpc_controller import (
     DifferentialDriveModel,
+    LookaheadInterpolator,
     MPPIParams,
     RobotParams,
     TrajectoryInterpolator,
@@ -201,6 +202,17 @@ def create_controller(
 
 
 # ─────────────────────────────────────────────────────────────
+# 인터폴레이터 팩토리
+# ─────────────────────────────────────────────────────────────
+
+def _create_interpolator(trajectory, dt, ref_mode="time"):
+    """ref_mode에 따라 TrajectoryInterpolator 또는 LookaheadInterpolator 생성."""
+    if ref_mode == "lookahead":
+        return LookaheadInterpolator(trajectory, dt=dt)
+    return TrajectoryInterpolator(trajectory, dt=dt)
+
+
+# ─────────────────────────────────────────────────────────────
 # 시뮬레이션 루프
 # ─────────────────────────────────────────────────────────────
 
@@ -214,7 +226,7 @@ def compute_obstacle_distance(state: np.ndarray, obstacles: np.ndarray) -> float
 def simulate(
     controller,
     name: str,
-    interpolator: TrajectoryInterpolator,
+    interpolator,
     initial_state: np.ndarray,
     sim_config: SimulationConfig,
     robot_params: RobotParams,
@@ -224,6 +236,10 @@ def simulate(
     sim = Simulator(robot_params, sim_config)
     sim.reset(initial_state)
     controller.reset()
+
+    is_lookahead = isinstance(interpolator, LookaheadInterpolator)
+    if is_lookahead:
+        interpolator.reset()
 
     num_steps = int(sim_config.max_time / sim_config.dt)
     states = [initial_state.copy()]
@@ -237,10 +253,16 @@ def simulate(
     for step in range(num_steps):
         t = step * sim_config.dt
         state = sim.get_measurement()
-        ref = interpolator.get_reference(
-            t, controller.params.N, controller.params.dt,
-            current_theta=state[2],
-        )
+        if is_lookahead:
+            ref = interpolator.get_reference(
+                state, controller.params.N, controller.params.dt,
+                current_theta=state[2],
+            )
+        else:
+            ref = interpolator.get_reference(
+                t, controller.params.N, controller.params.dt,
+                current_theta=state[2],
+            )
         control, info = controller.compute_control(state, ref)
         next_state = sim.step(control)
         error = sim.compute_tracking_error(state, ref[0])
@@ -474,6 +496,7 @@ def live_benchmark(
     sim_config: SimulationConfig,
     robot_params: RobotParams,
     obstacles: Optional[np.ndarray] = None,
+    ref_mode: str = "time",
 ) -> None:
     """전 변형을 순차적으로 실시간 시뮬레이션 + 결과 오버레이."""
     import matplotlib.pyplot as plt
@@ -555,10 +578,14 @@ def live_benchmark(
         controller = create_controller(
             variant_name, robot_params, obstacles, K=K_live, seed=42,
         )
-        interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+        interp = _create_interpolator(trajectory, sim_config.dt, ref_mode)
         sim = Simulator(robot_params, sim_config)
         sim.reset(initial_state.copy())
         controller.reset()
+
+        is_lookahead = isinstance(interp, LookaheadInterpolator)
+        if is_lookahead:
+            interp.reset()
 
         num_steps = int(sim_config.max_time / sim_config.dt)
         trace_x, trace_y = [], []
@@ -576,10 +603,16 @@ def live_benchmark(
         for step in range(num_steps):
             t = step * sim_config.dt
             state = sim.get_measurement()
-            ref = interp.get_reference(
-                t, controller.params.N, controller.params.dt,
-                current_theta=state[2],
-            )
+            if is_lookahead:
+                ref = interp.get_reference(
+                    state, controller.params.N, controller.params.dt,
+                    current_theta=state[2],
+                )
+            else:
+                ref = interp.get_reference(
+                    t, controller.params.N, controller.params.dt,
+                    current_theta=state[2],
+                )
             control, info = controller.compute_control(state, ref)
             next_state = sim.step(control)
             error = sim.compute_tracking_error(state, ref[0])
@@ -779,6 +812,9 @@ def main():
     parser.add_argument("--no-obstacles", action="store_true")
     parser.add_argument("--K", type=int, default=512,
                         help="샘플 수 (기본: 512)")
+    parser.add_argument("--ref-mode", type=str, default="time",
+                        choices=["time", "lookahead"],
+                        help="참조 궤적 생성 방식 (기본: time)")
     args = parser.parse_args()
 
     variants = args.variants if args.variants else ALL_VARIANT_NAMES
@@ -797,6 +833,7 @@ def main():
     print(f"│  Obstacles:   {'None' if obstacles is None else f'{len(obstacles)} objects':<46s}│")
     print(f"│  Variants:    {str(len(variants)) + ' / ' + str(len(ALL_VARIANT_NAMES)):<46s}│")
     print(f"│  Samples (K): {args.K:<46d}│")
+    print(f"│  Ref Mode:    {args.ref_mode:<46s}│")
     print(f"│  Mode:        {'LIVE' if args.live else 'BATCH':<46s}│")
     print("├──────────────────────────────────────────────────────────────┤")
 
@@ -826,6 +863,7 @@ def main():
         live_benchmark(
             variants, trajectory, initial_state,
             sim_config, robot_params, obstacles,
+            ref_mode=args.ref_mode,
         )
     else:
         results = []
@@ -833,7 +871,7 @@ def main():
             controller = create_controller(
                 variant_name, robot_params, obstacles, K=args.K, seed=42,
             )
-            interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+            interp = _create_interpolator(trajectory, sim_config.dt, args.ref_mode)
 
             print(f"  [{vi+1}/{len(variants)}] Running {variant_name} ...")
             result = simulate(

@@ -11,6 +11,7 @@ from mpc_controller.models.non_coaxial_swerve import (
     NonCoaxialSwerveDriveModel,
     NonCoaxialSwerveParams,
 )
+from mpc_controller.utils.trajectory import LookaheadInterpolator
 
 
 @dataclass
@@ -236,7 +237,11 @@ def run_simulation(
     errors = []
 
     controller.reset()
-    
+
+    is_lookahead = isinstance(trajectory_interpolator, LookaheadInterpolator)
+    if is_lookahead:
+        trajectory_interpolator.reset()
+
     for step in range(num_steps):
         t = step * config.dt
 
@@ -249,12 +254,20 @@ def run_simulation(
 
         # Get reference trajectory for MPC horizon
         # Pass current_theta to ensure angle continuity
-        ref_traj = trajectory_interpolator.get_reference(
-            t,
-            controller.params.N,
-            controller.params.dt,
-            current_theta=current_theta,
-        )
+        if is_lookahead:
+            ref_traj = trajectory_interpolator.get_reference(
+                current_state,
+                controller.params.N,
+                controller.params.dt,
+                current_theta=current_theta,
+            )
+        else:
+            ref_traj = trajectory_interpolator.get_reference(
+                t,
+                controller.params.N,
+                controller.params.dt,
+                current_theta=current_theta,
+            )
         
         # Compute control
         control, info = controller.compute_control(current_state, ref_traj)

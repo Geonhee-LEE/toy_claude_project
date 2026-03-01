@@ -15,6 +15,7 @@ from mpc_controller.controllers.non_coaxial_swerve_mpc import (
 )
 from mpc_controller.utils.trajectory import (
     TrajectoryInterpolator,
+    LookaheadInterpolator,
     generate_line_trajectory,
     generate_circle_trajectory,
     generate_figure_eight_trajectory,
@@ -38,6 +39,7 @@ __all__ = [
     "NonCoaxialSwerveMPCController",
     "NonCoaxialSwerveMPCParams",
     "TrajectoryInterpolator",
+    "LookaheadInterpolator",
     "generate_line_trajectory",
     "generate_circle_trajectory",
     "generate_figure_eight_trajectory",

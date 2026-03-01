@@ -37,6 +37,7 @@ import numpy as np
 
 from mpc_controller import (
     DifferentialDriveModel,
+    LookaheadInterpolator,
     MPPIController,
     MPPIParams,
     RobotParams,
@@ -252,6 +253,17 @@ def compute_min_barrier(
 
 
 # ─────────────────────────────────────────────────────────────
+# 인터폴레이터 팩토리
+# ─────────────────────────────────────────────────────────────
+
+def _create_interpolator(trajectory, dt, ref_mode="time"):
+    """ref_mode에 따라 TrajectoryInterpolator 또는 LookaheadInterpolator 생성."""
+    if ref_mode == "lookahead":
+        return LookaheadInterpolator(trajectory, dt=dt)
+    return TrajectoryInterpolator(trajectory, dt=dt)
+
+
+# ─────────────────────────────────────────────────────────────
 # 컨트롤러 생성
 # ─────────────────────────────────────────────────────────────
 
@@ -304,7 +316,7 @@ def create_controllers(
 def simulate(
     controller,
     name: str,
-    interpolator: TrajectoryInterpolator,
+    interpolator,
     initial_state: np.ndarray,
     sim_config: SimulationConfig,
     robot_params: RobotParams,
@@ -315,6 +327,10 @@ def simulate(
     sim = Simulator(robot_params, sim_config)
     sim.reset(initial_state)
     controller.reset()
+
+    is_lookahead = isinstance(interpolator, LookaheadInterpolator)
+    if is_lookahead:
+        interpolator.reset()
 
     num_steps = int(sim_config.max_time / sim_config.dt)
 
@@ -340,10 +356,16 @@ def simulate(
         t = step * sim_config.dt
         state = sim.get_measurement()
 
-        ref = interpolator.get_reference(
-            t, controller.params.N, controller.params.dt,
-            current_theta=state[2],
-        )
+        if is_lookahead:
+            ref = interpolator.get_reference(
+                state, controller.params.N, controller.params.dt,
+                current_theta=state[2],
+            )
+        else:
+            ref = interpolator.get_reference(
+                t, controller.params.N, controller.params.dt,
+                current_theta=state[2],
+            )
 
         control, info = controller.compute_control(state, ref)
         next_state = sim.step(control)
@@ -740,6 +762,7 @@ def live_replay(
     robot_params: RobotParams,
     scenario_label: str,
     K: int = 256,
+    ref_mode: str = "time",
 ):
     """Vanilla vs CBF-MPPI 동시 실시간 리플레이."""
     import matplotlib.pyplot as plt
@@ -755,8 +778,14 @@ def live_replay(
     vanilla.reset()
     cbf.reset()
 
-    interp_v = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
-    interp_c = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+    # 별도 인스턴스 (프루닝 인덱스 독립)
+    interp_v = _create_interpolator(trajectory, sim_config.dt, ref_mode)
+    interp_c = _create_interpolator(trajectory, sim_config.dt, ref_mode)
+
+    is_lookahead = isinstance(interp_v, LookaheadInterpolator)
+    if is_lookahead:
+        interp_v.reset()
+        interp_c.reset()
 
     plt.ion()
     fig = plt.figure(figsize=(22, 10))
@@ -852,10 +881,16 @@ def live_replay(
         state_v = sim_v.get_measurement()
         state_c = sim_c.get_measurement()
 
-        ref_v = interp_v.get_reference(
-            t, vanilla.params.N, vanilla.params.dt, current_theta=state_v[2])
-        ref_c = interp_c.get_reference(
-            t, cbf.params.N, cbf.params.dt, current_theta=state_c[2])
+        if is_lookahead:
+            ref_v = interp_v.get_reference(
+                state_v, vanilla.params.N, vanilla.params.dt, current_theta=state_v[2])
+            ref_c = interp_c.get_reference(
+                state_c, cbf.params.N, cbf.params.dt, current_theta=state_c[2])
+        else:
+            ref_v = interp_v.get_reference(
+                t, vanilla.params.N, vanilla.params.dt, current_theta=state_v[2])
+            ref_c = interp_c.get_reference(
+                t, cbf.params.N, cbf.params.dt, current_theta=state_c[2])
 
         ctrl_v, info_v = vanilla.compute_control(state_v, ref_v)
         ctrl_c, info_c = cbf.compute_control(state_c, ref_c)
@@ -932,7 +967,8 @@ def live_replay(
                 cos_t, sin_t = np.cos(theta), np.sin(theta)
                 cx = x - (0.15 * cos_t - 0.1 * sin_t)
                 cy = y - (0.15 * sin_t + 0.1 * cos_t)
-                robot_patch.set_xy((cx, cy))
+                robot_patch.set_x(cx)
+                robot_patch.set_y(cy)
                 # FancyBboxPatch doesn't have .angle, use transform instead
                 import matplotlib.transforms as mtransforms
                 tr = mtransforms.Affine2D().rotate_around(x, y, theta) + ax_traj.transData
@@ -1053,6 +1089,11 @@ def main():
         "--K", type=int, default=512,
         help="MPPI 샘플 수 (기본: 512)",
     )
+    parser.add_argument(
+        "--ref-mode", type=str, default="time",
+        choices=["time", "lookahead"],
+        help="참조 궤적 생성 방식 (기본: time)",
+    )
     args = parser.parse_args()
 
     print("\n" + "=" * 68)
@@ -1067,6 +1108,7 @@ def main():
         scenarios = SCENARIO_NAMES
         print(f"\n  Mode: BENCHMARK ({len(scenarios)} scenarios)")
         print(f"  K={args.K}")
+        print(f"  Ref Mode={args.ref_mode}")
 
         all_results: Dict[str, Tuple[RunResult, RunResult]] = {}
 
@@ -1084,7 +1126,7 @@ def main():
 
             # Vanilla
             print(f"    Running Vanilla MPPI ...")
-            interp_v = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+            interp_v = _create_interpolator(trajectory, sim_config.dt, args.ref_mode)
             v_result = simulate(
                 vanilla, "Vanilla", interp_v,
                 initial_state.copy(), sim_config, robot_params, obstacles,
@@ -1094,7 +1136,7 @@ def main():
 
             # CBF-MPPI
             print(f"    Running CBF-MPPI ...")
-            interp_c = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+            interp_c = _create_interpolator(trajectory, sim_config.dt, args.ref_mode)
             c_result = simulate(
                 cbf_ctrl, "CBF-MPPI", interp_c,
                 initial_state.copy(), sim_config, robot_params, obstacles,
@@ -1173,6 +1215,7 @@ def main():
             trajectory, obstacles, initial_state,
             sim_config, robot_params, scenario_label,
             K=min(args.K, 256),
+            ref_mode=args.ref_mode,
         )
         return
 
@@ -1190,7 +1233,7 @@ def main():
     print(f"  └{'─' * 46}┘")
 
     print("\n  Running Vanilla MPPI ...")
-    vanilla_interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+    vanilla_interp = _create_interpolator(trajectory, sim_config.dt, args.ref_mode)
     vanilla_result = simulate(
         vanilla, "Vanilla MPPI", vanilla_interp,
         initial_state.copy(), sim_config, robot_params, obstacles,
@@ -1200,7 +1243,7 @@ def main():
           f"violations={vanilla_result.safety_violations}")
 
     print("  Running CBF-MPPI ...")
-    cbf_interp = TrajectoryInterpolator(trajectory, dt=sim_config.dt)
+    cbf_interp = _create_interpolator(trajectory, sim_config.dt, args.ref_mode)
     cbf_result = simulate(
         cbf_ctrl, "CBF-MPPI", cbf_interp,
         initial_state.copy(), sim_config, robot_params, obstacles,
