@@ -171,6 +171,37 @@ class TestSamplers:
 
 
 # ============================================================================
+# NonCoaxialSwerve 60° Steering Constraint
+# ============================================================================
+class TestNonCoaxialSwerve60Deg:
+    def test_non_coaxial_60deg_creation(self):
+        """C++ 모델 60° 생성 및 차원 확인."""
+        m = NonCoaxialSwerveModel(0.0, 1.5, 2.0, 2.0, np.pi / 3.0)
+        assert m.stateDim() == 4
+        assert m.controlDim() == 3
+        assert m.name() == "non_coaxial_swerve"
+
+    def test_non_coaxial_60deg_clamp(self):
+        """clipControls로 제어 클리핑 및 propagate 결과 확인."""
+        m = NonCoaxialSwerveModel(0.0, 1.5, 2.0, 2.0, np.pi / 3.0)
+        # v=2.0 → 1.5로 클리핑 확인
+        controls = np.array([[2.0, 0.0, 0.0]])
+        clipped = m.clipControls(controls)
+        assert abs(clipped[0, 0] - 1.5) < 1e-10
+
+    def test_non_coaxial_60deg_propagate(self):
+        """propagateBatch에서 60° 제약 준수 (rollout 기반)."""
+        m = NonCoaxialSwerveModel(0.0, 1.5, 2.0, 2.0, np.pi / 3.0)
+        x0 = np.array([0.0, 0.0, 0.0, 0.0])
+        # 큰 delta_dot=5로 N=50 롤아웃
+        controls_seq = [np.tile([[1.0, 0.0, 5.0]], (50, 1))]
+        trajs = m.rolloutBatch(x0, controls_seq, 0.05)
+        # 최종 delta가 60° 이내
+        final_delta = trajs[0][-1, 3]
+        assert final_delta <= np.pi / 3.0 + 1e-6
+
+
+# ============================================================================
 # Utils
 # ============================================================================
 class TestUtils:

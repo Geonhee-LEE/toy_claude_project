@@ -509,6 +509,81 @@ TEST(NonCoaxialClipControlsTest, NegativeVminAllowsBackward)
 }
 
 // ============================================================================
+// Non-Coaxial Swerve 60° Steering Constraint Tests
+// ============================================================================
+
+class NonCoaxialSwerve60DegTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    // v_min=0, v_max=1.5, omega_max=2.0, max_steering_rate=2.0, max_steering_angle=60°
+    model_ = std::make_unique<NonCoaxialSwerveModel>(0.0, 1.5, 2.0, 2.0, M_PI / 3.0);
+  }
+  std::unique_ptr<NonCoaxialSwerveModel> model_;
+};
+
+TEST_F(NonCoaxialSwerve60DegTest, DeltaClamp60)
+{
+  // delta=π/2 (90°) → normalizeStates → π/3 (60°)로 클램프
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, M_PI / 2.0;  // delta = 90°
+  model_->normalizeStates(states);
+  EXPECT_NEAR(states(0, 3), M_PI / 3.0, 1e-10);  // 60°로 클램프
+}
+
+TEST_F(NonCoaxialSwerve60DegTest, DeltaClampNegative)
+{
+  // delta=-π/2 → -π/3
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, -M_PI / 2.0;
+  model_->normalizeStates(states);
+  EXPECT_NEAR(states(0, 3), -M_PI / 3.0, 1e-10);
+}
+
+TEST_F(NonCoaxialSwerve60DegTest, PropagateLimits)
+{
+  // 큰 delta_dot로 여러 스텝 전진 → delta가 ±60°를 넘지 않는지 확인
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, 0.0;  // delta=0에서 시작
+  Eigen::MatrixXd controls(1, 3);
+  controls << 1.0, 0.0, 5.0;  // delta_dot=5 (큰 값)
+
+  for (int i = 0; i < 50; ++i) {
+    states = model_->propagateBatch(states, controls, 0.05);
+    model_->normalizeStates(states);
+  }
+  // delta가 60°를 넘지 않아야 함
+  EXPECT_LE(states(0, 3), M_PI / 3.0 + 1e-10);
+}
+
+TEST_F(NonCoaxialSwerve60DegTest, ClipControls)
+{
+  Eigen::MatrixXd controls(2, 3);
+  controls << 2.0, 0.0, 0.0,   // v=2.0 → 1.5로 클리핑
+              -0.5, 0.0, 0.0;  // v=-0.5 → 0으로 클리핑 (v_min=0)
+  auto clipped = model_->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), 1.5, 1e-10);
+  EXPECT_NEAR(clipped(1, 0), 0.0, 1e-10);
+}
+
+TEST_F(NonCoaxialSwerve60DegTest, Factory60Deg)
+{
+  // Factory에서 max_steering_angle 파라미터로 60° 모델 생성
+  MPPIParams params;
+  params.max_steering_angle = M_PI / 3.0;
+  auto model = MotionModelFactory::create("non_coaxial_swerve", params);
+  EXPECT_EQ(model->stateDim(), 4);
+  EXPECT_EQ(model->controlDim(), 3);
+
+  // delta=90° → 60°로 클램프 확인
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, M_PI / 2.0;
+  model->normalizeStates(states);
+  EXPECT_NEAR(states(0, 3), M_PI / 3.0, 1e-10);
+}
+
+// ============================================================================
 // Non-Coaxial Q/Qf Resize Tests (Bug #1 검증)
 // ============================================================================
 

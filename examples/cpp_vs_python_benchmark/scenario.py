@@ -92,6 +92,68 @@ def figure8_scenario(
     )
 
 
+def tight_turn_scenario(
+    nx: int = 4,
+    radius: float = 1.5,
+    num_points: int = 200,
+    with_obstacles: bool = False,
+) -> BenchmarkScenario:
+    """반경 1.5m 타이트 턴 — 60° 제한에서 추적 오차 증가 예상."""
+    angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+    traj = np.zeros((num_points, nx))
+    traj[:, 0] = radius * np.cos(angles)
+    traj[:, 1] = radius * np.sin(angles)
+    traj[:, 2] = np.unwrap(angles + np.pi / 2)
+
+    initial_state = np.zeros(nx)
+    initial_state[0] = radius
+
+    obstacles = None
+    if with_obstacles:
+        obstacles = np.array([
+            [0.0, 0.0, 0.2],
+        ])
+
+    return BenchmarkScenario(
+        name="tight_turn",
+        trajectory=traj,
+        initial_state=initial_state,
+        obstacles=obstacles,
+        sim_time=12.0,
+    )
+
+
+def slalom_scenario(
+    nx: int = 4,
+    gate_spacing: float = 2.0,
+    amplitude: float = 1.5,
+    num_gates: int = 6,
+    num_points: int = 300,
+) -> BenchmarkScenario:
+    """연속 S자 슬라럼 — 스티어링 포화 빈도 비교."""
+    total_length = gate_spacing * num_gates
+    x = np.linspace(0, total_length, num_points)
+    y = amplitude * np.sin(2 * np.pi * x / (2 * gate_spacing))
+
+    traj = np.zeros((num_points, nx))
+    traj[:, 0] = x
+    traj[:, 1] = y
+
+    dx = np.gradient(x)
+    dy = np.gradient(y)
+    traj[:, 2] = np.unwrap(np.arctan2(dy, dx))
+
+    initial_state = np.zeros(nx)
+
+    return BenchmarkScenario(
+        name="slalom",
+        trajectory=traj,
+        initial_state=initial_state,
+        obstacles=None,
+        sim_time=15.0,
+    )
+
+
 def get_model_nx(model_type: str) -> int:
     """모델 타입에 따른 state 차원."""
     return {"diff_drive": 3, "swerve": 3, "non_coaxial_swerve": 4}[model_type]
