@@ -6,7 +6,7 @@
 
 ## 🔴 High Priority (P0)
 
-- [ ] 실제 로봇 인터페이스 — 하드웨어 연동 테스트
+- [x] 실제 로봇 인터페이스 — 하드웨어 배포 패키지 (PR #120, Issue #119)
 
 ## 🟠 Medium Priority (P1)
 
@@ -21,7 +21,7 @@
 - [ ] 속도 제약 고려 MPC — 가속도/저크 제한
 - [x] CI/CD 파이프라인 — GitHub Actions ROS2 빌드 + 테스트 자동화 (PR #102, Issue #101)
 - [x] Swerve E2E 시뮬레이션 검증 스크립트 — jerk/smoothness 정량 분석 (PR #100, Issue #99)
-- [ ] pybind11 Python 바인딩 — C++ ↔ Python 연동
+- [x] pybind11 Python 바인딩 — C++ MPPI 코어 Python 노출 (PR #115, Issue #114)
 
 ## 🟢 Low Priority (P2)
 
@@ -52,6 +52,13 @@
 ---
 
 ## ✅ Completed
+
+### 2026-03-01
+- [x] #119 M6: 커스텀 Swerve 로봇 실제 하드웨어 배포 패키지 (PR #120)
+  * SafetyMonitorNode: cmd_vel watchdog, JointState 통신 감시, 속도 이상 감지, E-Stop 서비스
+  * Hardware launch: Gazebo 제거, ros2_control 독립 실행, FK 기반 odom
+  * Config 4종: 하드웨어 파라미터, nav2 공통(use_sim_time=false), Swerve/Non-Coaxial MPPI (보수적 속도+CBF 활성화)
+  * 테스트: SafetyMonitor 14 pytest, 기존 224 gtest 회귀 없음
 
 ### 2026-02-25
 - [x] #112 Swerve MPPI 모션 품질 개선 (PR #113)
@@ -325,10 +332,10 @@
 - 강화학습 기반 MPC 튜닝
 - ~~ROS2 nav2 플러그인 통합~~ → M4 완료, ~~M5a/M5b 완료~~, ~~M3.5 C++ 완료~~, ~~MotionModel 추상화 완료~~
 - ~~Swerve 모션 품질 개선~~ → theta smoothing + vy_max + velocity tracking (PR #113)
-- 실제 로봇 테스트 환경 구축
+- ~~실제 로봇 테스트 환경 구축~~ → M6 하드웨어 배포 패키지 (PR #120)
+- ~~pybind11 Python 바인딩~~ → C++ MPPI 코어 Python 노출 (PR #115)
 - 슬립 모델 적용
 - 적응형 MPC 가중치 튜닝
-- pybind11 Python 바인딩 (C++ ↔ Python 연동)
 
 ---
 

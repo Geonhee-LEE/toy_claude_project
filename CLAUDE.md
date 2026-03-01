@@ -55,6 +55,7 @@ mpc_controller/
 - pybind11 Python 바인딩 (C++ MPPI 코어 Python 노출): 완료 (PR #115)
 - Python vs C++ MPPI 벤치마크 스위트: 완료 (PR #117)
 - LookaheadInterpolator 전체 예제 통합: 완료 (PR #117)
+- M6 커스텀 Swerve 하드웨어 배포 패키지: 완료 (PR #120)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

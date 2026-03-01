@@ -196,9 +196,11 @@ ros2 param list /controller_server | grep FollowPath
 
 | 모델 | MPPI YAML | 공통 YAML |
 |------|-----------|-----------|
-| DiffDrive | `config/nav2_params.yaml` | (내장) |
-| Swerve | `config/nav2_params_swerve_mppi.yaml` | `config/nav2_params_swerve.yaml` |
-| NonCoaxial | `config/nav2_params_non_coaxial_mppi.yaml` | `config/nav2_params_swerve.yaml` |
+| DiffDrive (Sim) | `nav2_params.yaml` | (내장) |
+| Swerve (Sim) | `nav2_params_swerve_mppi.yaml` | `nav2_params_swerve.yaml` |
+| NonCoaxial (Sim) | `nav2_params_non_coaxial_mppi.yaml` | `nav2_params_swerve.yaml` |
+| Swerve (HW) | `nav2_params_swerve_hardware_mppi.yaml` | `nav2_params_swerve_hardware.yaml` |
+| NonCoaxial (HW) | `nav2_params_non_coaxial_hardware_mppi.yaml` | `nav2_params_swerve_hardware.yaml` |
 
 ### Swerve MPPI 튜닝 가이드
 
@@ -364,6 +366,8 @@ ros2 param get /controller_server FollowPath.visualize_samples
 
 ## 파일 위치
 
+### 시뮬레이션 (Gazebo)
+
 - Launch 파일: `launch/mppi_ros2_control_nav2.launch.py`
 - nav2 파라미터 (DiffDrive): `config/nav2_params.yaml`
 - nav2 파라미터 (Swerve): `config/nav2_params_swerve.yaml` + `config/nav2_params_swerve_mppi.yaml`
@@ -373,12 +377,99 @@ ros2 param get /controller_server FollowPath.visualize_samples
 - 로봇 URDF: `urdf/swerve_robot.urdf`
 - World 파일: `worlds/mppi_test_simple.world`
 
-## 다음 단계
+### 실제 하드웨어 (M6)
+
+- Launch 파일: `launch/mppi_hardware_swerve.launch.py`
+- 하드웨어 파라미터: `config/swerve_hardware_params.yaml`
+- nav2 공통 (HW): `config/nav2_params_swerve_hardware.yaml`
+- Swerve MPPI (HW): `config/nav2_params_swerve_hardware_mppi.yaml`
+- Non-Coaxial MPPI (HW): `config/nav2_params_non_coaxial_hardware_mppi.yaml`
+- Safety Monitor: `mpc_controller_ros2/safety_monitor.py`
+
+## 실제 하드웨어 배포 (M6)
+
+Gazebo 계층을 제거하고 실제 하드웨어 드라이버로 교체합니다.
+**nav2 MPPI 컨트롤러 플러그인은 변경 없이 그대로 사용됩니다.**
+
+### 실행
+
+```bash
+# Swerve MPPI 하드웨어
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=swerve map:=my_map.yaml
+
+# Non-Coaxial Swerve
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=non_coaxial
+
+# RVIZ 포함
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=swerve rviz:=true
+```
+
+### Launch Arguments
+
+| 인자 | 기본값 | 설명 |
+|------|--------|------|
+| `controller` | `swerve` | `swerve` 또는 `non_coaxial` |
+| `map` | `maze_map.yaml` | 맵 YAML 파일명 |
+| `hardware_params` | `swerve_hardware_params.yaml` | 하드웨어 파라미터 |
+| `rviz` | `false` | RVIZ 활성화 |
+| `scan_topic` | `/scan` | LiDAR 토픽 |
+
+### 시뮬레이션 vs 하드웨어 차이점
+
+| 항목 | 시뮬레이션 | 하드웨어 |
+|------|-----------|---------|
+| `use_sim_time` | `true` | `false` |
+| Odometry | Gazebo ground truth | FK (swerve_kinematics_node) |
+| 속도 제한 | 관대 (v_max=1.5) | 보수적 (v_max=1.0) |
+| CBF | 비활성화 | 활성화 (안전) |
+| 시각화 | 전체 (samples, tube 등) | 최소 (대역폭 절약) |
+| 안전 감시 | 없음 | SafetyMonitor 노드 |
+
+### SafetyMonitor
+
+```bash
+# E-Stop 활성화
+ros2 service call /emergency_stop std_srvs/srv/SetBool "{data: true}"
+
+# E-Stop 해제
+ros2 service call /emergency_stop std_srvs/srv/SetBool "{data: false}"
+
+# Diagnostics 모니터링
+ros2 topic echo /diagnostics
+```
+
+### 하드웨어 커스터마이징
+
+`config/swerve_hardware_params.yaml`을 수정하여 사용자 로봇에 맞게 조정:
+
+```yaml
+# 바퀴 기하학
+swerve_kinematics_node:
+  ros__parameters:
+    wheel_radius: 0.08     # 실제 바퀴 반지름
+    wheel_x: 0.25          # 차체 중심 → 전후 거리
+    wheel_y: 0.22          # 차체 중심 → 좌우 거리
+
+# 안전 한계
+safety_monitor:
+  ros__parameters:
+    max_linear_speed: 2.0  # 실제 모터 최대 선속도
+    max_angular_speed: 3.0 # 실제 모터 최대 각속도
+```
+
+## 개발 현황
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
-2. ✅ 고급 MPPI 8종 플러그인 (M3/M3.5/M5 완료)
+2. ✅ 고급 MPPI 8종 플러그인 (M3/M3.5/M5)
 3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial)
 4. ✅ Goal 수렴 + 장애물 회피 튜닝
-5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
-6. 🔄 실제 로봇 테스트
-7. 📊 GPU 가속 (M2 잔여)
+5. ✅ Swerve 오실레이션 진단 + 수렴 수정
+6. ✅ GPU 가속 (JAX JIT + 8종 변형)
+7. ✅ MPPI-CBF 통합 (Python + C++)
+8. ✅ 궤적 안정화 (SG Filter + IT 정규화)
+9. ✅ pybind11 Python 바인딩
+10. ✅ Python vs C++ 벤치마크 스위트
+11. ✅ 실제 하드웨어 배포 패키지 (M6)

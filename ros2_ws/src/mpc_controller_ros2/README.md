@@ -73,9 +73,9 @@ MPPIControllerPlugin (base, Vanilla MPPI)
     └── SVGMPPIControllerPlugin (Guide + follower)
 ```
 
-### 빠른 시작 (Gazebo Harmonic + ros2_control + nav2)
+### 빠른 시작
 
-**권장: 단일 명령으로 전체 스택 실행**
+#### Gazebo 시뮬레이션 (Gazebo Harmonic + ros2_control + nav2)
 
 ```bash
 cd ~/toy_claude_project/ros2_ws
@@ -91,17 +91,77 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swe
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
 ```
 
-**시작 순서 (자동 TimerAction 관리):**
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  0s  │ Gazebo Harmonic + Robot State Publisher + ros_gz_bridge │
 │  5s  │ Robot Spawn                                              │
-│  8s  │ Controllers (joint_state_broadcaster, diff_drive)        │
-│ 10s  │ Localization (map_server, amcl)                          │
-│ 15s  │ Navigation (controller_server, planner, bt_navigator)    │
-│ 20s  │ RVIZ                                                     │
+│ 12s  │ Controllers (joint_state_broadcaster, swerve)            │
+│ 20s  │ Localization (map_server, amcl)                          │
+│ 30s  │ Navigation (controller_server, planner, bt_navigator)    │
+│ 60s  │ RVIZ                                                     │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+#### 실제 하드웨어 (M6 Hardware Deploy)
+
+Gazebo 계층을 제거하고 실제 하드웨어 드라이버를 사용합니다.
+nav2 MPPI 컨트롤러 플러그인은 변경 없이 그대로 사용됩니다.
+
+```bash
+# Swerve MPPI 하드웨어
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=swerve map:=my_map.yaml
+
+# Non-Coaxial Swerve
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=non_coaxial
+
+# RVIZ 포함
+ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+    controller:=swerve rviz:=true
+
+# Emergency Stop
+ros2 service call /emergency_stop std_srvs/srv/SetBool "{data: true}"
+ros2 service call /emergency_stop std_srvs/srv/SetBool "{data: false}"
+```
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Sim (Gazebo)            →    Hardware (M6)                     │
+├─────────────────────────────────────────────────────────────────┤
+│  gz sim                  →    제거                              │
+│  ros_gz_bridge           →    제거                              │
+│  GazeboSimSystem         →    사용자 SystemInterface            │
+│  Gazebo OdometryPublisher→    SwerveKinematics FK               │
+│  use_sim_time: true      →    false                             │
+│  없음                    →    SafetyMonitorNode                 │
+│                                                                  │
+│  [변경 없음] MPPI Plugin, nav2, MotionModel, TF                │
+└─────────────────────────────────────────────────────────────────┘
+
+Hardware Launch 시퀀스:
+┌─────────────────────────────────────────────────────────────────┐
+│  0s  │ robot_state_publisher + controller_manager + safety     │
+│  3s  │ Controller spawners (joint_state, steer, wheel)         │
+│  5s  │ swerve_kinematics_node (FK odom + TF)                  │
+│  8s  │ nav2 Localization (map_server, amcl)                    │
+│ 12s  │ nav2 Navigation + lifecycle_bringup                     │
+│ 20s  │ RVIZ (선택)                                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**SafetyMonitor 기능:**
+
+```
+┌─────────────────────────────────────────┐
+│  SafetyMonitorNode                       │
+├─────────────────────────────────────────┤
+│  1. cmd_vel Watchdog (0.5s timeout)     │
+│  2. JointState 통신 감시 (1.0s timeout) │
+│  3. 속도 이상 감지 (max_linear_speed)   │
+│  4. /emergency_stop 서비스 (SetBool)    │
+│  5. /diagnostics 발행 (DiagnosticArray) │
+└─────────────────────────────────────────┘
 ```
 
 ### 목표 지점 설정
@@ -514,8 +574,14 @@ colcon test-result --verbose
 | test_weight_computation | 30 | ✅ |
 | test_svmpc | 13 | ✅ |
 | test_m35_plugins | 18 | ✅ |
-| test_motion_model | 36 | ✅ |
-| **총계** | **166** | **PASSED** |
+| test_motion_model | 48 | ✅ |
+| test_cbf | 20 | ✅ |
+| test_trajectory_stability | 25 | ✅ |
+| test_safety_monitor (pytest) | 14 | ✅ |
+| test_pybind_core (pytest) | 18 | ✅ |
+| test_pybind_costs (pytest) | 10 | ✅ |
+| test_pybind_advanced (pytest) | 10 | ✅ |
+| **총계** | **224 gtest + 52 pytest** | **PASSED** |
 
 ---
 
@@ -536,6 +602,12 @@ colcon test-result --verbose
 | Phase A | MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial) | ✅ |
 | Phase B | Goal 수렴 + 장애물 회피 튜닝 | ✅ |
 | Phase C | Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정 | ✅ |
+| MPPI-CBF | Control Barrier Function 안전성 (Python + C++) | ✅ |
+| GPU | JAX JIT + lax.scan + vmap (8종 변형) | ✅ |
+| 궤적 안정화 | SG Filter + IT 정규화 + Exploitation/Exploration | ✅ |
+| pybind11 | C++ MPPI 코어 Python 바인딩 | ✅ |
+| 벤치마크 | Python vs C++ MPPI 벤치마크 스위트 | ✅ |
+| M6 | 커스텀 Swerve 하드웨어 배포 패키지 | ✅ |
 
 ---
 
