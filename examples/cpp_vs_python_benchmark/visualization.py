@@ -27,20 +27,14 @@ from .benchmark_runner import BenchmarkResults, RunResult, ComponentResult, Scal
 # ASCII 요약
 # ─────────────────────────────────────────────────────────────
 
-def print_summary(results: BenchmarkResults) -> None:
-    """ASCII 테이블로 벤치마크 결과 요약 출력."""
-    pipeline = results.pipeline
-    component = results.component
-    scaling = results.scaling
+def _print_pipeline_section(
+    pipeline: list,
+    ref_mode_label: str,
+) -> None:
+    """단일 ref_mode에 대한 파이프라인 결과 섹션 출력."""
+    if not pipeline:
+        return
 
-    print()
-    print("┌" + "═" * 62 + "┐")
-    print("│     Python vs C++ MPPI Benchmark Summary" + " " * 21 + "│")
-    print("├" + "─" * 16 + "┬" + "─" * 10 + "┬" + "─" * 10 + "┬" + "─" * 9 + "┬" + "─" * 13 + "┤")
-    print("│ Config         │ Py (ms)  │ C++ (ms) │ Speedup │ Pos RMSE    │")
-    print("├" + "─" * 16 + "┼" + "─" * 10 + "┼" + "─" * 10 + "┼" + "─" * 9 + "┼" + "─" * 13 + "┤")
-
-    # DiffDrive 비교 (Python vs C++)
     dd_results = [r for r in pipeline if r.model_type == "diff_drive"]
     py_by_wt = {r.weight_type: r for r in dd_results if r.backend == "python"}
     cpp_by_wt = {r.weight_type: r for r in dd_results if r.backend == "cpp"}
@@ -57,7 +51,6 @@ def print_summary(results: BenchmarkResults) -> None:
             label = f"DD/{wt[:8]}"
             print(f"│ {label:<14s} │ {py_ms:>8.1f} │ {cpp_ms:>8.1f} │ {speedup:>6.1f}x │ {rmse_str:<11s} │")
 
-    # C++ only (Swerve, NonCoaxial)
     cpp_only = [r for r in pipeline if r.model_type != "diff_drive"]
     if cpp_only:
         print("├" + "─" * 16 + "┼" + "─" * 10 + "┼" + "─" * 10 + "┼" + "─" * 9 + "┼" + "─" * 13 + "┤")
@@ -65,6 +58,32 @@ def print_summary(results: BenchmarkResults) -> None:
             model_short = r.model_type[:3].upper()
             label = f"{model_short}/{r.weight_type[:8]}"
             print(f"│ {label:<14s} │    ---   │ {r.avg_solve_ms:>8.1f} │   ---   │ {r.position_rmse:>8.3f}   │")
+
+
+def print_summary(results: BenchmarkResults) -> None:
+    """ASCII 테이블로 벤치마크 결과 요약 출력."""
+    pipeline = results.pipeline
+    component = results.component
+    scaling = results.scaling
+
+    # ref_mode 분류
+    ref_modes = sorted(set(r.ref_mode for r in pipeline)) if pipeline else ["time"]
+    has_both = len(ref_modes) > 1
+
+    print()
+    print("┌" + "═" * 62 + "┐")
+    print("│     Python vs C++ MPPI Benchmark Summary" + " " * 21 + "│")
+
+    for rm in ref_modes:
+        subset = [r for r in pipeline if r.ref_mode == rm]
+        if has_both:
+            print("├" + "═" * 62 + "┤")
+            tag = "LOOKAHEAD" if rm == "lookahead" else "TIME-BASED"
+            print(f"│  ▶ {tag:<57s} │")
+        print("├" + "─" * 16 + "┬" + "─" * 10 + "┬" + "─" * 10 + "┬" + "─" * 9 + "┬" + "─" * 13 + "┤")
+        print("│ Config         │ Py (ms)  │ C++ (ms) │ Speedup │ Pos RMSE    │")
+        print("├" + "─" * 16 + "┼" + "─" * 10 + "┼" + "─" * 10 + "┼" + "─" * 9 + "┼" + "─" * 13 + "┤")
+        _print_pipeline_section(subset, rm)
 
     print("├" + "─" * 16 + "┴" + "─" * 10 + "┴" + "─" * 10 + "┴" + "─" * 9 + "┴" + "─" * 13 + "┤")
 
@@ -275,11 +294,18 @@ def live_benchmark(
     N: int = 20,
     weight_type: str = "vanilla",
     seed: int = 42,
+    ref_mode: str = "time",
 ) -> None:
     """Python vs C++ MPPI 실시간 비교 시뮬레이션.
 
     좌측: Python MPPI, 우측: C++ MPPI를 동시에 실행하며
     궤적, 샘플 분포, 제어 메트릭을 실시간 업데이트.
+
+    Parameters
+    ----------
+    ref_mode : str
+        "time" — 시간 기반 인터폴레이션 (기본)
+        "lookahead" — 위치 기반 lookahead 인터폴레이션
     """
     import logging
     logging.getLogger("mpc_controller").setLevel(logging.WARNING)
@@ -298,7 +324,7 @@ def live_benchmark(
 
     from .benchmark_runner import create_python_controller
     from .cpp_mppi_assembler import CppMPPIAssembler
-    from .scenario import BenchmarkScenario
+    from .scenario import BenchmarkScenario, LookaheadInterpolator
 
     # ── 컨트롤러 생성 ──
     py_ctrl = create_python_controller(weight_type, K=K, N=N, seed=seed,
@@ -306,7 +332,15 @@ def live_benchmark(
     cpp_ctrl = CppMPPIAssembler("diff_drive", weight_type, K=K, N=N, seed=seed,
                                  obstacles=scenario.obstacles)
 
-    interp = TrajectoryInterpolator(scenario.trajectory[:, :3], scenario.dt)
+    is_lookahead = (ref_mode == "lookahead")
+    if is_lookahead:
+        # Python/C++ 시뮬레이터 독립 프루닝 → 별도 인스턴스 필요
+        py_interp = LookaheadInterpolator(scenario.trajectory, scenario.dt)
+        cpp_interp = LookaheadInterpolator(scenario.trajectory, scenario.dt)
+    else:
+        interp = TrajectoryInterpolator(scenario.trajectory[:, :3], scenario.dt)
+        py_interp = interp
+        cpp_interp = interp
     robot_params = RobotParams()
     sim_config = SimulationConfig(dt=scenario.dt, max_time=scenario.sim_time)
 
@@ -320,7 +354,8 @@ def live_benchmark(
     # ── 그래프 설정 ──
     plt.ion()
     fig = plt.figure(figsize=(22, 12))
-    fig.suptitle(f"Python vs C++ MPPI Live Benchmark  [{weight_type}]",
+    ref_label = "lookahead" if is_lookahead else "time-based"
+    fig.suptitle(f"Python vs C++ MPPI Live Benchmark  [{weight_type}, {ref_label}]",
                  fontsize=14, fontweight="bold")
 
     gs = fig.add_gridspec(3, 4, height_ratios=[3, 1, 1],
@@ -451,7 +486,12 @@ def live_benchmark(
 
         # ── Python 스텝 ──
         py_state = py_sim.get_measurement()
-        py_ref = interp.get_reference(t, ctrl_N, ctrl_dt, current_theta=py_state[2])
+        if is_lookahead:
+            py_ref = py_interp.get_reference(py_state, ctrl_N, ctrl_dt,
+                                             current_theta=py_state[2])
+        else:
+            py_ref = py_interp.get_reference(t, ctrl_N, ctrl_dt,
+                                             current_theta=py_state[2])
         py_u, py_info = py_ctrl.compute_control(py_state, py_ref)
         py_next = py_sim.step(py_u[:2])
 
@@ -464,7 +504,12 @@ def live_benchmark(
 
         # ── C++ 스텝 ──
         cpp_state = cpp_sim.get_measurement()
-        cpp_ref = interp.get_reference(t, ctrl_N, ctrl_dt, current_theta=cpp_state[2])
+        if is_lookahead:
+            cpp_ref = cpp_interp.get_reference(cpp_state, ctrl_N, ctrl_dt,
+                                               current_theta=cpp_state[2])
+        else:
+            cpp_ref = cpp_interp.get_reference(t, ctrl_N, ctrl_dt,
+                                               current_theta=cpp_state[2])
         cpp_u, cpp_info = cpp_ctrl.compute_control(cpp_state, cpp_ref)
         cpp_next = cpp_sim.step(cpp_u[:2])
 
@@ -513,7 +558,7 @@ def live_benchmark(
 
             info_str = (
                 f"Step {step:4d}/{num_steps}  │  Time {t:.2f}s  │  "
-                f"Strategy: {weight_type}  │  K={K}  N={N}\n"
+                f"Strategy: {weight_type}  │  K={K}  N={N}  │  Ref: {ref_label}\n"
                 f"─────────────────────────────────────────────────────"
                 f"──────────────────────────────────────\n"
                 f"  Python:  v={py_u[0]:+.3f} m/s  ω={py_u[1]:+.3f} rad/s  │  "
@@ -537,10 +582,10 @@ def live_benchmark(
             fig.canvas.flush_events()
 
         # 궤적 완료 검사
-        py_idx, py_dist = interp.find_closest_point(py_state[:2])
-        cpp_idx, cpp_dist = interp.find_closest_point(cpp_state[:2])
-        if (py_idx >= interp.num_points - 1 and py_dist < 0.1 and
-                cpp_idx >= interp.num_points - 1 and cpp_dist < 0.1):
+        py_idx, py_dist = py_interp.find_closest_point(py_state[:2])
+        cpp_idx, cpp_dist = cpp_interp.find_closest_point(cpp_state[:2])
+        if (py_idx >= py_interp.num_points - 1 and py_dist < 0.1 and
+                cpp_idx >= cpp_interp.num_points - 1 and cpp_dist < 0.1):
             break
 
     # ── 완료 ──

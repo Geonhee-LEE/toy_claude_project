@@ -9,6 +9,8 @@
     python examples/cpp_vs_python_benchmark/run_benchmark.py --component  # 컴포넌트만
     python examples/cpp_vs_python_benchmark/run_benchmark.py --scaling    # 스케일링만
     python examples/cpp_vs_python_benchmark/run_benchmark.py --save report.png --json results.json
+    python examples/cpp_vs_python_benchmark/run_benchmark.py --ref-mode lookahead --live  # 위치기반 lookahead
+    python examples/cpp_vs_python_benchmark/run_benchmark.py --ref-mode both --pipeline   # time vs lookahead 비교
 """
 
 import argparse
@@ -65,6 +67,9 @@ def main():
                         help="Save dashboard plot to file")
     parser.add_argument("--json", type=str, default=None,
                         help="Save results as JSON")
+    parser.add_argument("--ref-mode", type=str, default="time",
+                        choices=["time", "lookahead", "both"],
+                        help="Reference trajectory mode: time-based, lookahead, or both (default: time)")
     parser.add_argument("--no-plot", action="store_true",
                         help="Skip matplotlib plots")
     args = parser.parse_args()
@@ -80,13 +85,15 @@ def main():
     # ── Live 모드 ──
     if args.live:
         print()
+        ref_mode_live = "lookahead" if args.ref_mode == "both" else args.ref_mode
         print("╔" + "═" * 58 + "╗")
         print("║   Python vs C++ MPPI Live Benchmark                    ║")
         print(f"║   K={args.K:<6d}  N={args.N:<4d}  weight={args.weight:<16s}     ║")
-        print(f"║   Mode: LIVE                                           ║")
+        print(f"║   Mode: LIVE   ref={ref_mode_live:<12s}                   ║")
         print("╚" + "═" * 58 + "╝")
         print()
-        live_benchmark(scenario, K=args.K, N=args.N, weight_type=args.weight)
+        live_benchmark(scenario, K=args.K, N=args.N,
+                       weight_type=args.weight, ref_mode=ref_mode_live)
         return
 
     # ── Batch 모드 ──
@@ -103,7 +110,7 @@ def main():
     print("╔" + "═" * 58 + "╗")
     print("║   Python vs C++ MPPI Benchmark Suite                    ║")
     print(f"║   K={args.K:<6d}  N={args.N:<4d}  repeat={args.repeat:<4d}                    ║")
-    print(f"║   Mode: BATCH                                          ║")
+    print(f"║   Mode: BATCH   ref={args.ref_mode:<12s}                  ║")
     print("╚" + "═" * 58 + "╝")
     print()
 
@@ -117,6 +124,7 @@ def main():
         run_scaling=run_scl,
         K_values=K_values,
         N_values=N_values,
+        ref_mode=args.ref_mode,
     )
 
     # ASCII 요약

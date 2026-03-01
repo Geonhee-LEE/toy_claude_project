@@ -24,7 +24,7 @@ from mpc_controller.controllers.mppi.risk_aware_mppi import RiskAwareMPPIControl
 from simulation.simulator import Simulator, SimulationConfig
 
 from .cpp_mppi_assembler import CppMPPIAssembler, MODEL_CONFIG
-from .scenario import BenchmarkScenario, circle_scenario, get_model_nx
+from .scenario import BenchmarkScenario, LookaheadInterpolator, circle_scenario, get_model_nx
 
 
 # ─────────────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ class RunResult:
     backend: str                 # "python" or "cpp"
     model_type: str
     weight_type: str
+    ref_mode: str                # "time" or "lookahead"
     states: np.ndarray           # (n_steps+1, nx)
     controls: np.ndarray         # (n_steps, nu)
     tracking_errors: np.ndarray  # (n_steps, nx)
@@ -96,6 +97,7 @@ class BenchmarkResults:
                 {
                     "name": r.name, "backend": r.backend,
                     "model": r.model_type, "weight": r.weight_type,
+                    "ref_mode": r.ref_mode,
                     "position_rmse": r.position_rmse,
                     "avg_solve_ms": r.avg_solve_ms,
                     "num_steps": len(r.solve_times),
@@ -178,12 +180,19 @@ def simulate(
     backend: str,
     model_type: str,
     weight_type: str,
-    interpolator: TrajectoryInterpolator,
+    interpolator,
     initial_state: np.ndarray,
     sim_time: float = 10.0,
     dt: float = 0.05,
 ) -> RunResult:
-    """시뮬레이션 루프 실행."""
+    """시뮬레이션 루프 실행.
+
+    interpolator는 TrajectoryInterpolator (시간 기반) 또는
+    LookaheadInterpolator (위치 기반) 중 하나를 받는다.
+    """
+    is_lookahead = isinstance(interpolator, LookaheadInterpolator)
+    ref_mode = "lookahead" if is_lookahead else "time"
+
     robot_params = RobotParams()
     sim_config = SimulationConfig(dt=dt, max_time=sim_time)
     sim = Simulator(robot_params, sim_config)
@@ -198,6 +207,8 @@ def simulate(
         ctrl_dt = dt
 
     controller.reset()
+    if is_lookahead:
+        interpolator.reset()
     num_steps = int(sim_time / dt)
     nx = len(initial_state)
 
@@ -215,7 +226,15 @@ def simulate(
             state_ext[:3] = state
             state = state_ext
 
-        ref = interpolator.get_reference(t, ctrl_N, ctrl_dt, current_theta=state[2])
+        # 참조 궤적 생성: time-based vs lookahead
+        if is_lookahead:
+            ref = interpolator.get_reference(
+                state, ctrl_N, ctrl_dt, current_theta=state[2],
+            )
+        else:
+            ref = interpolator.get_reference(
+                t, ctrl_N, ctrl_dt, current_theta=state[2],
+            )
 
         # 참조 궤적 차원 확장
         if nx > 3 and ref.shape[1] < nx:
@@ -255,6 +274,7 @@ def simulate(
         backend=backend,
         model_type=model_type,
         weight_type=weight_type,
+        ref_mode=ref_mode,
         states=np.array(states),
         controls=np.array(controls_list) if controls_list else np.empty((0, 2)),
         tracking_errors=np.array(errors_list) if errors_list else np.empty((0, nx)),
@@ -271,56 +291,94 @@ def simulate(
 WEIGHT_TYPES = ["vanilla", "log", "tsallis", "risk_aware"]
 
 
+def _make_interpolators(
+    trajectory: np.ndarray,
+    dt: float,
+    ref_mode: str,
+) -> List:
+    """ref_mode에 따라 interpolator 리스트 반환.
+
+    Returns
+    -------
+    list of (label_suffix, interpolator) tuples
+        label_suffix: ""(단일 모드) 또는 "/time", "/look" (both 모드)
+    """
+    traj_xy = trajectory[:, :3]
+    if ref_mode == "time":
+        return [("", TrajectoryInterpolator(traj_xy, dt))]
+    elif ref_mode == "lookahead":
+        return [("", LookaheadInterpolator(trajectory, dt))]
+    else:  # "both"
+        return [
+            ("/time", TrajectoryInterpolator(traj_xy, dt)),
+            ("/look", LookaheadInterpolator(trajectory, dt)),
+        ]
+
+
 def run_pipeline_benchmark(
     scenario: BenchmarkScenario,
     K: int = 512,
     N: int = 20,
     seed: int = 42,
+    ref_mode: str = "time",
 ) -> List[RunResult]:
-    """파이프라인 벤치마크: DiffDrive에서 Py/C++ 비교 + Swerve/NonCoaxial C++ only."""
+    """파이프라인 벤치마크: DiffDrive에서 Py/C++ 비교 + Swerve/NonCoaxial C++ only.
+
+    Parameters
+    ----------
+    ref_mode : str
+        "time" — 기존 시간 기반 인터폴레이션
+        "lookahead" — 위치 기반 lookahead 인터폴레이션
+        "both" — 양쪽 모두 실행하여 비교
+    """
     results = []
-    interp_dd = TrajectoryInterpolator(scenario.trajectory[:, :3], scenario.dt)
+    interps_dd = _make_interpolators(scenario.trajectory, scenario.dt, ref_mode)
 
     for wt in WEIGHT_TYPES:
-        # Python DiffDrive
-        py_ctrl = create_python_controller(wt, K=K, N=N, seed=seed, obstacles=scenario.obstacles)
-        result = simulate(
-            py_ctrl, f"Py/{wt}", "python", "diff_drive", wt,
-            interp_dd, np.zeros(3), scenario.sim_time, scenario.dt,
-        )
-        results.append(result)
+        for suffix, interp in interps_dd:
+            # Python DiffDrive
+            py_ctrl = create_python_controller(wt, K=K, N=N, seed=seed,
+                                               obstacles=scenario.obstacles)
+            result = simulate(
+                py_ctrl, f"Py/{wt}{suffix}", "python", "diff_drive", wt,
+                interp, np.zeros(3), scenario.sim_time, scenario.dt,
+            )
+            results.append(result)
 
-        # C++ DiffDrive
-        cpp_ctrl = CppMPPIAssembler(
-            "diff_drive", wt, K=K, N=N, seed=seed, obstacles=scenario.obstacles,
-        )
-        result = simulate(
-            cpp_ctrl, f"C++/{wt}", "cpp", "diff_drive", wt,
-            interp_dd, np.zeros(3), scenario.sim_time, scenario.dt,
-        )
-        results.append(result)
+            # C++ DiffDrive
+            cpp_ctrl = CppMPPIAssembler(
+                "diff_drive", wt, K=K, N=N, seed=seed,
+                obstacles=scenario.obstacles,
+            )
+            result = simulate(
+                cpp_ctrl, f"C++/{wt}{suffix}", "cpp", "diff_drive", wt,
+                interp, np.zeros(3), scenario.sim_time, scenario.dt,
+            )
+            results.append(result)
 
     # Swerve / NonCoaxial — C++ only
     for model_type in ["swerve", "non_coaxial_swerve"]:
         nx = get_model_nx(model_type)
-        # 궤적 차원 확장
         traj = scenario.trajectory.copy()
         if traj.shape[1] < nx:
             traj_ext = np.zeros((traj.shape[0], nx))
             traj_ext[:, :traj.shape[1]] = traj
             traj = traj_ext
 
-        interp = TrajectoryInterpolator(traj[:, :3], scenario.dt)
+        interps = _make_interpolators(traj, scenario.dt, ref_mode)
 
         for wt in WEIGHT_TYPES:
-            cpp_ctrl = CppMPPIAssembler(
-                model_type, wt, K=K, N=N, seed=seed, obstacles=scenario.obstacles,
-            )
-            result = simulate(
-                cpp_ctrl, f"C++/{model_type[:3]}/{wt}", "cpp", model_type, wt,
-                interp, np.zeros(nx), scenario.sim_time, scenario.dt,
-            )
-            results.append(result)
+            for suffix, interp in interps:
+                cpp_ctrl = CppMPPIAssembler(
+                    model_type, wt, K=K, N=N, seed=seed,
+                    obstacles=scenario.obstacles,
+                )
+                result = simulate(
+                    cpp_ctrl, f"C++/{model_type[:3]}/{wt}{suffix}",
+                    "cpp", model_type, wt,
+                    interp, np.zeros(nx), scenario.sim_time, scenario.dt,
+                )
+                results.append(result)
 
     return results
 
@@ -545,6 +603,7 @@ def run_all_benchmarks(
     run_scaling: bool = True,
     K_values: Optional[List[int]] = None,
     N_values: Optional[List[int]] = None,
+    ref_mode: str = "time",
 ) -> BenchmarkResults:
     """전체 벤치마크 실행."""
     if scenario is None:
@@ -554,9 +613,11 @@ def run_all_benchmarks(
 
     if run_pipeline:
         print("=" * 60)
-        print("  Pipeline Benchmark")
+        print(f"  Pipeline Benchmark  (ref_mode={ref_mode})")
         print("=" * 60)
-        results.pipeline = run_pipeline_benchmark(scenario, K=K, N=N)
+        results.pipeline = run_pipeline_benchmark(
+            scenario, K=K, N=N, ref_mode=ref_mode,
+        )
         print(f"  → {len(results.pipeline)} configs 완료")
 
     if run_component:

@@ -13,6 +13,7 @@ import pytest
 
 from examples.cpp_vs_python_benchmark.scenario import (
     BenchmarkScenario,
+    LookaheadInterpolator,
     circle_scenario,
     figure8_scenario,
     get_model_nx,
@@ -60,6 +61,66 @@ class TestScenario:
         assert get_model_nx("diff_drive") == 3
         assert get_model_nx("swerve") == 3
         assert get_model_nx("non_coaxial_swerve") == 4
+
+
+# ============================================================================
+# LookaheadInterpolator tests
+# ============================================================================
+class TestLookaheadInterpolator:
+    def test_basic_reference_shape(self):
+        """기본 참조 궤적 shape 확인."""
+        s = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        pos = np.array([3.0, 0.0, 0.0])
+        ref = interp.get_reference(pos, horizon=10, mpc_dt=0.05)
+        assert ref.shape == (11, 3)
+
+    def test_arc_length_precomputation(self):
+        """Arc-length 누적 계산 확인."""
+        s = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        assert interp.arc_lengths[0] == 0.0
+        assert interp.total_arc_length > 0
+        # 단조 증가
+        assert np.all(np.diff(interp.arc_lengths) >= 0)
+
+    def test_closest_point_search(self):
+        """가장 가까운 점 탐색 정확성."""
+        s = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        # 시작점 (3, 0) 근처
+        idx, dist = interp.find_closest_point(np.array([3.0, 0.0]))
+        assert idx == 0
+        assert dist < 0.1
+
+    def test_theta_continuity(self):
+        """참조 궤적 theta 연속성 (unwrap)."""
+        s = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        pos = np.array([3.0, 0.0, 0.0])
+        ref = interp.get_reference(pos, horizon=20, mpc_dt=0.05,
+                                   current_theta=np.pi / 2)
+        # theta 점프 < pi (unwrap 동작 확인)
+        dtheta = np.abs(np.diff(ref[:, 2]))
+        assert np.all(dtheta < np.pi)
+
+    def test_reset(self):
+        """Reset 후 프루닝 인덱스 초기화."""
+        s = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        interp.find_closest_point(np.array([0.0, 3.0]))
+        assert interp._prune_idx > 0
+        interp.reset()
+        assert interp._prune_idx == 0
+
+    def test_nx4_dimension(self):
+        """nx=4 (NonCoaxial) 궤적 처리."""
+        s = circle_scenario(nx=4)
+        interp = LookaheadInterpolator(s.trajectory, s.dt)
+        pos = np.zeros(4)
+        pos[0] = 3.0
+        ref = interp.get_reference(pos, horizon=10, mpc_dt=0.05)
+        assert ref.shape == (11, 4)
 
 
 # ============================================================================
@@ -180,6 +241,25 @@ class TestBenchmarkRunner:
             interp, np.zeros(3), sim_time=1.0,
         )
         assert result.backend == "cpp"
+        assert result.ref_mode == "time"
+        assert len(result.solve_times) > 0
+        assert result.avg_solve_ms > 0
+
+    def test_pipeline_lookahead(self):
+        """Lookahead 인터폴레이터로 파이프라인 실행 확인."""
+        from examples.cpp_vs_python_benchmark.benchmark_runner import simulate
+        from examples.cpp_vs_python_benchmark.cpp_mppi_assembler import CppMPPIAssembler
+
+        scenario = circle_scenario(nx=3)
+        interp = LookaheadInterpolator(scenario.trajectory, scenario.dt)
+
+        ctrl = CppMPPIAssembler("diff_drive", "vanilla", K=32, N=10, seed=42)
+        result = simulate(
+            ctrl, "test_look", "cpp", "diff_drive", "vanilla",
+            interp, np.zeros(3), sim_time=1.0,
+        )
+        assert result.backend == "cpp"
+        assert result.ref_mode == "lookahead"
         assert len(result.solve_times) > 0
         assert result.avg_solve_ms > 0
 
