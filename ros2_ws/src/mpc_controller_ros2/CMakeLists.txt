@@ -30,6 +30,21 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(OpenMP)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+# Try pip-installed pybind11 first (numpy 2.x compatible), fall back to vendor
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" -c "import pybind11; print(pybind11.get_cmake_dir())"
+  OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE PYBIND11_PIP_FOUND
+)
+if(PYBIND11_PIP_FOUND EQUAL 0 AND EXISTS "${PYBIND11_CMAKE_DIR}")
+  list(APPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
+  find_package(pybind11 REQUIRED CONFIG)
+else()
+  find_package(pybind11_vendor REQUIRED)
+  find_package(pybind11 REQUIRED)
+endif()
 
 # C++ library: MPPI controller utilities
 add_library(mppi_utils SHARED
@@ -119,6 +134,14 @@ install(DIRECTORY include/
   DESTINATION include/
 )
 
+# pybind11 Python bindings
+pybind11_add_module(mppi_py src/bindings/mppi_bindings.cpp)
+target_link_libraries(mppi_py PRIVATE mppi_controller_plugin)
+target_include_directories(mppi_py PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${EIGEN3_INCLUDE_DIRS}
+)
+
 # Install Python modules
 ament_python_install_package(${PROJECT_NAME})
 
@@ -133,6 +156,14 @@ install(PROGRAMS
   scripts/swerve_kinematics_node.py
   scripts/swerve_e2e_test.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install pybind11 module into Python package
+install(TARGETS mppi_py
+  DESTINATION "${PYTHON_INSTALL_DIR}/${PROJECT_NAME}/mppi"
+)
+install(FILES mpc_controller_ros2/mppi/__init__.py
+  DESTINATION "${PYTHON_INSTALL_DIR}/${PROJECT_NAME}/mppi"
 )
 
 # Install launch files
@@ -182,6 +213,9 @@ if(BUILD_TESTING)
 
   # Add pytest tests
   ament_add_pytest_test(test_mpc_controller_node test/test_mpc_controller_node.py)
+  ament_add_pytest_test(test_pybind_core test/python/test_pybind_core.py)
+  ament_add_pytest_test(test_pybind_costs test/python/test_pybind_costs.py)
+  ament_add_pytest_test(test_pybind_advanced test/python/test_pybind_advanced.py)
 
   # Add C++ unit tests
   find_package(ament_cmake_gtest REQUIRED)

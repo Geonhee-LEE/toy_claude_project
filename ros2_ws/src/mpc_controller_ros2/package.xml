@@ -39,6 +39,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>pluginlib</depend>
   <depend>eigen</depend>
+  <depend>pybind11_vendor</depend>
 
   <!-- Test dependencies -->
   <test_depend>ament_lint_auto</test_depend>

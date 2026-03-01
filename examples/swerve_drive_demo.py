@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from mpc_controller import (
+    LookaheadInterpolator,
     SwerveMPCController,
     SwerveMPCParams,
     SwerveParams,
@@ -95,6 +96,13 @@ def main():
         action="store_true",
         help="Enable real-time visualization during simulation",
     )
+    parser.add_argument(
+        "--ref-mode",
+        type=str,
+        default="time",
+        choices=["time", "lookahead"],
+        help="Reference trajectory generation mode (default: time)",
+    )
     args = parser.parse_args()
 
     # Swerve drive robot parameters
@@ -167,7 +175,12 @@ def main():
 
     # Create trajectory interpolator
     traj_dt = sim_config.max_time / (num_points - 1)
-    interpolator = TrajectoryInterpolator(trajectory, traj_dt)
+    if args.ref_mode == "lookahead":
+        interpolator = LookaheadInterpolator(
+            trajectory, dt=traj_dt, v_max=robot_params.max_vx,
+        )
+    else:
+        interpolator = TrajectoryInterpolator(trajectory, traj_dt)
 
     # Create swerve drive controller
     controller = SwerveMPCController(robot_params, mpc_params)
