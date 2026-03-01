@@ -1,0 +1,122 @@
+# ============================================================
+# nav2 파라미터 - Biased-MPPI (mpc_controller_ros2)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=biased
+#
+# Reference: Trevisan & Alonso-Mora (2024) "Biased-MPPI: Informing
+#            Sampling-Based Model Predictive Control by Fusing Ancillary
+#            Controllers" IEEE RA-L
+#
+# 핵심: K개 샘플 중 J_total개는 ancillary 결정적 시퀀스,
+#       (K-J_total)개는 Gaussian — 가중치 공식 변경 없음.
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 10.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.5
+    transform_tolerance: 1.0
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.3
+      movement_time_allowance: 30.0
+
+    # Goal checker
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    # ---- Biased-MPPI Controller (RA-L 2024) ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::BiasedMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling (ancillary 주입으로 적은 샘플로도 효과적)
+      K: 1024
+      lambda: 50.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.8
+
+      # Control limits
+      v_max: 0.5
+      v_min: -0.2
+      omega_max: 1.5
+      omega_min: -1.5
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.5
+      R_omega: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance (좁은 통로 통과 최적화)
+      obstacle_weight: 20.0
+      safety_distance: 0.3
+
+      # Costmap obstacle cost (inflation 영향 완화)
+      use_costmap_cost: true
+      costmap_lethal_cost: 200.0
+      costmap_critical_cost: 30.0
+      lookahead_dist: 1.5
+      min_lookahead: 0.5
+      goal_slowdown_dist: 1.0
+
+      # Forward preference (후진 허용으로 완화)
+      prefer_forward_weight: 5.0
+      prefer_forward_linear_ratio: 0.5
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.5
+      adaptation_rate: 0.1
+      lambda_min: 0.1
+      lambda_max: 100.0
+
+      # ---- Biased-MPPI 전용 파라미터 ----
+      biased_enabled: true
+      bias_ratio: 0.1                   # 각 ancillary당 J/K 비율
+      biased_braking: true              # Braking controller (zero 제어)
+      biased_goto_goal: true            # GoToGoal P-제어
+      biased_path_following: true       # PathFollowing 접선 추종
+      biased_previous_solution: true    # 이전 최적해 복제
+      biased_goto_goal_gain: 1.0        # GoToGoal P-gain
+      biased_path_following_gain: 1.0   # PathFollowing P-gain
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

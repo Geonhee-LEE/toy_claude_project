@@ -136,6 +136,18 @@ struct MPPIParams
   double svg_resample_std{0.3};         // follower 리샘플링 표준편차
 
   // ============================================================================
+  // Biased-MPPI (Trevisan & Alonso-Mora, RA-L 2024) 파라미터
+  // ============================================================================
+  bool biased_enabled{true};                   // ancillary 주입 활성화
+  double bias_ratio{0.1};                      // J/K 비율 (각 ancillary당)
+  bool biased_braking{true};                   // Braking controller
+  bool biased_goto_goal{true};                 // GoToGoal controller
+  bool biased_path_following{true};            // PathFollowing controller
+  bool biased_previous_solution{true};         // PreviousSolution controller
+  double biased_goto_goal_gain{1.0};           // GoToGoal P-gain
+  double biased_path_following_gain{1.0};      // PathFollowing P-gain
+
+  // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
   // Non-Coaxial Swerve 전용 파라미터

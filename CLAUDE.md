@@ -6,7 +6,15 @@
 - 아스키코드로 진행사항이나 플로우를 표현해주세요
 - toy_claude_project 프로젝트 진행시에는, Github 이슈, PR를 생성하고 close하고 관리해주세요
 
-# 프로젝트 구조 및 현황
+# 프로젝트 방향: ROS2 C++ 컨트롤러 고도화 최우선
+
+## 현재 우선순위
+```
+P0: Ackermann MotionModel C++
+P0: C++ MPPI 성능 프로파일링 + 최적화
+P1: 최신 MPPI 변형 C++ (Covariance Steering, π-MPPI, BR-MPPI)
+P1: 안전성 고도화 C++ (CLF-CBF-QP, 다중 CBF)
+```
 
 ## 패키지 구조
 ```
@@ -40,12 +48,12 @@ mpc_controller/
 └── utils/                   # 유틸리티 (logger, trajectory 등)
 ```
 
-## 마일스톤 진행 현황
+## 완료된 마일스톤
 - M1 Vanilla MPPI: 완료
 - M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료
 - M3 SOTA 변형 (Log, Tsallis, Risk-Aware, SVMPC): 완료
 - M3.5 확장 (Smooth, Spline, SVG-MPPI): 완료
-- M4 ROS2 nav2 통합 (8종 C++ 플러그인 + Swerve): 완료
+- M4 ROS2 nav2 통합 (9종 C++ 플러그인 + Swerve): 완료
 - M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
 - GPU 8종 변형 확장 (가중치 Strategy + SVGD JIT): 완료 (PR #105)
@@ -55,6 +63,8 @@ mpc_controller/
 - pybind11 Python 바인딩 (C++ MPPI 코어 Python 노출): 완료 (PR #115)
 - Python vs C++ MPPI 벤치마크 스위트: 완료 (PR #117)
 - LookaheadInterpolator 전체 예제 통합: 완료 (PR #117)
+- 60° 스티어링 제한 데모 + 벤치마크: 완료 (PR #118)
+- Biased-MPPI C++ nav2 플러그인: 완료 (PR #123)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

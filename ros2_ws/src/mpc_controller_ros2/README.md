@@ -35,7 +35,7 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
 - **C++ Eigen 기반** 고성능 연산 (K=1024 샘플, N=30 호라이즌에서 <50ms)
 - **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve (MotionModel 추상화)
-- **8종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI
+- **9종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI
 - **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
 - **M2 고도화** Colored Noise, Adaptive Temperature, Tube-MPPI
 - **동적 파라미터** 런타임 중 튜닝 가능 (min_lookahead, costmap costs 포함)
@@ -69,6 +69,7 @@ MPPIControllerPlugin (base, Vanilla MPPI)
 ├── RiskAwareMPPIControllerPlugin (CVaR)
 ├── SmoothMPPIControllerPlugin  (du space + jerk cost)
 ├── SplineMPPIControllerPlugin  (B-spline basis)
+├── BiasedMPPIControllerPlugin  (Ancillary biased sampling, RA-L 2024)
 └── SVMPCControllerPlugin       (SVGD)
     └── SVGMPPIControllerPlugin (Guide + follower)
 ```
@@ -91,16 +92,19 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swe
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
 ```
 
-**시작 순서 (자동 TimerAction 관리):**
+**시작 순서 (OnProcessExit 이벤트 체인):**
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  0s  │ Gazebo Harmonic + Robot State Publisher + ros_gz_bridge │
-│  5s  │ Robot Spawn                                              │
-│  8s  │ Controllers (joint_state_broadcaster, diff_drive)        │
-│ 10s  │ Localization (map_server, amcl)                          │
-│ 15s  │ Navigation (controller_server, planner, bt_navigator)    │
-│ 20s  │ RVIZ                                                     │
+│  0s   │ Gazebo Harmonic + Robot State Publisher + ros_gz_bridge │
+│  5s   │ Robot Spawn (gz service -s /world/*/create)            │
+│       │     ↓ OnProcessExit                                     │
+│  ~8s  │ joint_state_broadcaster (unload → spawn 패턴)           │
+│       │     ↓ OnProcessExit                                     │
+│  ~11s │ diff_drive_controller (unload → spawn 패턴)             │
+│ 10s   │ Localization (map_server, amcl)                         │
+│ 15s   │ Navigation (controller_server, planner, bt_navigator)   │
+│ 20s   │ RVIZ                                                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -514,8 +518,11 @@ colcon test-result --verbose
 | test_weight_computation | 30 | ✅ |
 | test_svmpc | 13 | ✅ |
 | test_m35_plugins | 18 | ✅ |
-| test_motion_model | 36 | ✅ |
-| **총계** | **166** | **PASSED** |
+| test_motion_model | 48 | ✅ |
+| test_cbf | 20 | ✅ |
+| test_trajectory_stability | 25 | ✅ |
+| test_biased_mppi | 15 | ✅ |
+| **총계** | **239** | **PASSED** |
 
 ---
 
@@ -536,6 +543,9 @@ colcon test-result --verbose
 | Phase A | MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial) | ✅ |
 | Phase B | Goal 수렴 + 장애물 회피 튜닝 | ✅ |
 | Phase C | Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정 | ✅ |
+| MPPI-CBF | Control Barrier Function 통합 (Python + C++) | ✅ |
+| 궤적 안정화 | SG Filter + IT 정규화 | ✅ |
+| Biased-MPPI | Ancillary biased sampling C++ nav2 플러그인 (PR #123) | ✅ |
 
 ---
 

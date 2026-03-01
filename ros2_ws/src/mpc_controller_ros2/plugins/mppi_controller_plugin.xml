@@ -55,4 +55,11 @@
       Efficient multi-modal exploration with G &lt;&lt; K.
     </description>
   </class>
+  <class type="mpc_controller_ros2::BiasedMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Biased-MPPI controller plugin for nav2.
+      Trevisan &amp; Alonso-Mora RA-L 2024. Ancillary controller biased sampling.
+      Deterministic + Gaussian hybrid sampling with unchanged weight formula.
+    </description>
+  </class>
 </library>
