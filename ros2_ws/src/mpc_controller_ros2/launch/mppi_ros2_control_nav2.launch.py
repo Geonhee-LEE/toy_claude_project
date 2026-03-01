@@ -224,17 +224,26 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ========== 5. Controller Activation ==========
-    # gz_ros2_control이 컨트롤러를 자동 로드/설정하므로, spawner와 레이스 컨디션 발생 가능.
-    # ExecuteProcess로 controller_manager 준비 대기 + spawner + switch_controllers 폴백.
+    # gz_ros2_control이 controller_manager를 생성하고, spawner가 컨트롤러를
+    # load → configure → activate.
+    #
+    # 문제: spawner 기본 서비스 호출 타임아웃이 짧아 Gazebo 하드웨어 초기화
+    #       완료 전에 configure가 실패 (레이스 컨디션).
+    # 해결: --service-call-timeout 30 + 하드웨어 인터페이스 대기 + 재시도.
     def _activate_cmd(ctrl_name, extra_args=''):
-        """단일 컨트롤러 활성화 명령 (spawner 시도 → switch 폴백)."""
+        """단일 컨트롤러 활성화 (spawner + 재시도)."""
         return (
             f'echo "[controllers] Activating {ctrl_name}..."; '
-            f'ros2 run controller_manager spawner {ctrl_name}'
-            f' -c /controller_manager --controller-manager-timeout 30'
-            f' {extra_args} 2>&1 || '
-            f'ros2 control switch_controllers'
-            f' --activate {ctrl_name} -c /controller_manager 2>&1 || true; '
+            f'for attempt in 1 2 3 4 5; do '
+            f'  ros2 run controller_manager spawner {ctrl_name}'
+            f'  -c /controller_manager'
+            f'  --controller-manager-timeout 60'
+            f'  --service-call-timeout 30'
+            f'  {extra_args} 2>&1 && '
+            f'  echo "[controllers] {ctrl_name} activated (attempt $attempt)" && break; '
+            f'  echo "[controllers] {ctrl_name} attempt $attempt failed, retrying in 3s..."; '
+            f'  sleep 3; '
+            f'done; '
         )
 
     wait_for_cm = (
@@ -243,6 +252,14 @@ def launch_setup(context, *args, **kwargs):
         '  ros2 service list 2>/dev/null | grep -q "/controller_manager/list_controllers" && '
         '  echo "[controllers] controller_manager ready" && break; '
         '  sleep 1; '
+        'done; '
+        # Gazebo 하드웨어 인터페이스 초기화 대기
+        'echo "[controllers] Waiting for hardware interfaces..."; '
+        'for i in $(seq 1 15); do '
+        '  ros2 control list_hardware_interfaces -c /controller_manager 2>/dev/null | '
+        '  grep -q "velocity" && '
+        '  echo "[controllers] Hardware interfaces ready" && break; '
+        '  sleep 2; '
         'done; '
     )
 
@@ -259,8 +276,7 @@ def launch_setup(context, *args, **kwargs):
         activate_cmd = (
             wait_for_cm
             + _activate_cmd('joint_state_broadcaster')
-            + _activate_cmd('diff_drive_controller',
-                            f'--param-file {controller_config}')
+            + _activate_cmd('diff_drive_controller')
             + 'echo "[controllers] All diff_drive controllers activated"; '
             + 'ros2 control list_controllers -c /controller_manager 2>&1 || true'
         )
