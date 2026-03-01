@@ -1,0 +1,71 @@
+# ============================================================
+# Swerve Drive 하드웨어 파라미터 (ros2_control + SafetyMonitor)
+# ============================================================
+# 실제 하드웨어 배포 시 사용하는 레퍼런스 템플릿.
+# 사용자가 자신의 로봇에 맞게 수정해야 합니다.
+#
+# 실행:
+#   ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py \
+#       controller:=swerve hardware_params:=swerve_hardware_params.yaml
+# ============================================================
+
+# === ros2_control Controller Manager ===
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    steer_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    wheel_velocity_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    # === 사용자 하드웨어 인터페이스 (아래 주석 해제 후 수정) ===
+    # ros2_control URDF <hardware> 태그에 정의하거나, 여기서 오버라이드:
+    # ros2_control:
+    #   type: my_swerve_hw/SwerveHardwareInterface
+    #   serial_port: /dev/ttyUSB0
+    #   baud_rate: 115200
+
+# === Steer Position Controller ===
+steer_position_controller:
+  ros__parameters:
+    joints:
+      - fl_steer_joint
+      - fr_steer_joint
+      - rl_steer_joint
+      - rr_steer_joint
+    interface_name: position
+
+# === Wheel Velocity Controller ===
+wheel_velocity_controller:
+  ros__parameters:
+    joints:
+      - fl_wheel_joint
+      - fr_wheel_joint
+      - rl_wheel_joint
+      - rr_wheel_joint
+    interface_name: velocity
+
+# === Swerve Kinematics Node ===
+swerve_kinematics_node:
+  ros__parameters:
+    wheel_radius: 0.08       # 바퀴 반지름 (m)
+    wheel_x: 0.25            # 차체 중심 → 전후 거리 (m)
+    wheel_y: 0.22            # 차체 중심 → 좌우 거리 (m)
+    publish_rate: 50.0       # FK/odom 발행 주기 (Hz)
+    cmd_vel_timeout: 0.3     # 실 로봇은 타임아웃 짧게 (s)
+    use_gazebo_odom: false   # 하드웨어: FK 기반 오도메트리
+
+# === Safety Monitor Node ===
+safety_monitor:
+  ros__parameters:
+    cmd_vel_timeout: 0.5       # cmd_vel 미수신 시 정지 (s)
+    joint_state_timeout: 1.0   # JointState 미수신 시 E-Stop (s)
+    max_linear_speed: 2.0      # 최대 허용 선속도 (m/s)
+    max_angular_speed: 3.0     # 최대 허용 각속도 (rad/s)
+    monitor_rate: 20.0         # 안전 검사 주기 (Hz)
+    enable_speed_limit: true   # 속도 제한 활성화

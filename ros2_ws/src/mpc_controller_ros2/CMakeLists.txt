@@ -156,6 +156,7 @@ install(PROGRAMS
   scripts/swerve_kinematics_node.py
   scripts/swerve_e2e_test.py
   scripts/nav2_lifecycle_bringup.py
+  scripts/safety_monitor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -217,6 +218,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_pybind_core test/python/test_pybind_core.py)
   ament_add_pytest_test(test_pybind_costs test/python/test_pybind_costs.py)
   ament_add_pytest_test(test_pybind_advanced test/python/test_pybind_advanced.py)
+  ament_add_pytest_test(test_safety_monitor test/python/test_safety_monitor.py)
 
   # Add C++ unit tests
   find_package(ament_cmake_gtest REQUIRED)

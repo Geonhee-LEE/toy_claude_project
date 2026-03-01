@@ -1,0 +1,178 @@
+# ============================================================
+# nav2 파라미터 - Swerve Drive Spline-MPPI (하드웨어)
+# ============================================================
+# nav2_params_swerve_mppi.yaml 기반, 실제 하드웨어 변경:
+#   - use_sim_time: false
+#   - K: 1024 (실시간 보장)
+#   - v_max: 1.0, vy_max: 0.3 (보수적)
+#   - cbf_enabled: true (실 로봇 안전)
+#   - visualize_samples: false (대역폭 절약)
+#
+# 실행:
+#   ros2 launch mpc_controller_ros2 mppi_hardware_swerve.launch.py controller:=swerve
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.5
+    transform_tolerance: 0.5   # 1.0→0.5 (실시간 더 엄격)
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    # Progress checker
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.3
+      movement_time_allowance: 30.0
+
+    # Goal checker
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.4
+      stateful: true
+
+    # ---- Swerve Drive Spline-MPPI Controller (Hardware) ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::SplineMPPIControllerPlugin"
+      motion_model: "swerve"
+
+      # Prediction horizon — 2초 예측
+      N: 40
+      dt: 0.05
+
+      # Sampling — 실시간 보장 (2048→1024)
+      K: 1024
+      lambda: 100.0
+
+      # Noise parameters (vx, vy, omega)
+      noise_sigma_v: 0.5
+      noise_sigma_vy: 0.4
+      noise_sigma_omega: 0.8
+
+      # Control limits — 보수적 (하드웨어 안전)
+      v_max: 1.0              # 1.5→1.0
+      v_min: -0.2             # -0.3→-0.2 (후진 제한 강화)
+      omega_max: 1.5          # 2.0→1.5
+      omega_min: -1.5         # -2.0→-1.5
+      vy_max: 0.3             # 0.5→0.3 (lateral 제한 강화)
+
+      # State tracking cost weights (Q: x, y, theta)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 15.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 20.0
+
+      # Control effort weights (R: vx, vy, omega)
+      R_v: 0.1
+      R_vy: 1.0
+      R_omega: 0.3
+
+      # Control rate weights (R_rate: vx, vy, omega)
+      R_rate_v: 0.3
+      R_rate_vy: 0.8
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 0.0
+      safety_distance: 0.4
+
+      # Costmap obstacle cost
+      use_costmap_cost: true
+      costmap_lethal_cost: 200.0
+      costmap_critical_cost: 50.0
+      lookahead_dist: 2.0
+      min_lookahead: 0.5
+      goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5
+
+      # Velocity Tracking Cost
+      velocity_tracking_weight: 10.0
+      reference_velocity: 0.8    # 1.0→0.8 (보수적)
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+      prefer_forward_linear_ratio: 0.5
+      prefer_forward_velocity_incentive: 1.0
+
+      # Control smoothing
+      control_smoothing_alpha: 0.7
+
+      # Trajectory Stability — SG filter
+      sg_filter_enabled: true
+      sg_half_window: 4
+      sg_poly_order: 5
+      it_alpha: 0.975
+      exploration_ratio: 0.1
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.3
+      adaptation_rate: 0.1
+      lambda_min: 1.0
+      lambda_max: 500.0
+
+      # Spline-MPPI 전용
+      spline_num_knots: 15
+      spline_degree: 3
+      spline_auto_knot_sigma: true
+
+      # SOTA 변형 (기본값)
+      tsallis_q: 1.5
+      cvar_alpha: 0.5
+      svgd_num_iterations: 0
+      svgd_step_size: 0.1
+      svgd_bandwidth: -1.0
+      smooth_R_jerk_v: 0.1
+      smooth_R_jerk_omega: 0.1
+      smooth_action_cost_weight: 1.0
+      svg_num_guide_particles: 10
+      svg_guide_iterations: 3
+      svg_guide_step_size: 0.1
+      svg_resample_std: 0.3
+
+      # Non-Coaxial 전용 (swerve에서는 무시 — declare 필수)
+      noise_sigma_delta_dot: 0.3
+      R_delta_dot: 0.5
+      R_rate_delta_dot: 1.0
+      max_steering_rate: 2.0
+      max_steering_angle: 1.5707
+
+      # CBF — 실제 로봇 안전 (활성화)
+      cbf_enabled: true          # false→true (하드웨어 필수)
+      cbf_gamma: 1.0
+      cbf_safety_margin: 0.3     # 0.2→0.3 (안전 마진 확대)
+      cbf_robot_radius: 0.2
+      cbf_activation_distance: 2.0
+      cbf_cost_weight: 100.0
+      cbf_use_safety_filter: true
+
+      # Collision Debug (기본 OFF)
+      debug_collision_viz: false
+      debug_cost_breakdown: false  # true→false (대역폭 절약)
+      debug_collision_points: false
+      debug_safety_footprint: false
+      debug_cost_heatmap: false
+      debug_footprint_radius: 0.3
+      debug_heatmap_stride: 3
+
+      # Visualization — 대역폭 절약
+      visualize_samples: false     # true→false
+      visualize_best: true
+      visualize_weighted_avg: false # true→false
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: false # true→false
+      visualize_tube: false
+      visualize_cbf: false
+      max_visualized_samples: 10   # 20→10
