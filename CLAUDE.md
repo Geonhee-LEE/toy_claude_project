@@ -53,7 +53,7 @@ mpc_controller/
 - M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료
 - M3 SOTA 변형 (Log, Tsallis, Risk-Aware, SVMPC): 완료
 - M3.5 확장 (Smooth, Spline, SVG-MPPI): 완료
-- M4 ROS2 nav2 통합 (9종 C++ 플러그인 + Swerve): 완료
+- M4 ROS2 nav2 통합 (10종 C++ 플러그인 + Swerve): 완료
 - M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
 - GPU 8종 변형 확장 (가중치 Strategy + SVGD JIT): 완료 (PR #105)
@@ -65,6 +65,7 @@ mpc_controller/
 - LookaheadInterpolator 전체 예제 통합: 완료 (PR #117)
 - 60° 스티어링 제한 데모 + 벤치마크: 완료 (PR #118)
 - Biased-MPPI C++ nav2 플러그인: 완료 (PR #123)
+- DIAL-MPPI C++ nav2 플러그인 (Diffusion Annealing, ICRA 2025): 완료 (PR #125)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
