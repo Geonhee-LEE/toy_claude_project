@@ -74,6 +74,7 @@ add_library(mppi_controller_plugin SHARED
   src/smooth_mppi_controller_plugin.cpp
   src/spline_mppi_controller_plugin.cpp
   src/svg_mppi_controller_plugin.cpp
+  src/biased_mppi_controller_plugin.cpp
   src/weight_computation.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
@@ -279,6 +280,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_trajectory_stability test/unit/test_trajectory_stability.cpp)
   if(TARGET test_trajectory_stability)
     target_link_libraries(test_trajectory_stability mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_biased_mppi test/unit/test_biased_mppi.cpp)
+  if(TARGET test_biased_mppi)
+    target_link_libraries(test_biased_mppi mppi_controller_plugin)
   endif()
 endif()
 

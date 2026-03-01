@@ -114,6 +114,8 @@ def launch_setup(context, *args, **kwargs):
                         'Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)'),
         'non_coaxial_60deg': ('nav2_params_non_coaxial_60deg_mppi.yaml',
                               'Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)'),
+        'biased': ('nav2_params_biased_mppi.yaml',
+                   'Biased-MPPI (mpc_controller_ros2::BiasedMPPIControllerPlugin)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -524,8 +526,8 @@ def generate_launch_description():
             'controller',
             default_value='custom',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
-                        '"svmpc", "smooth", "spline", "svg", "swerve", "non_coaxial", '
-                        '"non_coaxial_60deg", or "nav2"'
+                        '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
+                        '"non_coaxial", "non_coaxial_60deg", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

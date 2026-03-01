@@ -1177,6 +1177,16 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "svg_guide_step_size", params_.svg_guide_step_size);
   node_->declare_parameter(prefix + "svg_resample_std", params_.svg_resample_std);
 
+  // Biased-MPPI (RA-L 2024)
+  node_->declare_parameter(prefix + "biased_enabled", params_.biased_enabled);
+  node_->declare_parameter(prefix + "bias_ratio", params_.bias_ratio);
+  node_->declare_parameter(prefix + "biased_braking", params_.biased_braking);
+  node_->declare_parameter(prefix + "biased_goto_goal", params_.biased_goto_goal);
+  node_->declare_parameter(prefix + "biased_path_following", params_.biased_path_following);
+  node_->declare_parameter(prefix + "biased_previous_solution", params_.biased_previous_solution);
+  node_->declare_parameter(prefix + "biased_goto_goal_gain", params_.biased_goto_goal_gain);
+  node_->declare_parameter(prefix + "biased_path_following_gain", params_.biased_path_following_gain);
+
   // Non-Coaxial Swerve 전용 파라미터
   node_->declare_parameter(prefix + "max_steering_rate", params_.max_steering_rate);
   node_->declare_parameter(prefix + "max_steering_angle", params_.max_steering_angle);
@@ -1376,6 +1386,16 @@ void MPPIControllerPlugin::loadParameters()
   params_.svg_guide_iterations = node_->get_parameter(prefix + "svg_guide_iterations").as_int();
   params_.svg_guide_step_size = node_->get_parameter(prefix + "svg_guide_step_size").as_double();
   params_.svg_resample_std = node_->get_parameter(prefix + "svg_resample_std").as_double();
+
+  // Biased-MPPI (RA-L 2024)
+  params_.biased_enabled = node_->get_parameter(prefix + "biased_enabled").as_bool();
+  params_.bias_ratio = node_->get_parameter(prefix + "bias_ratio").as_double();
+  params_.biased_braking = node_->get_parameter(prefix + "biased_braking").as_bool();
+  params_.biased_goto_goal = node_->get_parameter(prefix + "biased_goto_goal").as_bool();
+  params_.biased_path_following = node_->get_parameter(prefix + "biased_path_following").as_bool();
+  params_.biased_previous_solution = node_->get_parameter(prefix + "biased_previous_solution").as_bool();
+  params_.biased_goto_goal_gain = node_->get_parameter(prefix + "biased_goto_goal_gain").as_double();
+  params_.biased_path_following_gain = node_->get_parameter(prefix + "biased_path_following_gain").as_double();
 
   // Non-Coaxial Swerve 전용 파라미터
   params_.max_steering_rate = node_->get_parameter(prefix + "max_steering_rate").as_double();
