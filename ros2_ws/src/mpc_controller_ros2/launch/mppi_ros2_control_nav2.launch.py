@@ -118,6 +118,8 @@ def launch_setup(context, *args, **kwargs):
                               'Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)'),
         'biased': ('nav2_params_biased_mppi.yaml',
                    'Biased-MPPI (mpc_controller_ros2::BiasedMPPIControllerPlugin)'),
+        'dial': ('nav2_params_dial_mppi.yaml',
+                 'DIAL-MPPI (mpc_controller_ros2::DialMPPIControllerPlugin)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

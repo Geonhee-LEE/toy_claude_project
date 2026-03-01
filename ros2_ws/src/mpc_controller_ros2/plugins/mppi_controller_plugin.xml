@@ -62,4 +62,11 @@
       Deterministic + Gaussian hybrid sampling with unchanged weight formula.
     </description>
   </class>
+  <class type="mpc_controller_ros2::DialMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      DIAL-MPPI controller plugin for nav2.
+      Xue et al. ICRA 2025. Diffusion-inspired annealing with dual decay schedule.
+      N_diffuse inner iterations with Shield-DIAL (CBF) and Adaptive-DIAL extensions.
+    </description>
+  </class>
 </library>

@@ -148,6 +148,25 @@ struct MPPIParams
   double biased_path_following_gain{1.0};      // PathFollowing P-gain
 
   // ============================================================================
+  // DIAL-MPPI (Xue et al., ICRA 2025) 파라미터
+  // Diffusion-Inspired Annealing: 다중 스텝 어닐링으로 정밀한 최적 제어 탐색
+  // ============================================================================
+  bool dial_enabled{true};                       // 어닐링 활성화
+  int dial_n_diffuse{5};                         // 어닐링 반복 횟수 N
+  double dial_beta1{0.8};                        // 반복 감쇠 계수 β₁
+  double dial_beta2{0.5};                        // 호라이즌 감쇠 계수 β₂
+  double dial_min_noise{0.01};                   // 최소 노이즈 하한 (수치 안정성)
+
+  // Shield-DIAL (CBF 통합)
+  bool dial_shield_enabled{false};               // CBF 안전 필터 활성화
+
+  // Adaptive-DIAL (적응형 반복)
+  bool dial_adaptive_enabled{false};             // 적응형 N_diffuse 활성화
+  double dial_adaptive_cost_tol{0.01};           // 비용 개선 임계값 (상대)
+  int dial_adaptive_min_iter{2};                 // 최소 반복 횟수
+  int dial_adaptive_max_iter{10};                // 최대 반복 횟수
+
+  // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
   // Non-Coaxial Swerve 전용 파라미터

@@ -75,6 +75,7 @@ add_library(mppi_controller_plugin SHARED
   src/spline_mppi_controller_plugin.cpp
   src/svg_mppi_controller_plugin.cpp
   src/biased_mppi_controller_plugin.cpp
+  src/dial_mppi_controller_plugin.cpp
   src/weight_computation.cpp
   src/batch_dynamics_wrapper.cpp
   src/cost_functions.cpp
@@ -285,6 +286,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_biased_mppi test/unit/test_biased_mppi.cpp)
   if(TARGET test_biased_mppi)
     target_link_libraries(test_biased_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_dial_mppi test/unit/test_dial_mppi.cpp)
+  if(TARGET test_dial_mppi)
+    target_link_libraries(test_dial_mppi mppi_controller_plugin)
   endif()
 endif()
 
