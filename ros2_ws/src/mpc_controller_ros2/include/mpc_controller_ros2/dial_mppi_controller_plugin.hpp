@@ -7,6 +7,17 @@ namespace mpc_controller_ros2
 {
 
 /**
+ * @brief 어닐링 스텝 결과 (마지막 반복의 궤적/가중치를 시각화에 재사용)
+ */
+struct AnnealingResult
+{
+  double mean_cost{0.0};
+  std::vector<Eigen::MatrixXd> trajectories;
+  Eigen::VectorXd weights;
+  Eigen::VectorXd costs;
+};
+
+/**
  * @brief DIAL-MPPI nav2 Controller Plugin
  *
  * Reference: Xue et al. (2024) "DIAL-MPC: Diffusion-Inspired Annealing
@@ -39,22 +50,14 @@ protected:
     const Eigen::MatrixXd& reference_trajectory
   ) override;
 
-  /**
-   * @brief 이중 감쇠 노이즈 스케줄 계산
-   * σ²ᵢₕ = exp(-(N-i)/(β₁·N) - (H-h)/(β₂·H)), clamped ≥ min_noise
-   * @param iteration 현재 어닐링 반복 인덱스 (1-based)
-   * @param n_diffuse 총 어닐링 반복 횟수
-   * @param horizon 예측 호라이즌 길이 H
-   * @return (H,) 벡터: 각 시간 스텝별 노이즈 스케일
-   */
   Eigen::VectorXd computeAnnealingSchedule(
     int iteration, int n_diffuse, int horizon) const;
 
   /**
    * @brief 단일 어닐링 스텝 (샘플링 → 롤아웃 → 가중 업데이트)
-   * @return 이번 반복의 평균 비용
+   * @return AnnealingResult (평균 비용 + 궤적/가중치 — 마지막 반복에서 시각화 재사용)
    */
-  double annealingStep(
+  AnnealingResult annealingStep(
     Eigen::MatrixXd& control_seq,
     const Eigen::VectorXd& current_state,
     const Eigen::MatrixXd& reference_trajectory,
