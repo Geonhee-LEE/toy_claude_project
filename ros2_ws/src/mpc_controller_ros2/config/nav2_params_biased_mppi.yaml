@@ -48,18 +48,18 @@ controller_server:
       dt: 0.1
 
       # Sampling (ancillary 주입으로 적은 샘플로도 효과적)
-      K: 512
-      lambda: 10.0
+      K: 1024
+      lambda: 50.0
 
       # Noise parameters
       noise_sigma_v: 0.5
-      noise_sigma_omega: 0.5
+      noise_sigma_omega: 0.8
 
       # Control limits
       v_max: 0.5
-      v_min: 0.0
-      omega_max: 1.0
-      omega_min: -1.0
+      v_min: -0.2
+      omega_max: 1.5
+      omega_min: -1.5
 
       # State tracking cost weights (Q)
       Q_x: 10.0
@@ -79,20 +79,20 @@ controller_server:
       R_rate_v: 1.0
       R_rate_omega: 1.0
 
-      # Obstacle avoidance
-      obstacle_weight: 100.0
-      safety_distance: 0.5
+      # Obstacle avoidance (좁은 통로 통과 최적화)
+      obstacle_weight: 20.0
+      safety_distance: 0.3
 
-      # Costmap obstacle cost
+      # Costmap obstacle cost (inflation 영향 완화)
       use_costmap_cost: true
-      costmap_lethal_cost: 500.0
-      costmap_critical_cost: 50.0
-      lookahead_dist: 0.0
+      costmap_lethal_cost: 200.0
+      costmap_critical_cost: 30.0
+      lookahead_dist: 1.5
       min_lookahead: 0.5
       goal_slowdown_dist: 1.0
 
-      # Forward preference
-      prefer_forward_weight: 10.0
+      # Forward preference (후진 허용으로 완화)
+      prefer_forward_weight: 5.0
       prefer_forward_linear_ratio: 0.5
 
       # Adaptive Temperature
