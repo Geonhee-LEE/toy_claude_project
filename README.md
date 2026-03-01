@@ -7,7 +7,7 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
 2. **MPPI sampling-based control** - 9종 MPPI 변형 + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 8종 C++ 플러그인 + 3종 모션 모델
+3. **ROS2 nav2 integration** - 9종 C++ 플러그인 + 3종 모션 모델
 4. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
 ## Features
@@ -32,7 +32,7 @@ This project demonstrates:
 - **MPPI-CBF 통합** — Control Barrier Function 안전성 보장 (Python + C++)
 - **궤적 안정화** — SG Filter + IT 정규화 + Exploitation/Exploration
 - **3종 모션 모델** — Differential Drive, Swerve, Non-coaxial Swerve
-- **ROS2 nav2 플러그인** — 8종 C++ 컨트롤러 플러그인
+- **ROS2 nav2 플러그인** — 9종 C++ 컨트롤러 플러그인
 - **자동화 CI/CD** — GitHub Actions + Claude 이슈 자동 처리
 
 ## Quick Start
@@ -468,6 +468,7 @@ MPPIControllerPlugin (base, virtual computeControl)
 ├── RiskAwareMPPIControllerPlugin ── WeightComputation 교체
 ├── SmoothMPPIControllerPlugin    ── Δu space + jerk cost
 ├── SplineMPPIControllerPlugin    ── B-spline basis 보간
+├── BiasedMPPIControllerPlugin    ── Ancillary biased sampling (RA-L 2024)
 └── SVMPCControllerPlugin         ── SVGD loop
     └── SVGMPPIControllerPlugin   ── Guide SVGD + follower
 ```
@@ -488,13 +489,14 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=smo
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline    # Spline
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc     # SVMPC
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svg       # SVG-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=biased   # Biased-MPPI
 
 # 모션 모델 분기
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve        # Swerve
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial   # Non-coaxial
 ```
 
-### C++ 테스트 (211개)
+### C++ 테스트 (239개)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 --event-handlers console_cohesion+
@@ -599,12 +601,13 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 --event-handlers
 | M2 고도화 | **완료** | Colored Noise, Adaptive Temp, Tube-MPPI |
 | M3 SOTA 변형 | **완료** | Log, Tsallis, Risk-Aware, SVMPC |
 | M3.5 확장 | **완료** | Smooth, Spline, SVG-MPPI |
-| M4 ROS2 nav2 | **완료** | 8종 C++ 플러그인 + Swerve |
+| M4 ROS2 nav2 | **완료** | 9종 C++ 플러그인 + Swerve |
 | M5 C++ 포팅 | **완료** | SOTA + M2 고도화 + M3.5 |
 | GPU 가속 (Vanilla) | **완료** | JAX JIT + lax.scan + vmap (PR #103) |
 | GPU 가속 (8종 확장) | **완료** | 전 변형 GPU 지원 + SVGD JIT (PR #105) |
 | MPPI-CBF 통합 | **완료** | Safety Filter + Barrier Cost (Python + C++) |
 | 궤적 안정화 | **완료** | SG Filter + IT 정규화 |
+| Biased-MPPI | **완료** | Ancillary biased sampling C++ nav2 플러그인 (PR #123) |
 
 ## License
 
