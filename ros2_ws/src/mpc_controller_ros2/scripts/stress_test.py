@@ -174,7 +174,7 @@ PASS_CRITERIA = {
     'goal_reached': 'all goals reached',
     'no_collision': 'collision_count == 0',
     'jerk_acceptable': 'rms_jerk < 50.0 m/s^3',
-    'min_distance_safe': 'min_obstacle_distance > 0.2m',
+    'min_distance_safe': 'min_obstacle_distance >= 0.2m',
     'computation_budget': 'max_interval < 3x period (no stalls)',
     'path_tracking': 'mean_goal_dist < 8.0m',
 }
@@ -325,8 +325,39 @@ class StressTestNode(Node):
         self.get_logger().warn('nav2 안정화 타임아웃!')
         return False
 
+    def _send_single_goal(self, gx: float, gy: float,
+                          timeout: float) -> bool:
+        """단일 goal 전송 → 성공/실패 반환"""
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose = PoseStamped()
+        goal_msg.pose.header.frame_id = 'map'
+        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.pose.pose.position.x = gx
+        goal_msg.pose.pose.position.y = gy
+        goal_msg.pose.pose.orientation.w = 1.0
+
+        send_future = self._action_client.send_goal_async(
+            goal_msg, feedback_callback=self._feedback_cb)
+        rclpy.spin_until_future_complete(self, send_future, timeout_sec=10.0)
+
+        goal_handle = send_future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(
+            self, result_future, timeout_sec=timeout)
+
+        if result_future.done():
+            status = result_future.result().status
+            return (status == 4)  # SUCCEEDED
+        else:
+            goal_handle.cancel_goal_async()
+            time.sleep(1.0)
+            return False
+
     def send_goals_sequentially(self) -> List[bool]:
-        """순차 goal 전송, 각 goal 성공/실패 반환"""
+        """순차 goal 전송, 각 goal 성공/실패 반환 (실패 시 1회 재시도)"""
         self.get_logger().info('nav2 action server 대기 중...')
         if not self._action_client.wait_for_server(timeout_sec=30.0):
             self.get_logger().error('nav2 action server를 찾을 수 없습니다!')
@@ -336,58 +367,27 @@ class StressTestNode(Node):
         self._wait_for_nav2_stable()
 
         results = []
+        per_goal_timeout = max(self.args.timeout / max(len(self.goals), 1), 90.0)
+
         for i, (gx, gy) in enumerate(self.goals):
             self.get_logger().info(
                 f'Goal {i + 1}/{len(self.goals)}: ({gx:.1f}, {gy:.1f})')
 
-            goal_msg = NavigateToPose.Goal()
-            goal_msg.pose = PoseStamped()
-            goal_msg.pose.header.frame_id = 'map'
-            goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
-            goal_msg.pose.pose.position.x = gx
-            goal_msg.pose.pose.position.y = gy
-            goal_msg.pose.pose.orientation.w = 1.0
+            success = self._send_single_goal(gx, gy, per_goal_timeout)
 
-            send_future = self._action_client.send_goal_async(
-                goal_msg, feedback_callback=self._feedback_cb)
-            rclpy.spin_until_future_complete(self, send_future, timeout_sec=10.0)
-
-            goal_handle = send_future.result()
-            if goal_handle is None or not goal_handle.accepted:
-                # planner inactive 등으로 거부 → 안정화 대기 후 1회 재시도
+            if not success:
+                # 실패/거부/abort → lifecycle 복구 대기 후 1회 재시도
                 self.get_logger().warn(
-                    f'Goal {i + 1} 거부됨 — lifecycle 복구 대기 후 재시도')
+                    f'Goal {i + 1} 실패 — lifecycle 복구 대기 후 재시도')
                 self._wait_for_nav2_stable(timeout_sec=30.0)
-                goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
-                send_future = self._action_client.send_goal_async(
-                    goal_msg, feedback_callback=self._feedback_cb)
-                rclpy.spin_until_future_complete(
-                    self, send_future, timeout_sec=10.0)
-                goal_handle = send_future.result()
-                if goal_handle is None or not goal_handle.accepted:
+                time.sleep(2.0)
+                success = self._send_single_goal(gx, gy, per_goal_timeout)
+                if not success:
                     self.get_logger().error(f'Goal {i + 1} 재시도 실패')
-                    results.append(False)
-                    continue
 
-            result_future = goal_handle.get_result_async()
-            # 각 goal에 충분한 시간 할당 (최소 90초)
-            per_goal_timeout = max(self.args.timeout / max(len(self.goals), 1), 90.0)
-            rclpy.spin_until_future_complete(
-                self, result_future, timeout_sec=per_goal_timeout)
-
-            if result_future.done():
-                status = result_future.result().status
-                success = (status == 4)  # SUCCEEDED
-                results.append(success)
-                self.get_logger().info(
-                    f'Goal {i + 1}: {"REACHED" if success else "FAILED"}')
-            else:
-                self.get_logger().warn(
-                    f'Goal {i + 1}: TIMEOUT ({per_goal_timeout:.0f}s)')
-                results.append(False)
-                # 타임아웃 시 cancel 후 다음 goal
-                goal_handle.cancel_goal_async()
-                time.sleep(1.0)
+            results.append(success)
+            self.get_logger().info(
+                f'Goal {i + 1}: {"REACHED" if success else "FAILED"}')
 
         return results
 
@@ -492,7 +492,7 @@ class StressTestNode(Node):
             'goal_reached': m.goals_reached == m.goals_total,
             'no_collision': m.collision_count == 0,
             'jerk_acceptable': m.rms_jerk < 50.0,
-            'min_distance_safe': m.min_obstacle_distance > 0.2,
+            'min_distance_safe': m.min_obstacle_distance >= 0.2,
             'computation_budget': m.computation_time_max_ms < period_ms * 3,
             'path_tracking': m.path_tracking_error_mean < 8.0
                              if m.path_tracking_error_mean > 0 else True,

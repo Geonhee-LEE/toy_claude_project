@@ -76,7 +76,7 @@ class Nav2LifecycleBringup(Node):
         try:
             result = subprocess.run(
                 ['ros2', 'lifecycle', 'set', f'/{node_name}', transition],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, text=True, timeout=30,
             )
             if 'Transitioning successful' in result.stdout:
                 return True
