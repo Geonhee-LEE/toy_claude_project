@@ -14,6 +14,7 @@
 
   <!-- Base link (robot body) -->
   <!-- visual/collision을 5cm 올려서 지면 접촉 방지 (clearance 5cm) -->
+  <!-- 피치 관성 iyy 증가: 가감속 시 pitching 최소화 -->
   <link name="base_link">
     <visual>
       <origin xyz="0 0 0.05" rpy="0 0 0"/>
@@ -31,11 +32,13 @@
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <mass value="15.0"/>
-      <inertia ixx="0.2" ixy="0.0" ixz="0.0"
-               iyy="0.425" iyz="0.0"
-               izz="0.5"/>
+      <!-- CoM을 약간 낮춤 → 피칭 안정성 향상 -->
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <mass value="20.0"/>
+      <!-- ixx=m/12*(w²+h²)=0.33, iyy=m/12*(l²+h²)=0.67, izz=m/12*(l²+w²)=0.87 -->
+      <inertia ixx="0.33" ixy="0.0" ixz="0.0"
+               iyy="0.67" iyz="0.0"
+               izz="0.87"/>
     </inertial>
   </link>
 
@@ -162,7 +165,9 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="0.2 0 0.15" rpy="0 0 0"/>
+    <!-- 높이 0.35m: 지면에서 ~0.45m, 5° pitch에서 ground intercept ~5.2m -->
+    <!-- pitch 5° 상향(-0.087rad): 바닥 반사 회피 + 장애물 검출 유지 -->
+    <origin xyz="0.15 0 0.35" rpy="0 -0.087 0"/>
   </joint>
 
   <!-- ========== ros2_control ========== -->
@@ -205,7 +210,7 @@
           </horizontal>
         </scan>
         <range>
-          <min>0.12</min>
+          <min>0.25</min>
           <max>20.0</max>
           <resolution>0.01</resolution>
         </range>

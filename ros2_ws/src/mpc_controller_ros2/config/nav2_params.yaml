@@ -16,7 +16,7 @@ amcl:
     lambda_short: 0.1
     laser_likelihood_max_dist: 10.0   # 5.0→10.0 (먼 벽 매칭)
     laser_max_range: 20.0             # 10.0→20.0 (아레나 전체)
-    laser_min_range: 0.12
+    laser_min_range: 0.25
     laser_model_type: "likelihood_field"
     max_beams: 240                    # 120→240 (720 샘플 활용)
     max_particles: 3000               # 5000→3000 (벽 있으면 충분)
@@ -99,7 +99,7 @@ local_costmap:
           raytrace_max_range: 20.0
           raytrace_min_range: 0.0
           obstacle_max_range: 19.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.25
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -142,7 +142,7 @@ global_costmap:
           raytrace_max_range: 20.0
           raytrace_min_range: 0.0
           obstacle_max_range: 19.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.25
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

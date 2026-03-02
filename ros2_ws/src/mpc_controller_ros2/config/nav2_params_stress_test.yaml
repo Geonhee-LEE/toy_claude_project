@@ -34,10 +34,10 @@ controller_server:
       required_movement_radius: 0.1
       movement_time_allowance: 60.0
 
-    # Goal checker
+    # Goal checker (고속 1.5m/s → goal 수렴 여유 확보)
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.30
+      xy_goal_tolerance: 0.50
       yaw_goal_tolerance: 6.28
       stateful: true
 
@@ -58,9 +58,9 @@ controller_server:
       noise_sigma_v: 0.6
       noise_sigma_omega: 0.5
 
-      # 제어 제약 (고속)
+      # 제어 제약 (고속, 후진 최소화)
       v_max: 1.5
-      v_min: -0.3
+      v_min: -0.05
       omega_max: 2.0
       omega_min: -2.0
 
@@ -78,8 +78,8 @@ controller_server:
       R_v: 0.5
       R_omega: 0.3
 
-      # 제어 변화율 비용 (고속 → 급가속 억제)
-      R_rate_v: 2.0
+      # 제어 변화율 비용 (고속 → 급가속 억제, pitching 최소화)
+      R_rate_v: 3.0
       R_rate_omega: 1.5
 
       # 장애물 회피 (고속 → 강화)
@@ -92,11 +92,11 @@ controller_server:
       costmap_critical_cost: 50.0
       lookahead_dist: 0.0
       min_lookahead: 0.5
-      goal_slowdown_dist: 0.5
+      goal_slowdown_dist: 1.5
 
-      # 후진 페널티
-      prefer_forward_weight: 10.0
-      prefer_forward_linear_ratio: 0.5
+      # 후진 페널티 (v_min=-0.05 → 강한 전진 선호로 후진 억제)
+      prefer_forward_weight: 50.0
+      prefer_forward_linear_ratio: 0.8
 
       # Adaptive Temperature
       adaptive_temperature: true
