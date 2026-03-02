@@ -96,6 +96,7 @@ add_library(mppi_controller_plugin SHARED
   src/diff_drive_model.cpp
   src/swerve_drive_model.cpp
   src/non_coaxial_swerve_model.cpp
+  src/ackermann_model.cpp
   src/motion_model_factory.cpp
   src/barrier_function.cpp
   src/cbf_safety_filter.cpp

@@ -60,6 +60,7 @@ nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bo
     controller:=swerve       → Swerve Drive MPPI (motion_model=swerve)
     controller:=non_coaxial  → Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)
     controller:=non_coaxial_60deg → Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)
+    controller:=ackermann    → Ackermann MPPI (motion_model=ackermann, bicycle model)
     controller:=nav2         → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
     controller:=stress_test  → Stress Test MPPI (고속 v_max=1.5 + CBF + 동적 장애물)
 """
@@ -127,6 +128,8 @@ def launch_setup(context, *args, **kwargs):
                              'DIAL-MPPI Non-Coaxial (motion_model=non_coaxial_swerve)'),
         'stress_test': ('nav2_params_stress_test.yaml',
                         'Stress Test MPPI (고속 + CBF + 동적 장애물)'),
+        'ackermann': ('nav2_params_ackermann_mppi.yaml',
+                      'Ackermann MPPI (motion_model=ackermann, bicycle model)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -142,8 +145,17 @@ def launch_setup(context, *args, **kwargs):
         'dial_swerve', 'dial_non_coaxial',
     ]
 
+    # Ackermann 판별
+    is_ackermann = controller_type in ['ackermann']
+
     # URDF / ros2_control config / nav2 공통 파라미터 분기
-    if is_swerve:
+    if is_ackermann:
+        urdf_file = os.path.join(pkg_dir, 'urdf', 'ackermann_robot.urdf')
+        controller_config = os.path.join(pkg_dir, 'config', 'ackermann_steering_controller.yaml')
+        nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
+        robot_name = 'ackermann_robot'
+        spawn_z = '0.15'
+    elif is_swerve:
         urdf_file = os.path.join(pkg_dir, 'urdf', 'swerve_robot.urdf')
         controller_config = os.path.join(pkg_dir, 'config', 'swerve_drive_controller.yaml')
         nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params_swerve.yaml')
@@ -226,7 +238,7 @@ def launch_setup(context, *args, **kwargs):
         '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
         '/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
     ]
-    if is_swerve:
+    if is_swerve or is_ackermann:
         # Gazebo ground truth odom → ROS2 (OdometryPublisher 플러그인)
         bridge_args.append(
             f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
@@ -302,7 +314,13 @@ def launch_setup(context, *args, **kwargs):
         output='screen',
     )
 
-    if is_swerve:
+    if is_ackermann:
+        ackermann_spawner = ExecuteProcess(
+            cmd=_make_spawner_cmd('ackermann_steering_controller',
+                                  f'--param-file {controller_config}'),
+            output='screen',
+        )
+    elif is_swerve:
         steer_spawner = ExecuteProcess(
             cmd=_make_spawner_cmd('steer_position_controller',
                                   f'--param-file {controller_config}'),
@@ -321,7 +339,47 @@ def launch_setup(context, *args, **kwargs):
         )
 
     # ========== 6. cmd_vel relay ==========
-    if is_swerve:
+    if is_ackermann:
+        # Ackermann: Twist → TwistStamped relay for ackermann_steering_controller/reference
+        ack_twist_to_stamped_cmd = '''
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+from geometry_msgs.msg import Twist, TwistStamped
+
+class TwistStamper(Node):
+    def __init__(self):
+        super().__init__("ackermann_twist_stamper")
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.pub = self.create_publisher(TwistStamped, "/ackermann_steering_controller/reference", qos)
+        self.sub = self.create_subscription(Twist, "/cmd_vel_nav", self.cb, 10)
+    def cb(self, msg):
+        out = TwistStamped()
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = "base_link"
+        out.twist = msg
+        self.pub.publish(out)
+
+rclpy.init()
+rclpy.spin(TwistStamper())
+'''
+        cmd_vel_relay = ExecuteProcess(
+            cmd=['python3', '-c', ack_twist_to_stamped_cmd],
+            output='screen'
+        )
+
+        # Gazebo ground truth odom → odom→base_link TF broadcast
+        odom_to_tf = Node(
+            package='mpc_controller_ros2',
+            executable='odom_to_tf.py',
+            name='odom_to_tf',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
+            remappings=[
+                ('odom', f'/model/{robot_name}/odometry'),
+            ],
+        )
+    elif is_swerve:
         # SwerveKinematicsNode: IK 전용 (Gazebo ground truth odom 사용 시 FK/odom/TF 비활성화)
         cmd_vel_relay = Node(
             package='mpc_controller_ros2',
@@ -526,13 +584,30 @@ rclpy.spin(TwistStamper())
                     jsb_spawner,
                     # cmd_vel relay는 컨트롤러와 독립 — 병렬 시작
                     cmd_vel_relay,
-                    *([odom_to_tf] if is_swerve else []),
+                    *([odom_to_tf] if (is_swerve or is_ackermann) else []),
                 ],
             )
         ),
     ]
 
-    if is_swerve:
+    if is_ackermann:
+        nodes.extend([
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=jsb_spawner,
+                    on_exit=[ackermann_spawner],
+                )
+            ),
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=ackermann_spawner,
+                    on_exit=[
+                        LogInfo(msg='Ackermann steering controller activated'),
+                    ],
+                )
+            ),
+        ])
+    elif is_swerve:
         nodes.extend([
             RegisterEventHandler(
                 OnProcessExit(
@@ -632,7 +707,7 @@ def generate_launch_description():
             default_value='custom',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", "stress_test", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',
