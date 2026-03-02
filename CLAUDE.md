@@ -11,7 +11,7 @@
 ## 현재 우선순위
 ```
 P0: Ackermann MotionModel C++
-P0: C++ MPPI 성능 프로파일링 + 최적화
+P0: C++ MPPI 성능 프로파일링 + 최적화 ✅ (PR #132, K=512→1.88ms/532Hz)
 P1: 최신 MPPI 변형 C++ (Covariance Steering, π-MPPI, BR-MPPI)
 P1: 안전성 고도화 C++ (CLF-CBF-QP, 다중 CBF)
 ```
@@ -53,7 +53,7 @@ mpc_controller/
 - M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료
 - M3 SOTA 변형 (Log, Tsallis, Risk-Aware, SVMPC): 완료
 - M3.5 확장 (Smooth, Spline, SVG-MPPI): 완료
-- M4 ROS2 nav2 통합 (10종 C++ 플러그인 + Swerve): 완료
+- M4 ROS2 nav2 통합 (11종 C++ 플러그인 + Swerve): 완료
 - M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
 - GPU 8종 변형 확장 (가중치 Strategy + SVGD JIT): 완료 (PR #105)
@@ -67,6 +67,7 @@ mpc_controller/
 - Biased-MPPI C++ nav2 플러그인: 완료 (PR #123)
 - DIAL-MPPI C++ nav2 플러그인 (Diffusion Annealing, ICRA 2025): 완료 (PR #125)
 - DIAL-MPPI 실시간 성능 최적화 (AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝): 완료 (PR #129)
+- C++ MPPI 성능 최적화 (True Batch + InPlace + 대각 Q + SIMD): 완료 (PR #132)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
