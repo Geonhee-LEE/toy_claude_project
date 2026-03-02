@@ -44,6 +44,16 @@ std::vector<Eigen::MatrixXd> BatchDynamicsWrapper::rolloutBatch(
   return model_->rolloutBatch(x0, control_sequences, dt);
 }
 
+void BatchDynamicsWrapper::rolloutBatchInPlace(
+  const Eigen::VectorXd& x0,
+  const std::vector<Eigen::MatrixXd>& control_sequences,
+  double dt,
+  std::vector<Eigen::MatrixXd>& trajectories_out
+) const
+{
+  model_->rolloutBatchInPlace(x0, control_sequences, dt, trajectories_out);
+}
+
 Eigen::MatrixXd BatchDynamicsWrapper::clipControls(const Eigen::MatrixXd& controls) const
 {
   return model_->clipControls(controls);

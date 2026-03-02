@@ -18,7 +18,7 @@
 │         ↓ (goal)          ↓ (path)              │
 │  ┌──────────────┐   ┌──────────────────────┐   │
 │  │planner_server│   │ controller_server    │   │
-│  │  (NavFn)     │   │  (MPPI 8종 플러그인) │   │
+│  │  (NavFn)     │   │ (MPPI 11종 플러그인) │   │
 │  └──────────────┘   └──────────────────────┘   │
 │         ↓                    ↓                   │
 │  ┌─────────────────────────────────────────┐   │
@@ -62,9 +62,15 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swe
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
 
 # 플러그인 변형 사용
-ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline  # Spline-MPPI
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=spline   # Spline-MPPI
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=log     # Log-MPPI
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=svmpc   # SVMPC
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=biased  # Biased-MPPI
+
+# DIAL-MPPI (Diffusion Annealing, ICRA 2025)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial              # DiffDrive
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial_swerve       # Swerve
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial_non_coaxial  # NonCoaxial
 ```
 
 실행되는 노드들:
@@ -356,9 +362,30 @@ ros2 param get /controller_server FollowPath.visualize_samples
 
 ## 성능 벤치마크
 
-예상 성능 (K=512, N=30):
-- **제어 주파수**: 20 Hz
-- **계산 시간**: < 50ms/iteration
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  MPPI Pipeline Benchmark (Release -O2 -march=native)             │
+├──────────┬───────────┬───────────┬──────────────────────────────┤
+│ Model    │ K    │ Pipeline │ Frequency │ 10Hz 대비 여유도       │
+├──────────┼──────┼──────────┼───────────┼────────────────────────┤
+│ DiffDr.  │ 256  │ 0.92ms   │ 1,091 Hz  │ 109×                  │
+│ DiffDr.  │ 512  │ 1.88ms   │ 532 Hz    │ 53×                   │
+│ DiffDr.  │ 1024 │ 3.88ms   │ 258 Hz    │ 26×                   │
+│ Swerve   │ 512  │ 1.95ms   │ 512 Hz    │ 51×                   │
+│ NonCoax  │ 512  │ 2.80ms   │ 357 Hz    │ 36×                   │
+└──────────┴──────┴──────────┴───────────┴────────────────────────┘
+
+DIAL-MPPI (N_diffuse=5): Pipeline × 5 ≈ 9.4ms (K=512) → 10Hz 충족
+```
+
+벤치마크 실행:
+```bash
+colcon build --packages-select mpc_controller_ros2 --cmake-args -DCMAKE_BUILD_TYPE=Release
+./build/mpc_controller_ros2/bench_mppi_pipeline --K 512 --N 30
+./build/mpc_controller_ros2/bench_mppi_pipeline --scaling
+```
+
+추가 지표:
 - **경로 추종 오차**: < 0.3m (RMSE)
 - **장애물 회피**: 안전 거리 > 0.6m 유지
 
@@ -376,9 +403,10 @@ ros2 param get /controller_server FollowPath.visualize_samples
 ## 다음 단계
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
-2. ✅ 고급 MPPI 8종 플러그인 (M3/M3.5/M5 완료)
+2. ✅ 고급 MPPI 11종 플러그인 (M3/M3.5/M5 + Biased + DIAL)
 3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial)
 4. ✅ Goal 수렴 + 장애물 회피 튜닝
 5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
-6. 🔄 실제 로봇 테스트
-7. 📊 GPU 가속 (M2 잔여)
+6. ✅ C++ MPPI 성능 최적화 (PR #132) — K=512에서 1.88ms (532Hz)
+7. 🔄 실제 로봇 테스트
+8. 📊 GPU 가속 (M2 잔여)

@@ -20,7 +20,7 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 │  ├─────────────────────┤      ├─────────────────────────────┤  │
 │  │ • nav2 통합         │      │ • Standalone 노드            │  │
 │  │ • 샘플링 기반       │      │ • CasADi 최적화              │  │
-│  │ • 실시간 (<50ms)    │      │ • 고정밀 제어                │  │
+│  │ • 실시간 (1.9ms)    │      │ • 고정밀 제어                │  │
 │  └─────────────────────┘      └─────────────────────────────┘  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -33,9 +33,9 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 ### 특징
 
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
-- **C++ Eigen 기반** 고성능 연산 (K=1024 샘플, N=30 호라이즌에서 <50ms)
+- **C++ Eigen 기반** 고성능 연산 (K=1024, N=30에서 3.9ms — 258Hz)
 - **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve (MotionModel 추상화)
-- **9종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI
+- **11종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI
 - **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
 - **M2 고도화** Colored Noise, Adaptive Temperature, Tube-MPPI
 - **동적 파라미터** 런타임 중 튜닝 가능 (min_lookahead, costmap costs 포함)
@@ -70,6 +70,7 @@ MPPIControllerPlugin (base, Vanilla MPPI)
 ├── SmoothMPPIControllerPlugin  (du space + jerk cost)
 ├── SplineMPPIControllerPlugin  (B-spline basis)
 ├── BiasedMPPIControllerPlugin  (Ancillary biased sampling, RA-L 2024)
+├── DialMPPIControllerPlugin    (Diffusion annealing, ICRA 2025)
 └── SVMPCControllerPlugin       (SVGD)
     └── SVGMPPIControllerPlugin (Guide + follower)
 ```
@@ -461,6 +462,38 @@ colcon test-result --verbose
 
 ## 성능
 
+### MPPI Controller 벤치마크 (Release -O2 -march=native)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  MPPI Pipeline Benchmark (DiffDrive, N=30)                       │
+├──────────┬───────────┬───────────┬──────────┬───────────────────┤
+│ K        │ Pipeline  │ Frequency │ Rollout  │ Cost              │
+├──────────┼───────────┼───────────┼──────────┼───────────────────┤
+│ 256      │ 0.92ms    │ 1,091 Hz  │ 567μs    │ 194μs             │
+│ 512      │ 1.88ms    │ 532 Hz    │ 1.15ms   │ 407μs             │
+│ 1024     │ 3.88ms    │ 258 Hz    │ 2.43ms   │ 805μs             │
+├──────────┼───────────┼───────────┼──────────┼───────────────────┤
+│ Swerve   │ 1.95ms    │ 512 Hz    │ (K=512)  │                   │
+│ NonCoax  │ 2.80ms    │ 357 Hz    │ (K=512)  │                   │
+└──────────┴───────────┴───────────┴──────────┴───────────────────┘
+
+최적화 기법:
+  - True Batch Rollout: K×N×4 → N×4 propagateBatch 호출 (512배 감소)
+  - InPlace 패턴: 힙 할당 1536/call → 0/call
+  - 대각 Q/R 특수화: cwiseAbs2().dot() 벡터 연산
+  - -march=native: Eigen AVX2 SIMD 자동 활성화
+```
+
+벤치마크 실행:
+```bash
+colcon build --packages-select mpc_controller_ros2 --cmake-args -DCMAKE_BUILD_TYPE=Release
+./build/mpc_controller_ros2/bench_mppi_pipeline --K 512 --N 30
+./build/mpc_controller_ros2/bench_mppi_pipeline --scaling
+```
+
+### MPC Controller (Python, CasADi/IPOPT)
+
 - **솔버**: IPOPT (Interior Point OPTimizer)
 - **평균 풀이 시간**: 10-30ms (N=20 기준)
 - **실시간성**: 10Hz 제어 주기 지원
@@ -510,7 +543,7 @@ colcon test-result --verbose
 | 테스트 | 항목 수 | 상태 |
 |--------|---------|------|
 | test_batch_dynamics | 8 | ✅ |
-| test_cost_functions | 24 | ✅ |
+| test_cost_functions | 38 | ✅ |
 | test_sampling | 8 | ✅ |
 | test_mppi_algorithm | 7 | ✅ |
 | test_adaptive_temperature | 9 | ✅ |
@@ -522,7 +555,8 @@ colcon test-result --verbose
 | test_cbf | 20 | ✅ |
 | test_trajectory_stability | 25 | ✅ |
 | test_biased_mppi | 15 | ✅ |
-| **총계** | **239** | **PASSED** |
+| test_dial_mppi | 17 | ✅ |
+| **총계** | **271** | **PASSED** |
 
 ---
 
@@ -546,6 +580,9 @@ colcon test-result --verbose
 | MPPI-CBF | Control Barrier Function 통합 (Python + C++) | ✅ |
 | 궤적 안정화 | SG Filter + IT 정규화 | ✅ |
 | Biased-MPPI | Ancillary biased sampling C++ nav2 플러그인 (PR #123) | ✅ |
+| DIAL-MPPI | Diffusion annealing C++ nav2 플러그인 (PR #125) | ✅ |
+| DIAL-MPPI 최적화 | AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝 (PR #129) | ✅ |
+| 성능 최적화 | True Batch + InPlace + SIMD + 대각 Q (PR #132) | ✅ |
 
 ---
 

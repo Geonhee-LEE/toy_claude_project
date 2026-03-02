@@ -1,11 +1,41 @@
 #include "mpc_controller_ros2/cost_functions.hpp"
 #include "mpc_controller_ros2/utils.hpp"
+#include <omp.h>
+#include <utility>
 
 namespace mpc_controller_ros2
 {
 
+// ============================================================================
+// 대각 행렬 검출 헬퍼
+// ============================================================================
+
+static std::pair<bool, Eigen::VectorXd> checkDiagonal(const Eigen::MatrixXd& M)
+{
+  int n = M.rows();
+  if (n != M.cols()) {
+    return {false, Eigen::VectorXd()};
+  }
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      if (i != j && std::abs(M(i, j)) > 1e-12) {
+        return {false, Eigen::VectorXd()};
+      }
+    }
+  }
+  return {true, M.diagonal()};
+}
+
+// ============================================================================
 // StateTrackingCost
-StateTrackingCost::StateTrackingCost(const Eigen::MatrixXd& Q) : Q_(Q) {}
+// ============================================================================
+
+StateTrackingCost::StateTrackingCost(const Eigen::MatrixXd& Q) : Q_(Q)
+{
+  auto [diag, vec] = checkDiagonal(Q);
+  is_diagonal_ = diag;
+  if (diag) { Q_diag_ = vec; }
+}
 
 Eigen::VectorXd StateTrackingCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -13,33 +43,63 @@ Eigen::VectorXd StateTrackingCost::compute(
   const Eigen::MatrixXd& reference
 ) const
 {
+  (void)controls;
   int K = trajectories.size();
   int N = reference.rows() - 1;
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
     int nx = trajectories[k].cols();
     int ref_cols = reference.cols();
     int min_cols = std::min(nx, ref_cols);
-    for (int t = 0; t < N; ++t) {
-      Eigen::VectorXd error = Eigen::VectorXd::Zero(nx);
-      error.head(min_cols) = trajectories[k].row(t).head(min_cols).transpose()
-                           - reference.row(t).head(min_cols).transpose();
+    double cost_k = 0.0;
 
-      // Normalize angle error (index 2 = theta for all models)
-      if (nx >= 3) {
-        error(2) = normalizeAngle(error(2));
+    if (is_diagonal_) {
+      Eigen::VectorXd error(nx);
+      for (int t = 0; t < N; ++t) {
+        for (int j = 0; j < min_cols; ++j) {
+          error(j) = trajectories[k](t, j) - reference(t, j);
+        }
+        for (int j = min_cols; j < nx; ++j) {
+          error(j) = 0.0;
+        }
+        if (nx >= 3) {
+          error(2) = normalizeAngle(error(2));
+        }
+        cost_k += error.cwiseAbs2().dot(Q_diag_);
       }
-
-      costs(k) += error.transpose() * Q_ * error;
+    } else {
+      Eigen::VectorXd error(nx);
+      for (int t = 0; t < N; ++t) {
+        for (int j = 0; j < min_cols; ++j) {
+          error(j) = trajectories[k](t, j) - reference(t, j);
+        }
+        for (int j = min_cols; j < nx; ++j) {
+          error(j) = 0.0;
+        }
+        if (nx >= 3) {
+          error(2) = normalizeAngle(error(2));
+        }
+        cost_k += error.transpose() * Q_ * error;
+      }
     }
+    costs(k) = cost_k;
   }
 
   return costs;
 }
 
+// ============================================================================
 // TerminalCost
-TerminalCost::TerminalCost(const Eigen::MatrixXd& Qf) : Qf_(Qf) {}
+// ============================================================================
+
+TerminalCost::TerminalCost(const Eigen::MatrixXd& Qf) : Qf_(Qf)
+{
+  auto [diag, vec] = checkDiagonal(Qf);
+  is_diagonal_ = diag;
+  if (diag) { Qf_diag_ = vec; }
+}
 
 Eigen::VectorXd TerminalCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -47,30 +107,48 @@ Eigen::VectorXd TerminalCost::compute(
   const Eigen::MatrixXd& reference
 ) const
 {
+  (void)controls;
   int K = trajectories.size();
   int N = reference.rows() - 1;
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
     int nx = trajectories[k].cols();
     int ref_cols = reference.cols();
     int min_cols = std::min(nx, ref_cols);
-    Eigen::VectorXd error = Eigen::VectorXd::Zero(nx);
-    error.head(min_cols) = trajectories[k].row(N).head(min_cols).transpose()
-                         - reference.row(N).head(min_cols).transpose();
 
+    Eigen::VectorXd error(nx);
+    for (int j = 0; j < min_cols; ++j) {
+      error(j) = trajectories[k](N, j) - reference(N, j);
+    }
+    for (int j = min_cols; j < nx; ++j) {
+      error(j) = 0.0;
+    }
     if (nx >= 3) {
       error(2) = normalizeAngle(error(2));
     }
 
-    costs(k) = error.transpose() * Qf_ * error;
+    if (is_diagonal_) {
+      costs(k) = error.cwiseAbs2().dot(Qf_diag_);
+    } else {
+      costs(k) = error.transpose() * Qf_ * error;
+    }
   }
 
   return costs;
 }
 
+// ============================================================================
 // ControlEffortCost
-ControlEffortCost::ControlEffortCost(const Eigen::MatrixXd& R) : R_(R) {}
+// ============================================================================
+
+ControlEffortCost::ControlEffortCost(const Eigen::MatrixXd& R) : R_(R)
+{
+  auto [diag, vec] = checkDiagonal(R);
+  is_diagonal_ = diag;
+  if (diag) { R_diag_ = vec; }
+}
 
 Eigen::VectorXd ControlEffortCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -78,22 +156,50 @@ Eigen::VectorXd ControlEffortCost::compute(
   const Eigen::MatrixXd& reference
 ) const
 {
+  (void)trajectories;
+  (void)reference;
   int K = controls.size();
   int N = controls[0].rows();
+  int nu = controls[0].cols();
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
-    for (int t = 0; t < N; ++t) {
-      Eigen::VectorXd u = controls[k].row(t).transpose();
-      costs(k) += u.transpose() * R_ * u;
+    double cost_k = 0.0;
+    if (is_diagonal_) {
+      for (int t = 0; t < N; ++t) {
+        double dot = 0.0;
+        for (int j = 0; j < nu; ++j) {
+          double u_j = controls[k](t, j);
+          dot += u_j * u_j * R_diag_(j);
+        }
+        cost_k += dot;
+      }
+    } else {
+      Eigen::VectorXd u(nu);
+      for (int t = 0; t < N; ++t) {
+        for (int j = 0; j < nu; ++j) {
+          u(j) = controls[k](t, j);
+        }
+        cost_k += u.transpose() * R_ * u;
+      }
     }
+    costs(k) = cost_k;
   }
 
   return costs;
 }
 
+// ============================================================================
 // ControlRateCost
-ControlRateCost::ControlRateCost(const Eigen::MatrixXd& R_rate) : R_rate_(R_rate) {}
+// ============================================================================
+
+ControlRateCost::ControlRateCost(const Eigen::MatrixXd& R_rate) : R_rate_(R_rate)
+{
+  auto [diag, vec] = checkDiagonal(R_rate);
+  is_diagonal_ = diag;
+  if (diag) { R_rate_diag_ = vec; }
+}
 
 Eigen::VectorXd ControlRateCost::compute(
   const std::vector<Eigen::MatrixXd>& trajectories,
@@ -101,23 +207,44 @@ Eigen::VectorXd ControlRateCost::compute(
   const Eigen::MatrixXd& reference
 ) const
 {
+  (void)trajectories;
+  (void)reference;
   int K = controls.size();
   int N = controls[0].rows();
+  int nu = controls[0].cols();
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
-    for (int t = 0; t < N - 1; ++t) {
-      Eigen::VectorXd u_curr = controls[k].row(t).transpose();
-      Eigen::VectorXd u_next = controls[k].row(t + 1).transpose();
-      Eigen::VectorXd du = u_next - u_curr;
-      costs(k) += du.transpose() * R_rate_ * du;
+    double cost_k = 0.0;
+    if (is_diagonal_) {
+      for (int t = 0; t < N - 1; ++t) {
+        double dot = 0.0;
+        for (int j = 0; j < nu; ++j) {
+          double du = controls[k](t + 1, j) - controls[k](t, j);
+          dot += du * du * R_rate_diag_(j);
+        }
+        cost_k += dot;
+      }
+    } else {
+      Eigen::VectorXd du(nu);
+      for (int t = 0; t < N - 1; ++t) {
+        for (int j = 0; j < nu; ++j) {
+          du(j) = controls[k](t + 1, j) - controls[k](t, j);
+        }
+        cost_k += du.transpose() * R_rate_ * du;
+      }
     }
+    costs(k) = cost_k;
   }
 
   return costs;
 }
 
+// ============================================================================
 // PreferForwardCost
+// ============================================================================
+
 PreferForwardCost::PreferForwardCost(double weight, double linear_ratio,
                                      double velocity_incentive)
 : weight_(weight), linear_ratio_(std::clamp(linear_ratio, 0.0, 1.0)),
@@ -138,26 +265,30 @@ Eigen::VectorXd PreferForwardCost::compute(
 
   constexpr double kIncentiveThreshold = 0.1;  // m/s
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
+    double cost_k = 0.0;
     for (int t = 0; t < N; ++t) {
       double v = controls[k](t, 0);
       if (v < 0.0) {
-        // 선형+이차 혼합 페널티: weight * (ratio*|v| + (1-ratio)*v²)
         double abs_v = std::abs(v);
-        costs(k) += weight_ * (linear_ratio_ * abs_v + (1.0 - linear_ratio_) * v * v);
+        cost_k += weight_ * (linear_ratio_ * abs_v + (1.0 - linear_ratio_) * v * v);
       }
-      // 전진 인센티브: 저속(v < threshold)일 때 정지 회피 비용 추가
       if (velocity_incentive_ > 0.0 && v >= 0.0 && v < kIncentiveThreshold) {
         double deficit = kIncentiveThreshold - v;
-        costs(k) += velocity_incentive_ * deficit * deficit;
+        cost_k += velocity_incentive_ * deficit * deficit;
       }
     }
+    costs(k) = cost_k;
   }
 
   return costs;
 }
 
+// ============================================================================
 // ObstacleCost
+// ============================================================================
+
 ObstacleCost::ObstacleCost(double weight, double safety_distance)
 : weight_(weight), safety_distance_(safety_distance)
 {
@@ -174,6 +305,9 @@ Eigen::VectorXd ObstacleCost::compute(
   const Eigen::MatrixXd& reference
 ) const
 {
+  (void)controls;
+  (void)reference;
+
   int K = trajectories.size();
   Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
 
@@ -181,32 +315,41 @@ Eigen::VectorXd ObstacleCost::compute(
     return costs;
   }
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
     const auto& traj = trajectories[k];
     int N = traj.rows() - 1;
+    double cost_k = 0.0;
 
     for (int t = 0; t <= N; ++t) {
-      Eigen::Vector2d pos = traj.row(t).head<2>().transpose();
+      double px = traj(t, 0);
+      double py = traj(t, 1);
 
       for (const auto& obs : obstacles_) {
-        Eigen::Vector2d obs_pos = obs.head<2>();
-        double dist = (pos - obs_pos).norm();
+        double dx = px - obs(0);
+        double dy = py - obs(1);
+        double dist = std::sqrt(dx * dx + dy * dy);
         double penetration = safety_distance_ - dist;
 
         if (penetration > 0) {
-          costs(k) += weight_ * penetration * penetration;
+          cost_k += weight_ * penetration * penetration;
         }
       }
     }
+    costs(k) = cost_k;
   }
 
   return costs;
 }
 
+// ============================================================================
 // CostmapObstacleCost
+// ============================================================================
+
 CostmapObstacleCost::CostmapObstacleCost(double weight, double lethal_cost,
-                                           double critical_cost)
-: weight_(weight), lethal_cost_(lethal_cost), critical_cost_(critical_cost)
+                                           double critical_cost, int stride)
+: weight_(weight), lethal_cost_(lethal_cost), critical_cost_(critical_cost),
+  stride_(std::max(1, stride))
 {
 }
 
@@ -242,15 +385,18 @@ Eigen::VectorXd CostmapObstacleCost::compute(
     return costs;
   }
 
+  // Note: costmap_->worldToMap / getCost are not thread-safe (shared state)
+  // so we do NOT parallelize the outer loop here. The stride_ optimization
+  // provides speedup instead.
   for (int k = 0; k < K; ++k) {
     const auto& traj = trajectories[k];
     int num_points = traj.rows();
 
-    for (int t = 0; t < num_points; ++t) {
+    for (int t = 0; t < num_points; t += stride_) {
       double map_x = traj(t, 0);
       double map_y = traj(t, 1);
 
-      // map→odom 좌표 변환 (costmap은 odom 프레임)
+      // map -> odom 좌표 변환 (costmap은 odom 프레임)
       double query_x, query_y;
       if (use_tf_) {
         query_x = cos_th_ * map_x - sin_th_ * map_y + tx_;
@@ -262,7 +408,6 @@ Eigen::VectorXd CostmapObstacleCost::compute(
 
       unsigned int mx, my;
       if (!costmap_->worldToMap(query_x, query_y, mx, my)) {
-        // 범위 밖 → lethal 비용
         costs(k) += lethal_cost_;
         continue;
       }
@@ -337,7 +482,10 @@ Eigen::MatrixXd CostmapObstacleCost::computePerPoint(
   return per_point;
 }
 
+// ============================================================================
 // CBFCost
+// ============================================================================
+
 CBFCost::CBFCost(BarrierFunctionSet* barrier_set, double weight,
                  double gamma, double dt)
 : barrier_set_(barrier_set), weight_(weight)
@@ -362,6 +510,7 @@ Eigen::VectorXd CBFCost::compute(
   }
 
   for (const auto& barrier : barrier_set_->barriers()) {
+    #pragma omp parallel for schedule(static) if(K > 4096)
     for (int k = 0; k < K; ++k) {
       const auto& traj = trajectories[k];
       int N = traj.rows() - 1;
@@ -369,6 +518,7 @@ Eigen::VectorXd CBFCost::compute(
       // 배치 평가: h(x_0), h(x_1), ..., h(x_N)
       Eigen::VectorXd h_all = barrier.evaluateBatch(traj);
 
+      double cost_k = 0.0;
       for (int t = 0; t < N; ++t) {
         double h_t = h_all(t);
         double h_t1 = h_all(t + 1);
@@ -376,16 +526,20 @@ Eigen::VectorXd CBFCost::compute(
         // DCBF 위반: (1-γdt)·h(x_t) - h(x_{t+1}) > 0
         double violation = decay_ * h_t - h_t1;
         if (violation > 0.0) {
-          costs(k) += weight_ * violation * violation;
+          cost_k += weight_ * violation * violation;
         }
       }
+      costs(k) += cost_k;
     }
   }
 
   return costs;
 }
 
+// ============================================================================
 // VelocityTrackingCost
+// ============================================================================
+
 VelocityTrackingCost::VelocityTrackingCost(double weight, double reference_velocity, double dt)
 : weight_(weight), reference_velocity_(reference_velocity), dt_(dt)
 {
@@ -418,26 +572,21 @@ Eigen::VectorXd VelocityTrackingCost::compute(
       tx[t] = dx / len;
       ty[t] = dy / len;
     } else {
-      // 정지 구간: 이전 접선 유지
       tx[t] = (t > 0) ? tx[t - 1] : 1.0;
       ty[t] = (t > 0) ? ty[t - 1] : 0.0;
     }
   }
 
+  #pragma omp parallel for schedule(static) if(K > 4096)
   for (int k = 0; k < K; ++k) {
     const auto& traj = trajectories[k];
     int T = std::min(N, static_cast<int>(traj.rows()) - 1);
     double cost = 0.0;
 
     for (int t = 0; t < T; ++t) {
-      // World-frame 속도 (유한 차분)
       double vel_x = (traj(t + 1, 0) - traj(t, 0)) / dt_;
       double vel_y = (traj(t + 1, 1) - traj(t, 1)) / dt_;
-
-      // 경로 방향 속도 성분
       double v_along = tx[t] * vel_x + ty[t] * vel_y;
-
-      // 추적 오차
       double err = v_along - reference_velocity_;
       cost += err * err;
     }
@@ -448,7 +597,10 @@ Eigen::VectorXd VelocityTrackingCost::compute(
   return costs;
 }
 
+// ============================================================================
 // CompositeMPPICost
+// ============================================================================
+
 void CompositeMPPICost::addCost(std::unique_ptr<MPPICostFunction> cost)
 {
   costs_.push_back(std::move(cost));

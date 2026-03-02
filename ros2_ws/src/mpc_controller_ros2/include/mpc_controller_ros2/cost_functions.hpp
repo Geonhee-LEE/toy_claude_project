@@ -61,6 +61,8 @@ public:
   ) const override;
 private:
   Eigen::MatrixXd Q_;
+  Eigen::VectorXd Q_diag_;
+  bool is_diagonal_{false};
 };
 
 class TerminalCost : public MPPICostFunction
@@ -75,6 +77,8 @@ public:
   ) const override;
 private:
   Eigen::MatrixXd Qf_;
+  Eigen::VectorXd Qf_diag_;
+  bool is_diagonal_{false};
 };
 
 class ControlEffortCost : public MPPICostFunction
@@ -89,6 +93,8 @@ public:
   ) const override;
 private:
   Eigen::MatrixXd R_;
+  Eigen::VectorXd R_diag_;
+  bool is_diagonal_{false};
 };
 
 class ControlRateCost : public MPPICostFunction
@@ -103,6 +109,8 @@ public:
   ) const override;
 private:
   Eigen::MatrixXd R_rate_;
+  Eigen::VectorXd R_rate_diag_;
+  bool is_diagonal_{false};
 };
 
 /**
@@ -157,7 +165,7 @@ class CostmapObstacleCost : public MPPICostFunction
 {
 public:
   CostmapObstacleCost(double weight, double lethal_cost = 1000.0,
-                       double critical_cost = 100.0);
+                       double critical_cost = 100.0, int stride = 1);
   std::string name() const override { return "costmap_obstacle"; }
 
   void setCostmap(nav2_costmap_2d::Costmap2D* costmap);
@@ -188,6 +196,7 @@ private:
   double critical_cost_;
   double tx_{0.0}, ty_{0.0}, cos_th_{1.0}, sin_th_{0.0};
   bool use_tf_{false};
+  int stride_{1};
 };
 
 /**

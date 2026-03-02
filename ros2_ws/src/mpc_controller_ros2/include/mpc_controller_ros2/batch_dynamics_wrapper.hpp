@@ -67,6 +67,16 @@ public:
   ) const;
 
   /**
+   * @brief 사전 할당된 버퍼에 Rollout (힙 할당 0)
+   */
+  void rolloutBatchInPlace(
+    const Eigen::VectorXd& x0,
+    const std::vector<Eigen::MatrixXd>& control_sequences,
+    double dt,
+    std::vector<Eigen::MatrixXd>& trajectories_out
+  ) const;
+
+  /**
    * @brief 제어 입력 클리핑
    * @param controls 제어 행렬 (M x nu)
    * @return 클리핑된 제어 행렬

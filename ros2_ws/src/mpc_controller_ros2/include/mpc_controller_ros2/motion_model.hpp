@@ -119,6 +119,19 @@ public:
     const Eigen::VectorXd& x0,
     const std::vector<Eigen::MatrixXd>& control_sequences,
     double dt) const;
+
+  /**
+   * @brief 사전 할당된 버퍼에 Rollout (힙 할당 0)
+   * @param x0 초기 상태 (nx,)
+   * @param control_sequences 제어 시퀀스 벡터 [K개, 각각 N x nu]
+   * @param dt 시간 간격
+   * @param trajectories_out 출력 버퍼 [K개, 각각 (N+1) x nx]. 크기 자동 조정.
+   */
+  virtual void rolloutBatchInPlace(
+    const Eigen::VectorXd& x0,
+    const std::vector<Eigen::MatrixXd>& control_sequences,
+    double dt,
+    std::vector<Eigen::MatrixXd>& trajectories_out) const;
 };
 
 }  // namespace mpc_controller_ros2
