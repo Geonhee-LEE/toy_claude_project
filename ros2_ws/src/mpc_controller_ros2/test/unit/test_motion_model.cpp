@@ -1,5 +1,5 @@
 /**
- * @brief MotionModel 추상화 + 3종 모델 단위 테스트
+ * @brief MotionModel 추상화 + 4종 모델 단위 테스트
  *
  * Phase 0: 새 파일만 테스트 — 기존 코드 무변경
  */
@@ -9,6 +9,7 @@
 #include "mpc_controller_ros2/diff_drive_model.hpp"
 #include "mpc_controller_ros2/swerve_drive_model.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
+#include "mpc_controller_ros2/ackermann_model.hpp"
 #include "mpc_controller_ros2/motion_model_factory.hpp"
 #include "mpc_controller_ros2/mppi_params.hpp"
 
@@ -727,6 +728,292 @@ TEST(CrossModelTest, SameForwardMotion)
   EXPECT_NEAR(dd_next(0, 0), sw_next(0, 0), 1e-10);
   EXPECT_NEAR(dd_next(0, 1), sw_next(0, 1), 1e-10);
   EXPECT_NEAR(dd_next(0, 2), sw_next(0, 2), 1e-10);
+}
+
+// ============================================================================
+// AckermannModel Tests
+// ============================================================================
+
+class AckermannModelTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    // v_min=0, v_max=1.5, max_steering_rate=2.0, max_steering_angle=π/4, wheelbase=0.5
+    model_ = std::make_unique<AckermannModel>(0.0, 1.5, 2.0, M_PI / 4.0, 0.5);
+  }
+  std::unique_ptr<AckermannModel> model_;
+};
+
+TEST_F(AckermannModelTest, Dimensions)
+{
+  EXPECT_EQ(model_->stateDim(), 4);
+  EXPECT_EQ(model_->controlDim(), 2);
+  EXPECT_FALSE(model_->isHolonomic());
+  EXPECT_EQ(model_->name(), "ackermann");
+}
+
+TEST_F(AckermannModelTest, AngleIndices)
+{
+  auto indices = model_->angleIndices();
+  ASSERT_EQ(indices.size(), 1u);
+  EXPECT_EQ(indices[0], 2);
+}
+
+TEST_F(AckermannModelTest, Wheelbase)
+{
+  EXPECT_NEAR(model_->wheelbase(), 0.5, 1e-10);
+}
+
+TEST_F(AckermannModelTest, DynamicsStraight)
+{
+  // v=1, delta=0, delta_dot=0 → 직진
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, 0.0;
+  Eigen::MatrixXd controls(1, 2);
+  controls << 1.0, 0.0;
+
+  auto state_dot = model_->dynamicsBatch(states, controls);
+  EXPECT_NEAR(state_dot(0, 0), 1.0, 1e-10);   // x_dot = v*cos(0) = 1
+  EXPECT_NEAR(state_dot(0, 1), 0.0, 1e-10);   // y_dot = v*sin(0) = 0
+  EXPECT_NEAR(state_dot(0, 2), 0.0, 1e-10);   // theta_dot = v*tan(0)/L = 0
+  EXPECT_NEAR(state_dot(0, 3), 0.0, 1e-10);   // delta_dot = 0
+}
+
+TEST_F(AckermannModelTest, DynamicsSteered)
+{
+  // v=1, delta=π/6 (30°), delta_dot=0 → 선회
+  double delta = M_PI / 6.0;
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, delta;
+  Eigen::MatrixXd controls(1, 2);
+  controls << 1.0, 0.0;
+
+  auto state_dot = model_->dynamicsBatch(states, controls);
+  EXPECT_NEAR(state_dot(0, 0), 1.0, 1e-10);                          // x_dot = v*cos(0) = 1
+  EXPECT_NEAR(state_dot(0, 1), 0.0, 1e-10);                          // y_dot = v*sin(0) = 0
+  EXPECT_NEAR(state_dot(0, 2), std::tan(delta) / 0.5, 1e-10);       // theta_dot = v*tan(δ)/L
+  EXPECT_NEAR(state_dot(0, 3), 0.0, 1e-10);                          // delta_dot = 0
+}
+
+TEST_F(AckermannModelTest, DynamicsBatch)
+{
+  // 2개 상태 동시 계산
+  Eigen::MatrixXd states(2, 4);
+  states << 0.0, 0.0, 0.0, 0.0,
+            1.0, 2.0, M_PI / 2.0, 0.0;
+  Eigen::MatrixXd controls(2, 2);
+  controls << 1.0, 0.0,
+              0.5, 1.0;
+
+  auto state_dot = model_->dynamicsBatch(states, controls);
+  // 첫 번째: 직진
+  EXPECT_NEAR(state_dot(0, 0), 1.0, 1e-10);
+  EXPECT_NEAR(state_dot(0, 1), 0.0, 1e-10);
+  // 두 번째: theta=90°, v=0.5 → x_dot=0, y_dot=0.5
+  EXPECT_NEAR(state_dot(1, 0), 0.0, 1e-6);
+  EXPECT_NEAR(state_dot(1, 1), 0.5, 1e-10);
+  EXPECT_NEAR(state_dot(1, 3), 1.0, 1e-10);  // delta_dot=1
+}
+
+TEST_F(AckermannModelTest, DynamicsReverse)
+{
+  // 후진: v=-1, delta=0
+  auto model = std::make_unique<AckermannModel>(-1.5, 1.5, 2.0, M_PI / 4.0, 0.5);
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, 0.0;
+  Eigen::MatrixXd controls(1, 2);
+  controls << -1.0, 0.0;
+
+  auto state_dot = model->dynamicsBatch(states, controls);
+  EXPECT_NEAR(state_dot(0, 0), -1.0, 1e-10);  // 후진
+  EXPECT_NEAR(state_dot(0, 1), 0.0, 1e-10);
+}
+
+TEST_F(AckermannModelTest, PropagateRK4)
+{
+  // 직진 dt=0.1 → x ≈ 0.1
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, 0.0;
+  Eigen::MatrixXd controls(1, 2);
+  controls << 1.0, 0.0;
+
+  auto next = model_->propagateBatch(states, controls, 0.1);
+  EXPECT_NEAR(next(0, 0), 0.1, 1e-6);
+  EXPECT_NEAR(next(0, 1), 0.0, 1e-6);
+  EXPECT_NEAR(next(0, 2), 0.0, 1e-6);
+}
+
+TEST_F(AckermannModelTest, PropagateClamp)
+{
+  // 큰 delta_dot로 여러 스텝 → delta가 ±π/4를 넘지 않아야 함
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, 0.0;
+  Eigen::MatrixXd controls(1, 2);
+  controls << 1.0, 5.0;  // delta_dot=5 (큰 값)
+
+  for (int i = 0; i < 50; ++i) {
+    states = model_->propagateBatch(states, controls, 0.05);
+  }
+  EXPECT_LE(states(0, 3), M_PI / 4.0 + 1e-10);
+}
+
+TEST_F(AckermannModelTest, ClipControls)
+{
+  Eigen::MatrixXd controls(3, 2);
+  controls << 2.0, 0.0,      // v=2.0 → 1.5
+              -0.5, 3.0,     // v=-0.5 → 0.0, delta_dot=3.0 → 2.0
+              0.5, -3.0;     // delta_dot=-3.0 → -2.0
+
+  auto clipped = model_->clipControls(controls);
+  EXPECT_NEAR(clipped(0, 0), 1.5, 1e-10);
+  EXPECT_NEAR(clipped(1, 0), 0.0, 1e-10);
+  EXPECT_NEAR(clipped(1, 1), 2.0, 1e-10);
+  EXPECT_NEAR(clipped(2, 1), -2.0, 1e-10);
+}
+
+TEST_F(AckermannModelTest, NormalizeStates)
+{
+  Eigen::MatrixXd states(2, 4);
+  states << 0.0, 0.0, 4.0, 1.0,      // theta=4 → wrap, delta=1.0 → clamp to π/4
+            0.0, 0.0, -4.0, -1.0;    // theta=-4 → wrap, delta=-1.0 → clamp to -π/4
+
+  model_->normalizeStates(states);
+  EXPECT_LT(std::abs(states(0, 2)), M_PI + 1e-10);   // theta wrapped
+  EXPECT_NEAR(states(0, 3), M_PI / 4.0, 1e-10);      // delta clamped
+  EXPECT_NEAR(states(1, 3), -M_PI / 4.0, 1e-10);
+}
+
+TEST_F(AckermannModelTest, ControlToTwist)
+{
+  model_->setLastDelta(M_PI / 6.0);  // 30°
+  Eigen::VectorXd control(2);
+  control << 1.0, 0.0;
+
+  auto twist = model_->controlToTwist(control);
+  EXPECT_NEAR(twist.linear.x, 1.0, 1e-10);
+  EXPECT_NEAR(twist.angular.z, 1.0 * std::tan(M_PI / 6.0) / 0.5, 1e-10);
+}
+
+TEST_F(AckermannModelTest, TwistToControl)
+{
+  geometry_msgs::msg::Twist twist;
+  twist.linear.x = 0.5;
+  twist.angular.z = 1.0;
+
+  auto control = model_->twistToControl(twist);
+  EXPECT_EQ(control.size(), 2);
+  EXPECT_NEAR(control(0), 0.5, 1e-10);
+  EXPECT_NEAR(control(1), 0.0, 1e-10);  // delta_dot=0
+}
+
+TEST_F(AckermannModelTest, LastDelta)
+{
+  EXPECT_NEAR(model_->getLastDelta(), 0.0, 1e-10);
+  model_->setLastDelta(0.3);
+  EXPECT_NEAR(model_->getLastDelta(), 0.3, 1e-10);
+}
+
+TEST_F(AckermannModelTest, TurningRadius)
+{
+  // 선회 반경 = L / tan(δ)
+  // δ=π/6 (30°), L=0.5 → R = 0.5/tan(30°) ≈ 0.866m
+  double delta = M_PI / 6.0;
+  double expected_radius = 0.5 / std::tan(delta);
+
+  Eigen::MatrixXd states(1, 4);
+  states << 0.0, 0.0, 0.0, delta;
+  Eigen::MatrixXd controls(1, 2);
+  controls << 1.0, 0.0;
+
+  auto state_dot = model_->dynamicsBatch(states, controls);
+  double theta_dot = state_dot(0, 2);
+  double v = controls(0, 0);
+  double actual_radius = v / std::abs(theta_dot);
+  EXPECT_NEAR(actual_radius, expected_radius, 1e-6);
+}
+
+TEST_F(AckermannModelTest, Factory)
+{
+  MPPIParams params;
+  params.wheelbase = 0.5;
+  params.max_steering_angle = M_PI / 4.0;
+  auto model = MotionModelFactory::create("ackermann", params);
+  EXPECT_EQ(model->stateDim(), 4);
+  EXPECT_EQ(model->controlDim(), 2);
+  EXPECT_EQ(model->name(), "ackermann");
+}
+
+TEST_F(AckermannModelTest, FactoryError)
+{
+  MPPIParams params;
+  EXPECT_THROW(MotionModelFactory::create("invalid_model", params), std::invalid_argument);
+}
+
+TEST_F(AckermannModelTest, RolloutBatch)
+{
+  // K=2 궤적, N=5 스텝 롤아웃
+  Eigen::VectorXd x0(4);
+  x0 << 0.0, 0.0, 0.0, 0.0;
+
+  std::vector<Eigen::MatrixXd> control_sequences(2);
+  for (int k = 0; k < 2; ++k) {
+    control_sequences[k] = Eigen::MatrixXd::Zero(5, 2);
+    control_sequences[k].col(0).setConstant(1.0);  // v=1
+  }
+
+  auto trajectories = model_->rolloutBatch(x0, control_sequences, 0.1);
+  ASSERT_EQ(trajectories.size(), 2u);
+  EXPECT_EQ(trajectories[0].rows(), 6);  // N+1 = 6
+  EXPECT_EQ(trajectories[0].cols(), 4);  // nx=4
+  // 직진 → x 증가
+  EXPECT_GT(trajectories[0](5, 0), 0.4);
+}
+
+TEST_F(AckermannModelTest, InPlaceRollout)
+{
+  Eigen::VectorXd x0(4);
+  x0 << 0.0, 0.0, 0.0, 0.0;
+
+  std::vector<Eigen::MatrixXd> control_sequences(2);
+  for (int k = 0; k < 2; ++k) {
+    control_sequences[k] = Eigen::MatrixXd::Zero(5, 2);
+    control_sequences[k].col(0).setConstant(0.5);
+  }
+
+  std::vector<Eigen::MatrixXd> trajectories_out;
+  model_->rolloutBatchInPlace(x0, control_sequences, 0.1, trajectories_out);
+
+  ASSERT_EQ(trajectories_out.size(), 2u);
+  EXPECT_EQ(trajectories_out[0].rows(), 6);
+  EXPECT_EQ(trajectories_out[0].cols(), 4);
+}
+
+// ============================================================================
+// Ackermann vs NonCoaxial 비교: delta=0 직진 동역학 일치
+// ============================================================================
+
+TEST(AckermannCrossModelTest, StraightMatchesDiffDrive)
+{
+  // delta=0일 때 Ackermann과 DiffDrive의 직진 동역학은 동일해야 함
+  auto ack = std::make_unique<AckermannModel>(0.0, 2.0, 2.0, M_PI / 4.0, 0.5);
+  auto dd = std::make_unique<DiffDriveModel>(0.0, 2.0, -2.0, 2.0);
+
+  Eigen::MatrixXd ack_states(1, 4), dd_states(1, 3);
+  ack_states << 0.0, 0.0, 0.0, 0.0;
+  dd_states << 0.0, 0.0, 0.0;
+
+  Eigen::MatrixXd ack_controls(1, 2), dd_controls(1, 2);
+  ack_controls << 1.0, 0.0;
+  dd_controls << 1.0, 0.0;
+
+  auto ack_next = ack->propagateBatch(ack_states, ack_controls, 0.1);
+  auto dd_next = dd->propagateBatch(dd_states, dd_controls, 0.1);
+
+  // x, y, theta는 동일
+  EXPECT_NEAR(ack_next(0, 0), dd_next(0, 0), 1e-10);
+  EXPECT_NEAR(ack_next(0, 1), dd_next(0, 1), 1e-10);
+  EXPECT_NEAR(ack_next(0, 2), dd_next(0, 2), 1e-10);
 }
 
 int main(int argc, char** argv)

@@ -1,5 +1,6 @@
 #include "mpc_controller_ros2/mppi_controller_plugin.hpp"
 #include "mpc_controller_ros2/motion_model_factory.hpp"
+#include "mpc_controller_ros2/ackermann_model.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
 #include <tf2/utils.h>
@@ -113,10 +114,15 @@ void MPPIControllerPlugin::configure(
       int nu_dim = dynamics_->model().controlDim();
       Eigen::VectorXd u_min(nu_dim), u_max(nu_dim);
       bool is_nc = (params_.motion_model == "non_coaxial_swerve");
+      bool is_ackermann = (params_.motion_model == "ackermann");
       if (is_nc) {
         // Non-Coaxial: [v, omega, delta_dot]
         u_min << params_.v_min, params_.omega_min, -params_.max_steering_rate;
         u_max << params_.v_max, params_.omega_max,  params_.max_steering_rate;
+      } else if (is_ackermann) {
+        // Ackermann: [v, delta_dot]
+        u_min << params_.v_min, -params_.max_steering_rate;
+        u_max << params_.v_max,  params_.max_steering_rate;
       } else if (nu_dim >= 3) {
         // Swerve: [vx, vy, omega]
         double effective_vy_max = (params_.vy_max > 0) ? params_.vy_max : params_.v_max;
@@ -385,7 +391,7 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
       }
     }
 
-    // 6.9. Non-Coaxial: delta 추적 갱신 (controlToTwist 전에 수행)
+    // 6.9. Non-Coaxial / Ackermann: delta 추적 갱신 (controlToTwist 전에 수행)
     if (params_.motion_model == "non_coaxial_swerve") {
       double delta_dot = final_control(2);
       last_delta_ += delta_dot * params_.dt;
@@ -393,6 +399,14 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
         -params_.max_steering_angle, params_.max_steering_angle);
       auto& nc_model = dynamic_cast<NonCoaxialSwerveModel&>(dynamics_->model());
       nc_model.setLastDelta(last_delta_);
+    }
+    else if (params_.motion_model == "ackermann") {
+      double delta_dot = final_control(1);  // nu=2 → 인덱스 1
+      last_delta_ += delta_dot * params_.dt;
+      last_delta_ = std::clamp(last_delta_,
+        -params_.max_steering_angle, params_.max_steering_angle);
+      auto& ack_model = dynamic_cast<AckermannModel&>(dynamics_->model());
+      ack_model.setLastDelta(last_delta_);
     }
 
     // 7. Build Twist message (MotionModel 기반 변환)
@@ -1265,9 +1279,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "biased_goto_goal_gain", params_.biased_goto_goal_gain);
   node_->declare_parameter(prefix + "biased_path_following_gain", params_.biased_path_following_gain);
 
-  // Non-Coaxial Swerve 전용 파라미터
+  // Non-Coaxial Swerve / Ackermann 공통 파라미터
   node_->declare_parameter(prefix + "max_steering_rate", params_.max_steering_rate);
   node_->declare_parameter(prefix + "max_steering_angle", params_.max_steering_angle);
+  node_->declare_parameter(prefix + "wheelbase", params_.wheelbase);
 
   // CBF (Control Barrier Function)
   node_->declare_parameter(prefix + "cbf_enabled", params_.cbf_enabled);
@@ -1479,9 +1494,10 @@ void MPPIControllerPlugin::loadParameters()
   params_.biased_goto_goal_gain = node_->get_parameter(prefix + "biased_goto_goal_gain").as_double();
   params_.biased_path_following_gain = node_->get_parameter(prefix + "biased_path_following_gain").as_double();
 
-  // Non-Coaxial Swerve 전용 파라미터
+  // Non-Coaxial Swerve / Ackermann 공통 파라미터
   params_.max_steering_rate = node_->get_parameter(prefix + "max_steering_rate").as_double();
   params_.max_steering_angle = node_->get_parameter(prefix + "max_steering_angle").as_double();
+  params_.wheelbase = node_->get_parameter(prefix + "wheelbase").as_double();
 
   // CBF (Control Barrier Function)
   params_.cbf_enabled = node_->get_parameter(prefix + "cbf_enabled").as_bool();
@@ -1964,9 +1980,13 @@ rcl_interfaces::msg::SetParametersResult MPPIControllerPlugin::onSetParametersCa
             int nu_dim = dynamics_->model().controlDim();
             Eigen::VectorXd u_min(nu_dim), u_max(nu_dim);
             bool is_nc = (params_.motion_model == "non_coaxial_swerve");
+            bool is_ack = (params_.motion_model == "ackermann");
             if (is_nc) {
               u_min << params_.v_min, params_.omega_min, -params_.max_steering_rate;
               u_max << params_.v_max, params_.omega_max,  params_.max_steering_rate;
+            } else if (is_ack) {
+              u_min << params_.v_min, -params_.max_steering_rate;
+              u_max << params_.v_max,  params_.max_steering_rate;
             } else if (nu_dim >= 3) {
               u_min << params_.v_min, -params_.v_max, params_.omega_min;
               u_max << params_.v_max,  params_.v_max, params_.omega_max;

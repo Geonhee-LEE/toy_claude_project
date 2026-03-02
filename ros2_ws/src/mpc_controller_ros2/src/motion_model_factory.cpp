@@ -2,6 +2,7 @@
 #include "mpc_controller_ros2/diff_drive_model.hpp"
 #include "mpc_controller_ros2/swerve_drive_model.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
+#include "mpc_controller_ros2/ackermann_model.hpp"
 #include <stdexcept>
 
 namespace mpc_controller_ros2
@@ -28,10 +29,16 @@ std::unique_ptr<MotionModel> MotionModelFactory::create(
       params.v_min, params.v_max, params.omega_max,
       params.max_steering_rate, params.max_steering_angle);
   }
+  else if (model_type == "ackermann") {
+    return std::make_unique<AckermannModel>(
+      params.v_min, params.v_max,
+      params.max_steering_rate, params.max_steering_angle,
+      params.wheelbase);
+  }
   else {
     throw std::invalid_argument(
       "Unknown motion model type: '" + model_type + "'. "
-      "Supported: 'diff_drive', 'swerve', 'non_coaxial_swerve'");
+      "Supported: 'diff_drive', 'swerve', 'non_coaxial_swerve', 'ackermann'");
   }
 }
 

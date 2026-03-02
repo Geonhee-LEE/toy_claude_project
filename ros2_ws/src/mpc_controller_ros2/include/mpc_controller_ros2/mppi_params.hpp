@@ -169,9 +169,10 @@ struct MPPIParams
   // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
-  // Non-Coaxial Swerve 전용 파라미터
+  // Non-Coaxial Swerve / Ackermann 공통 파라미터
   double max_steering_rate{2.0};            // 최대 스티어링 각속도 (rad/s)
   double max_steering_angle{M_PI / 2.0};    // 최대 스티어링 각도 (rad)
+  double wheelbase{0.5};                    // Ackermann 축간 거리 (m)
 
   bool cbf_enabled{false};                 // CBF 활성화 여부
   double cbf_gamma{1.0};                   // CBF class-K 함수 계수
@@ -190,7 +191,7 @@ struct MPPIParams
   // ============================================================================
   // Motion Model 선택
   // ============================================================================
-  std::string motion_model{"diff_drive"};  // "diff_drive", "swerve", "non_coaxial_swerve"
+  std::string motion_model{"diff_drive"};  // "diff_drive", "swerve", "non_coaxial_swerve", "ackermann"
 
   // ============================================================================
   // Costmap 기반 장애물 비용 파라미터
