@@ -288,12 +288,52 @@ class StressTestNode(Node):
                 goals.append((float(xy[0].strip()), float(xy[1].strip())))
         return goals
 
+    def _wait_for_nav2_stable(self, timeout_sec: float = 60.0):
+        """nav2 lifecycle 안정화 대기 (TF 시간 점프 복구 후)"""
+        import subprocess
+        nodes = ['controller_server', 'planner_server', 'bt_navigator']
+        start = time.time()
+        stable_count = 0
+        required_stable = 3  # 연속 3회 active 확인
+
+        self.get_logger().info('nav2 lifecycle 안정화 대기...')
+        while time.time() - start < timeout_sec:
+            all_active = True
+            for node in nodes:
+                try:
+                    result = subprocess.run(
+                        ['ros2', 'lifecycle', 'get', f'/{node}'],
+                        capture_output=True, text=True, timeout=5.0)
+                    if 'active [3]' not in result.stdout:
+                        all_active = False
+                        break
+                except Exception:
+                    all_active = False
+                    break
+
+            if all_active:
+                stable_count += 1
+                if stable_count >= required_stable:
+                    self.get_logger().info(
+                        f'nav2 안정화 완료 ({time.time() - start:.0f}s)')
+                    return True
+            else:
+                stable_count = 0
+
+            time.sleep(2.0)
+
+        self.get_logger().warn('nav2 안정화 타임아웃!')
+        return False
+
     def send_goals_sequentially(self) -> List[bool]:
         """순차 goal 전송, 각 goal 성공/실패 반환"""
         self.get_logger().info('nav2 action server 대기 중...')
         if not self._action_client.wait_for_server(timeout_sec=30.0):
             self.get_logger().error('nav2 action server를 찾을 수 없습니다!')
             return [False] * len(self.goals)
+
+        # nav2 lifecycle 안정화 대기 (TF 시간 점프 복구)
+        self._wait_for_nav2_stable()
 
         results = []
         for i, (gx, gy) in enumerate(self.goals):
@@ -314,9 +354,20 @@ class StressTestNode(Node):
 
             goal_handle = send_future.result()
             if goal_handle is None or not goal_handle.accepted:
-                self.get_logger().warn(f'Goal {i + 1} 거부됨')
-                results.append(False)
-                continue
+                # planner inactive 등으로 거부 → 안정화 대기 후 1회 재시도
+                self.get_logger().warn(
+                    f'Goal {i + 1} 거부됨 — lifecycle 복구 대기 후 재시도')
+                self._wait_for_nav2_stable(timeout_sec=30.0)
+                goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+                send_future = self._action_client.send_goal_async(
+                    goal_msg, feedback_callback=self._feedback_cb)
+                rclpy.spin_until_future_complete(
+                    self, send_future, timeout_sec=10.0)
+                goal_handle = send_future.result()
+                if goal_handle is None or not goal_handle.accepted:
+                    self.get_logger().error(f'Goal {i + 1} 재시도 실패')
+                    results.append(False)
+                    continue
 
             result_future = goal_handle.get_result_async()
             # 각 goal에 충분한 시간 할당 (최소 90초)

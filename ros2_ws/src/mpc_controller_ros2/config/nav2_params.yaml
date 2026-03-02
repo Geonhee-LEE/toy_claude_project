@@ -75,6 +75,7 @@ local_costmap:
       use_sim_time: true
       global_frame: odom
       robot_base_frame: base_link
+      transform_tolerance: 5.0
       update_frequency: 5.0
       publish_frequency: 2.0
       rolling_window: true
@@ -113,6 +114,7 @@ global_costmap:
       use_sim_time: true
       global_frame: map
       robot_base_frame: base_link
+      transform_tolerance: 5.0
       update_frequency: 1.0
       publish_frequency: 1.0
       rolling_window: false

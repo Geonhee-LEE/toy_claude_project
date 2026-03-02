@@ -245,7 +245,20 @@ def launch_setup(context, *args, **kwargs):
         executable='parameter_bridge',
         name='ros_gz_bridge',
         output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{
+            'use_sim_time': True,
+            # /clock QoS → reliable (best_effort의 UDP 순서 역전 방지)
+            # → TF "jump back in time" 해결
+            'qos_overrides': {
+                '/clock': {
+                    'publisher': {
+                        'reliability': 'reliable',
+                        'history': 'keep_last',
+                        'depth': 10,
+                    }
+                }
+            },
+        }],
         arguments=bridge_args,
     )
 
