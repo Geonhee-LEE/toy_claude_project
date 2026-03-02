@@ -166,6 +166,7 @@ install(PROGRAMS
   scripts/odom_to_tf.py
   scripts/swerve_kinematics_node.py
   scripts/swerve_e2e_test.py
+  scripts/stress_test.py
   scripts/nav2_lifecycle_bringup.py
   DESTINATION lib/${PROJECT_NAME}
 )

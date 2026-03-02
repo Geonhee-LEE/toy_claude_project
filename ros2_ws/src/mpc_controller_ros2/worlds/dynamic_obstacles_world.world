@@ -1,0 +1,319 @@
+<?xml version="1.0" ?>
+<!--
+  동적 장애물 스트레스 테스트 월드 (20m×20m 오픈 아레나)
+
+  레이아웃 (top-down):
+  ┌──────────────────────────────────────┐
+  │                                      │
+  │   S(0,0)           ○slow(5,3)       │
+  │   (robot)           ↕ Y방향 0.3m/s  │
+  │                                      │
+  │         ○medium(3,-2)               │
+  │          ↔ X방향 0.6m/s             │
+  │                                      │
+  │   ■static(2,4)     ○fast(6,-1)     │
+  │                      ↕ Y방향 1.0m/s │
+  │                                      │
+  │         ○cross(4,1) ■static(-3,-3) │
+  │          ↔ X방향 0.8m/s             │
+  │                                G(7,0)│
+  └──────────────────────────────────────┘
+
+  동적 장애물: VelocityControl 플러그인 → stress_test.py가 cmd_vel 왕복 제어
+-->
+<sdf version="1.8">
+  <world name="dynamic_obstacles_world">
+    <!-- Physics settings -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin
+      filename="gz-sim-physics-system"
+      name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin
+      filename="gz-sim-user-commands-system"
+      name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin
+      filename="gz-sim-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+    </plugin>
+
+    <!-- Sun light -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 경계 벽 (20m × 20m 아레나, 높이 1m)          -->
+    <!-- ============================================ -->
+
+    <!-- 벽: +X (x=10) -->
+    <model name="wall_px">
+      <static>true</static>
+      <pose>10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.4 0.4 1.0</ambient>
+            <diffuse>0.4 0.4 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 벽: -X (x=-10) -->
+    <model name="wall_mx">
+      <static>true</static>
+      <pose>-10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.4 0.4 1.0</ambient>
+            <diffuse>0.4 0.4 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 벽: +Y (y=10) -->
+    <model name="wall_py">
+      <static>true</static>
+      <pose>0 10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.4 0.4 1.0</ambient>
+            <diffuse>0.4 0.4 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 벽: -Y (y=-10) -->
+    <model name="wall_my">
+      <static>true</static>
+      <pose>0 -10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+          <material>
+            <ambient>0.4 0.4 0.4 1.0</ambient>
+            <diffuse>0.4 0.4 0.4 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 정적 장애물 (2개, lidar 감지 보장)            -->
+    <!-- ============================================ -->
+
+    <!-- 정적 1: (2, 4) — 빨강 박스 -->
+    <model name="static_obstacle_1">
+      <static>true</static>
+      <pose>2 4 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1.0</ambient>
+            <diffuse>0.8 0.2 0.2 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 정적 2: (-3, -3) — 파랑 박스 -->
+    <model name="static_obstacle_2">
+      <static>true</static>
+      <pose>-3 -3 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.4</radius><length>1.0</length></cylinder></geometry>
+          <material>
+            <ambient>0.2 0.2 0.8 1.0</ambient>
+            <diffuse>0.2 0.2 0.8 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 동적 장애물 (4개, VelocityControl 플러그인)    -->
+    <!-- stress_test.py의 DynamicObstacleController가  -->
+    <!-- gz 토픽으로 cmd_vel 왕복 속도를 publish        -->
+    <!-- ============================================ -->
+
+    <!-- 동적 1: slow (5,3) — Y방향 0.3m/s 왕복, 초록 -->
+    <model name="dynamic_obstacle_slow">
+      <pose>5 3 0.3 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>100.0</mass>
+          <inertia>
+            <ixx>2.25</ixx><iyy>2.25</iyy><izz>4.5</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+          <material>
+            <ambient>0.2 0.8 0.2 1.0</ambient>
+            <diffuse>0.2 0.8 0.2 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 동적 2: medium (3,-2) — X방향 0.6m/s 왕복, 노랑 -->
+    <model name="dynamic_obstacle_medium">
+      <pose>3 -2 0.3 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>100.0</mass>
+          <inertia>
+            <ixx>2.25</ixx><iyy>2.25</iyy><izz>4.5</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.8 0.2 1.0</ambient>
+            <diffuse>0.8 0.8 0.2 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 동적 3: fast (6,-1) — Y방향 1.0m/s 왕복, 오렌지 -->
+    <model name="dynamic_obstacle_fast">
+      <pose>6 -1 0.3 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>100.0</mass>
+          <inertia>
+            <ixx>2.25</ixx><iyy>2.25</iyy><izz>4.5</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+          <material>
+            <ambient>0.9 0.5 0.1 1.0</ambient>
+            <diffuse>0.9 0.5 0.1 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 동적 4: cross (4,1) — X방향 0.8m/s 왕복, 보라 -->
+    <model name="dynamic_obstacle_cross">
+      <pose>4 1 0.3 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>100.0</mass>
+          <inertia>
+            <ixx>2.25</ixx><iyy>2.25</iyy><izz>4.5</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry>
+          <material>
+            <ambient>0.6 0.2 0.8 1.0</ambient>
+            <diffuse>0.6 0.2 0.8 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+  </world>
+</sdf>
