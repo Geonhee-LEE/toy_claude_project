@@ -196,6 +196,13 @@ private:
   void publishCBFVisualization(
     const MPPIInfo& info,
     const Eigen::VectorXd& current_state);
+
+protected:
+  // 성능 최적화: 사전 할당 버퍼 (힙 할당 0/call)
+  std::vector<Eigen::MatrixXd> noise_buffer_;       // K개, (N, nu)
+  std::vector<Eigen::MatrixXd> perturbed_buffer_;   // K개, (N, nu)
+  std::vector<Eigen::MatrixXd> trajectory_buffer_;  // K개, (N+1, nx)
+  void allocateBuffers();
 };
 
 }  // namespace mpc_controller_ros2

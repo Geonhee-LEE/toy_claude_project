@@ -10,6 +10,7 @@
 // 성능 최적화:
 //   - 마지막 어닐링 스텝의 trajectories/weights를 시각화에 재사용
 //   - 추가 K 롤아웃 없이 info 구성 (총 롤아웃 = N_diffuse × K)
+//   - sampleInPlace / rolloutBatchInPlace / OpenMP 적용
 //
 // 확장:
 //   - Shield-DIAL: computeControl 내부에서 CBF Safety Filter 적용
@@ -24,6 +25,7 @@
 #include <cmath>
 #include <algorithm>
 #include <limits>
+#include <omp.h>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::DialMPPIControllerPlugin, nav2_core::Controller)
 
@@ -102,36 +104,35 @@ AnnealingResult DialMPPIControllerPlugin::annealingStep(
   int nu = dynamics_->model().controlDim();
   (void)iteration;
 
-  // 2b: 단위 노이즈 샘플링 + 스케줄 적용
-  auto base_noise = sampler_->sample(K, N, nu);
+  // 2b: 단위 노이즈 샘플링 + 스케줄 적용 (in-place)
+  sampler_->sampleInPlace(noise_buffer_, K, N, nu);
   for (int k = 0; k < K; ++k) {
     for (int h = 0; h < N; ++h) {
-      base_noise[k].row(h) *= noise_schedule(h);
+      noise_buffer_[k].row(h) *= noise_schedule(h);
     }
   }
 
-  // 2c: 섭동 시퀀스 구성
-  std::vector<Eigen::MatrixXd> perturbed_controls;
-  perturbed_controls.reserve(K);
+  // 2c: 섭동 시퀀스 구성 (in-place)
+  if (static_cast<int>(perturbed_buffer_.size()) != K) {
+    perturbed_buffer_.resize(K, Eigen::MatrixXd::Zero(N, nu));
+  }
   int K_exploit = static_cast<int>((1.0 - params_.exploration_ratio) * K);
 
   for (int k = 0; k < K; ++k) {
-    Eigen::MatrixXd perturbed;
     if (k < K_exploit) {
-      perturbed = control_seq + base_noise[k];
+      perturbed_buffer_[k].noalias() = control_seq + noise_buffer_[k];
     } else {
-      perturbed = base_noise[k];
+      perturbed_buffer_[k] = noise_buffer_[k];
     }
-    perturbed = dynamics_->clipControls(perturbed);
-    perturbed_controls.push_back(perturbed);
+    perturbed_buffer_[k] = dynamics_->clipControls(perturbed_buffer_[k]);
   }
 
-  // 2d: 배치 롤아웃 + 비용 계산
-  auto trajectories = dynamics_->rolloutBatch(
-    current_state, perturbed_controls, params_.dt);
+  // 2d: 배치 롤아웃 + 비용 계산 (in-place)
+  dynamics_->rolloutBatchInPlace(
+    current_state, perturbed_buffer_, params_.dt, trajectory_buffer_);
 
   Eigen::VectorXd costs = cost_function_->compute(
-    trajectories, perturbed_controls, reference_trajectory);
+    trajectory_buffer_, perturbed_buffer_, reference_trajectory);
 
   // 2e: IT 정규화
   if (params_.it_alpha < 1.0) {
@@ -140,7 +141,7 @@ AnnealingResult DialMPPIControllerPlugin::annealingStep(
       double it_cost = 0.0;
       for (int t = 0; t < N; ++t) {
         Eigen::VectorXd u_prev_t = control_seq.row(t).transpose();
-        Eigen::VectorXd u_k_t = perturbed_controls[k].row(t).transpose();
+        Eigen::VectorXd u_k_t = perturbed_buffer_[k].row(t).transpose();
         it_cost += u_prev_t.dot(sigma_inv.cwiseProduct(u_k_t));
       }
       costs(k) += params_.lambda * (1.0 - params_.it_alpha) * it_cost;
@@ -156,18 +157,38 @@ AnnealingResult DialMPPIControllerPlugin::annealingStep(
   }
   Eigen::VectorXd weights = weight_computation_->compute(costs, current_lambda);
 
-  // 2g: 가중 업데이트
-  Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
-  for (int k = 0; k < K; ++k) {
-    weighted_noise += weights(k) * base_noise[k];
+  // 2g: 가중 업데이트 (OpenMP 스레드 로컬 누적)
+  {
+    int n_threads = 1;
+    #ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+    #endif
+    if (K <= 4096) { n_threads = 1; }
+
+    std::vector<Eigen::MatrixXd> thread_accum(n_threads, Eigen::MatrixXd::Zero(N, nu));
+    #pragma omp parallel if(K > 4096)
+    {
+      int tid = 0;
+      #ifdef _OPENMP
+      tid = omp_get_thread_num();
+      #endif
+      #pragma omp for schedule(static)
+      for (int k = 0; k < K; ++k) {
+        thread_accum[tid].noalias() += weights(k) * noise_buffer_[k];
+      }
+    }
+    Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
+    for (int t = 0; t < n_threads; ++t) {
+      weighted_noise += thread_accum[t];
+    }
+    control_seq += weighted_noise;
   }
-  control_seq += weighted_noise;
   control_seq = dynamics_->clipControls(control_seq);
 
   // 결과 반환 (궤적/가중치를 시각화에 재사용)
   AnnealingResult result;
   result.mean_cost = costs.mean();
-  result.trajectories = std::move(trajectories);
+  result.trajectories = trajectory_buffer_;  // copy for visualization
   result.weights = std::move(weights);
   result.costs = std::move(costs);
   return result;
@@ -239,10 +260,30 @@ std::pair<Eigen::VectorXd, MPPIInfo> DialMPPIControllerPlugin::computeControl(
   const auto& weights = last_result.weights;
   const auto& costs = last_result.costs;
 
-  // Weighted average trajectory
+  // Weighted average trajectory (OpenMP 스레드 로컬)
   Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
-  for (int k = 0; k < K; ++k) {
-    weighted_traj += weights(k) * trajectories[k];
+  {
+    int n_threads = 1;
+    #ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+    #endif
+    if (K <= 4096) { n_threads = 1; }
+
+    std::vector<Eigen::MatrixXd> thread_accum(n_threads, Eigen::MatrixXd::Zero(N + 1, nx));
+    #pragma omp parallel if(K > 4096)
+    {
+      int tid = 0;
+      #ifdef _OPENMP
+      tid = omp_get_thread_num();
+      #endif
+      #pragma omp for schedule(static)
+      for (int k = 0; k < K; ++k) {
+        thread_accum[tid].noalias() += weights(k) * trajectories[k];
+      }
+    }
+    for (int t = 0; t < n_threads; ++t) {
+      weighted_traj += thread_accum[t];
+    }
   }
 
   // Best sample

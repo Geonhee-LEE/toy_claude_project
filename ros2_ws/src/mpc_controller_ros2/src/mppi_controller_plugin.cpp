@@ -6,6 +6,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <chrono>
 #include <set>
+#include <omp.h>
 
 PLUGINLIB_EXPORT_CLASS(mpc_controller_ros2::MPPIControllerPlugin, nav2_core::Controller)
 
@@ -84,7 +85,8 @@ void MPPIControllerPlugin::configure(
   // CostmapObstacleCost 추가 (비소유 포인터 저장)
   if (params_.use_costmap_cost) {
     auto costmap_cost = std::make_unique<CostmapObstacleCost>(
-      params_.obstacle_weight, params_.costmap_lethal_cost, params_.costmap_critical_cost);
+      params_.obstacle_weight, params_.costmap_lethal_cost, params_.costmap_critical_cost,
+      params_.costmap_eval_stride);
     costmap_obstacle_cost_ptr_ = costmap_cost.get();
     cost_function_->addCost(std::move(costmap_cost));
     RCLCPP_INFO(node_->get_logger(), "CostmapObstacleCost enabled (lethal=%.0f, critical=%.0f)",
@@ -167,6 +169,18 @@ void MPPIControllerPlugin::configure(
   param_callback_handle_ = node_->add_on_set_parameters_callback(
     std::bind(&MPPIControllerPlugin::onSetParametersCallback, this, std::placeholders::_1)
   );
+
+  // 성능 최적화: 사전 할당 버퍼 + OpenMP 설정
+  allocateBuffers();
+  Eigen::setNbThreads(1);  // Eigen 내부 멀티스레딩 비활성화 (OpenMP와 충돌 방지)
+
+  if (params_.num_threads > 0) {
+    omp_set_num_threads(params_.num_threads);
+    RCLCPP_INFO(node_->get_logger(), "OpenMP threads set to %d", params_.num_threads);
+  } else {
+    RCLCPP_INFO(node_->get_logger(), "OpenMP threads: auto (%d available)",
+      omp_get_max_threads());
+  }
 
   RCLCPP_INFO(
     node_->get_logger(), "MPPI controller configured successfully (weight strategy: %s)",
@@ -445,6 +459,29 @@ void MPPIControllerPlugin::setSpeedLimit(const double& speed_limit, const bool& 
   );
 }
 
+void MPPIControllerPlugin::allocateBuffers()
+{
+  int K = params_.K;
+  int N = params_.N;
+  int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
+  int nx = dynamics_ ? dynamics_->model().stateDim() : 3;
+
+  noise_buffer_.resize(K);
+  perturbed_buffer_.resize(K);
+  trajectory_buffer_.resize(K);
+
+  for (int k = 0; k < K; ++k) {
+    noise_buffer_[k] = Eigen::MatrixXd::Zero(N, nu);
+    perturbed_buffer_[k] = Eigen::MatrixXd::Zero(N, nu);
+    trajectory_buffer_[k] = Eigen::MatrixXd::Zero(N + 1, nx);
+  }
+
+  RCLCPP_INFO(node_->get_logger(),
+    "Pre-allocated buffers: K=%d, N=%d, nu=%d, nx=%d (%.1f KB)",
+    K, N, nu, nx,
+    static_cast<double>(K * (N * nu + N * nu + (N + 1) * nx) * sizeof(double)) / 1024.0);
+}
+
 std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   const Eigen::VectorXd& current_state,
   const Eigen::MatrixXd& reference_trajectory
@@ -461,53 +498,54 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   }
   control_sequence_.row(N - 1) = control_sequence_.row(N - 2);
 
-  // 2. Sample noise
-  auto noise_samples = sampler_->sample(K, N, nu);
+  // 2. Sample noise (in-place — 힙 할당 0)
+  sampler_->sampleInPlace(noise_buffer_, K, N, nu);
 
   // 2.5. Goal 근처 noise 스케일링 (sampler 재생성 없이 정밀 제어)
   if (goal_dist_ < params_.goal_slowdown_dist && params_.goal_slowdown_dist > 1e-6) {
     double ratio = goal_dist_ / params_.goal_slowdown_dist;
     double noise_scale = std::clamp(std::sqrt(ratio), 0.2, 1.0);
     for (int k = 0; k < K; ++k) {
-      noise_samples[k] *= noise_scale;
+      noise_buffer_[k] *= noise_scale;
     }
   }
 
-  // 3. Add noise to control sequence and clip (Exploitation/Exploration 분할)
-  std::vector<Eigen::MatrixXd> perturbed_controls;
-  perturbed_controls.reserve(K);
+  // 3. Add noise to control sequence and clip (Exploitation/Exploration 분할, in-place)
+  if (static_cast<int>(perturbed_buffer_.size()) != K) {
+    perturbed_buffer_.resize(K, Eigen::MatrixXd::Zero(N, nu));
+  }
   int K_exploit = static_cast<int>((1.0 - params_.exploration_ratio) * K);
 
   for (int k = 0; k < K; ++k) {
-    Eigen::MatrixXd perturbed;
     if (k < K_exploit) {
       // Exploitation: 이전 최적 시퀀스 + 노이즈
-      perturbed = control_sequence_ + noise_samples[k];
+      perturbed_buffer_[k].noalias() = control_sequence_ + noise_buffer_[k];
     } else {
       // Exploration: 순수 노이즈 (warm-start 없이)
-      perturbed = noise_samples[k];
+      perturbed_buffer_[k] = noise_buffer_[k];
     }
-    perturbed = dynamics_->clipControls(perturbed);
-    perturbed_controls.push_back(perturbed);
+    perturbed_buffer_[k] = dynamics_->clipControls(perturbed_buffer_[k]);
   }
 
-  // 4. Batch rollout
-  auto trajectories = dynamics_->rolloutBatch(
+  // 4. Batch rollout (in-place — 버퍼 재사용)
+  dynamics_->rolloutBatchInPlace(
     current_state,
-    perturbed_controls,
-    params_.dt
+    perturbed_buffer_,
+    params_.dt,
+    trajectory_buffer_
   );
+  const auto& trajectories = trajectory_buffer_;
 
   // 5. Compute costs (디버그 모드: 비용 분해 포함)
   Eigen::VectorXd costs;
   CostBreakdown cost_breakdown;
   if (params_.debug_collision_viz) {
     cost_breakdown = cost_function_->computeDetailed(
-      trajectories, perturbed_controls, reference_trajectory);
+      trajectories, perturbed_buffer_, reference_trajectory);
     costs = cost_breakdown.total_costs;
   } else {
     costs = cost_function_->compute(
-      trajectories, perturbed_controls, reference_trajectory);
+      trajectories, perturbed_buffer_, reference_trajectory);
   }
 
   // 5.5. Information-Theoretic 정규화 (KL-divergence 기반)
@@ -517,7 +555,7 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
       double it_cost = 0.0;
       for (int t = 0; t < N; ++t) {
         Eigen::VectorXd u_prev_t = control_sequence_.row(t).transpose();
-        Eigen::VectorXd u_k_t = perturbed_controls[k].row(t).transpose();
+        Eigen::VectorXd u_k_t = perturbed_buffer_[k].row(t).transpose();
         it_cost += u_prev_t.dot(sigma_inv.cwiseProduct(u_k_t));
       }
       costs(k) += params_.lambda * (1.0 - params_.it_alpha) * it_cost;
@@ -539,12 +577,32 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   }
   Eigen::VectorXd weights = weight_computation_->compute(costs, current_lambda);
 
-  // 7. Update control sequence with weighted average of noise
-  Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
-  for (int k = 0; k < K; ++k) {
-    weighted_noise += weights(k) * noise_samples[k];
+  // 7. Update control sequence with weighted average of noise (OpenMP 스레드 로컬)
+  {
+    int n_threads = 1;
+    #ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+    #endif
+    if (K <= 4096) { n_threads = 1; }
+
+    std::vector<Eigen::MatrixXd> thread_noise_accum(n_threads, Eigen::MatrixXd::Zero(N, nu));
+    #pragma omp parallel if(K > 4096)
+    {
+      int tid = 0;
+      #ifdef _OPENMP
+      tid = omp_get_thread_num();
+      #endif
+      #pragma omp for schedule(static)
+      for (int k = 0; k < K; ++k) {
+        thread_noise_accum[tid].noalias() += weights(k) * noise_buffer_[k];
+      }
+    }
+    Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
+    for (int t = 0; t < n_threads; ++t) {
+      weighted_noise += thread_noise_accum[t];
+    }
+    control_sequence_ += weighted_noise;
   }
-  control_sequence_ += weighted_noise;
 
   // Clip updated control sequence
   control_sequence_ = dynamics_->clipControls(control_sequence_);
@@ -552,10 +610,30 @@ std::pair<Eigen::VectorXd, MPPIInfo> MPPIControllerPlugin::computeControl(
   // 8. Extract optimal control (first timestep)
   Eigen::VectorXd u_opt = control_sequence_.row(0).transpose();
 
-  // Compute weighted average trajectory
+  // Compute weighted average trajectory (OpenMP 스레드 로컬)
   Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
-  for (int k = 0; k < K; ++k) {
-    weighted_traj += weights(k) * trajectories[k];
+  {
+    int n_threads = 1;
+    #ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+    #endif
+    if (K <= 4096) { n_threads = 1; }
+
+    std::vector<Eigen::MatrixXd> thread_traj_accum(n_threads, Eigen::MatrixXd::Zero(N + 1, nx));
+    #pragma omp parallel if(K > 4096)
+    {
+      int tid = 0;
+      #ifdef _OPENMP
+      tid = omp_get_thread_num();
+      #endif
+      #pragma omp for schedule(static)
+      for (int k = 0; k < K; ++k) {
+        thread_traj_accum[tid].noalias() += weights(k) * trajectories[k];
+      }
+    }
+    for (int t = 0; t < n_threads; ++t) {
+      weighted_traj += thread_traj_accum[t];
+    }
   }
 
   // Find best sample
@@ -1200,6 +1278,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "cbf_cost_weight", params_.cbf_cost_weight);
   node_->declare_parameter(prefix + "cbf_use_safety_filter", params_.cbf_use_safety_filter);
 
+  // 성능 최적화 파라미터
+  node_->declare_parameter(prefix + "num_threads", params_.num_threads);
+  node_->declare_parameter(prefix + "costmap_eval_stride", params_.costmap_eval_stride);
+
   // Collision Debug Visualization
   node_->declare_parameter(prefix + "debug_collision_viz", params_.debug_collision_viz);
   node_->declare_parameter(prefix + "debug_cost_breakdown", params_.debug_cost_breakdown);
@@ -1409,6 +1491,10 @@ void MPPIControllerPlugin::loadParameters()
   params_.cbf_activation_distance = node_->get_parameter(prefix + "cbf_activation_distance").as_double();
   params_.cbf_cost_weight = node_->get_parameter(prefix + "cbf_cost_weight").as_double();
   params_.cbf_use_safety_filter = node_->get_parameter(prefix + "cbf_use_safety_filter").as_bool();
+
+  // 성능 최적화 파라미터
+  params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();
+  params_.costmap_eval_stride = node_->get_parameter(prefix + "costmap_eval_stride").as_int();
 
   // Collision Debug Visualization
   params_.debug_collision_viz = node_->get_parameter(prefix + "debug_collision_viz").as_bool();

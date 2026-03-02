@@ -24,6 +24,15 @@ public:
    * @return 노이즈 샘플 벡터 [K개, 각각 N x nu 행렬]
    */
   virtual std::vector<Eigen::MatrixXd> sample(int K, int N, int nu) = 0;
+
+  /**
+   * @brief 사전 할당된 버퍼에 노이즈 샘플 생성 (힙 할당 최소화)
+   * @param out 출력 버퍼 [K개, 각각 N x nu]. 크기가 맞지 않으면 자동 리사이즈.
+   * @param K 샘플 수
+   * @param N 예측 horizon
+   * @param nu 제어 입력 차원
+   */
+  virtual void sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu);
 };
 
 /**
@@ -35,6 +44,7 @@ public:
   explicit GaussianSampler(const Eigen::VectorXd& sigma, unsigned int seed = 42);
 
   std::vector<Eigen::MatrixXd> sample(int K, int N, int nu) override;
+  void sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu) override;
 
   void resetSeed(unsigned int seed);
 
@@ -65,6 +75,7 @@ public:
   );
 
   std::vector<Eigen::MatrixXd> sample(int K, int N, int nu) override;
+  void sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu) override;
 
   void resetSeed(unsigned int seed);
 

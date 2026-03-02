@@ -32,24 +32,63 @@ std::vector<Eigen::MatrixXd> MotionModel::rolloutBatch(
   int N = control_sequences[0].rows();
   int nx = stateDim();
 
-  std::vector<Eigen::MatrixXd> trajectories;
-  trajectories.reserve(K);
-
+  std::vector<Eigen::MatrixXd> trajectories(K);
   for (int k = 0; k < K; ++k) {
-    Eigen::MatrixXd traj(N + 1, nx);
-    traj.row(0) = x0.transpose();
-
-    for (int t = 0; t < N; ++t) {
-      Eigen::MatrixXd state = traj.row(t);
-      Eigen::MatrixXd control = control_sequences[k].row(t);
-      Eigen::MatrixXd next_state = propagateBatch(state, control, dt);
-      traj.row(t + 1) = next_state;
-    }
-
-    trajectories.push_back(traj);
+    trajectories[k].resize(N + 1, nx);
   }
 
+  rolloutBatchInPlace(x0, control_sequences, dt, trajectories);
   return trajectories;
+}
+
+void MotionModel::rolloutBatchInPlace(
+  const Eigen::VectorXd& x0,
+  const std::vector<Eigen::MatrixXd>& control_sequences,
+  double dt,
+  std::vector<Eigen::MatrixXd>& trajectories_out) const
+{
+  int K = control_sequences.size();
+  if (K == 0) return;
+
+  int N = control_sequences[0].rows();
+  int nx = stateDim();
+  int nu = controlDim();
+
+  // Ensure output buffer size
+  if (static_cast<int>(trajectories_out.size()) != K) {
+    trajectories_out.resize(K);
+  }
+  for (int k = 0; k < K; ++k) {
+    if (trajectories_out[k].rows() != N + 1 || trajectories_out[k].cols() != nx) {
+      trajectories_out[k].resize(N + 1, nx);
+    }
+    trajectories_out[k].row(0) = x0.transpose();
+  }
+
+  // True Batch: K개 샘플을 동시에 propagate (시간 스텝별)
+  // 배치 행렬 (K x nx)로 모아서 propagateBatch 1번 호출
+  Eigen::MatrixXd batch_states(K, nx);
+  Eigen::MatrixXd batch_controls(K, nu);
+
+  // 초기 상태 설정
+  for (int k = 0; k < K; ++k) {
+    batch_states.row(k) = x0.transpose();
+  }
+
+  for (int t = 0; t < N; ++t) {
+    // Gather: 각 샘플의 t번째 제어 입력
+    for (int k = 0; k < K; ++k) {
+      batch_controls.row(k) = control_sequences[k].row(t);
+    }
+
+    // 배치 propagate (K개 동시 RK4 적분)
+    batch_states = propagateBatch(batch_states, batch_controls, dt);
+
+    // Scatter: 결과를 각 궤적에 기록
+    for (int k = 0; k < K; ++k) {
+      trajectories_out[k].row(t + 1) = batch_states.row(k);
+    }
+  }
 }
 
 }  // namespace mpc_controller_ros2

@@ -5,6 +5,19 @@ namespace mpc_controller_ros2
 {
 
 // ============================================================================
+// BaseSampler — default sampleInPlace (fallback: sample + copy)
+// ============================================================================
+
+void BaseSampler::sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu)
+{
+  auto result = sample(K, N, nu);
+  out.resize(K);
+  for (int k = 0; k < K; ++k) {
+    out[k] = std::move(result[k]);
+  }
+}
+
+// ============================================================================
 // GaussianSampler
 // ============================================================================
 
@@ -29,6 +42,24 @@ std::vector<Eigen::MatrixXd> GaussianSampler::sample(int K, int N, int nu)
   }
 
   return samples;
+}
+
+void GaussianSampler::sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu)
+{
+  // Resize only if needed
+  if (static_cast<int>(out.size()) != K) {
+    out.resize(K);
+  }
+  for (int k = 0; k < K; ++k) {
+    if (out[k].rows() != N || out[k].cols() != nu) {
+      out[k].resize(N, nu);
+    }
+    for (int t = 0; t < N; ++t) {
+      for (int i = 0; i < nu; ++i) {
+        out[k](t, i) = dist_(rng_) * sigma_(i);
+      }
+    }
+  }
 }
 
 void GaussianSampler::resetSeed(unsigned int seed)
@@ -82,6 +113,36 @@ std::vector<Eigen::MatrixXd> ColoredNoiseSampler::sample(int K, int N, int nu)
   }
 
   return samples;
+}
+
+void ColoredNoiseSampler::sampleInPlace(std::vector<Eigen::MatrixXd>& out, int K, int N, int nu)
+{
+  double dt = 1.0;
+  double decay = std::exp(-beta_ * dt);
+  Eigen::VectorXd diffusion = sigma_ * std::sqrt(1.0 - decay * decay);
+
+  // Resize only if needed
+  if (static_cast<int>(out.size()) != K) {
+    out.resize(K);
+  }
+  for (int k = 0; k < K; ++k) {
+    if (out[k].rows() != N || out[k].cols() != nu) {
+      out[k].resize(N, nu);
+    }
+
+    // Initial sample from stationary distribution
+    for (int i = 0; i < nu; ++i) {
+      out[k](0, i) = dist_(rng_) * sigma_(i);
+    }
+
+    // OU process evolution
+    for (int t = 1; t < N; ++t) {
+      for (int i = 0; i < nu; ++i) {
+        double w = dist_(rng_);
+        out[k](t, i) = decay * out[k](t - 1, i) + diffusion(i) * w;
+      }
+    }
+  }
 }
 
 void ColoredNoiseSampler::resetSeed(unsigned int seed)

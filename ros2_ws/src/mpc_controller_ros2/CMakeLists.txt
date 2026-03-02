@@ -10,6 +10,15 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# -march=native for Release/RelWithDebInfo (SIMD 자동 벡터화)
+if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
+  if(COMPILER_SUPPORTS_MARCH_NATIVE)
+    add_compile_options(-march=native)
+  endif()
+endif()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
@@ -293,6 +302,20 @@ if(BUILD_TESTING)
     target_link_libraries(test_dial_mppi mppi_controller_plugin)
   endif()
 endif()
+
+# Benchmark executable (항상 빌드 가능 — ROS2 의존성 없음)
+add_executable(bench_mppi_pipeline test/benchmark/bench_mppi_pipeline.cpp)
+target_link_libraries(bench_mppi_pipeline mppi_controller_plugin)
+target_include_directories(bench_mppi_pipeline PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${EIGEN3_INCLUDE_DIRS}
+)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(bench_mppi_pipeline OpenMP::OpenMP_CXX)
+endif()
+# Release 최적화 강제 적용
+target_compile_options(bench_mppi_pipeline PRIVATE -O2)
+install(TARGETS bench_mppi_pipeline RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 # Export dependencies
 ament_export_include_directories(include)

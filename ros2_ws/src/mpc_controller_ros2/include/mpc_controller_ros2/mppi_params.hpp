@@ -182,6 +182,12 @@ struct MPPIParams
   bool cbf_use_safety_filter{true};        // Post-hoc QP safety filter 사용
 
   // ============================================================================
+  // 성능 최적화 파라미터
+  // ============================================================================
+  int num_threads{0};              // OpenMP 스레드 수 (0=auto, OMP_NUM_THREADS 사용)
+  int costmap_eval_stride{1};      // Costmap 평가 간격 (1=전부, 2=매 2번째, 3=매 3번째)
+
+  // ============================================================================
   // Motion Model 선택
   // ============================================================================
   std::string motion_model{"diff_drive"};  // "diff_drive", "swerve", "non_coaxial_swerve"
