@@ -61,6 +61,7 @@ nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bo
     controller:=non_coaxial  → Non-Coaxial Swerve MPPI (motion_model=non_coaxial_swerve)
     controller:=non_coaxial_60deg → Non-Coaxial Swerve MPPI 60° (max_steering_angle=π/3)
     controller:=nav2         → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
+    controller:=stress_test  → Stress Test MPPI (고속 v_max=1.5 + CBF + 동적 장애물)
 """
 
 import os
@@ -124,6 +125,8 @@ def launch_setup(context, *args, **kwargs):
                         'DIAL-MPPI Swerve (motion_model=swerve)'),
         'dial_non_coaxial': ('nav2_params_dial_non_coaxial_mppi.yaml',
                              'DIAL-MPPI Non-Coaxial (motion_model=non_coaxial_swerve)'),
+        'stress_test': ('nav2_params_stress_test.yaml',
+                        'Stress Test MPPI (고속 + CBF + 동적 장애물)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -148,7 +151,11 @@ def launch_setup(context, *args, **kwargs):
         spawn_z = '0.20'
     else:
         urdf_file = os.path.join(pkg_dir, 'urdf', 'differential_robot_ros2_control.urdf')
-        controller_config = os.path.join(pkg_dir, 'config', 'diff_drive_controller.yaml')
+        # stress_test: 고속 diff_drive 설정 (v_max=1.5 대응)
+        if controller_type == 'stress_test':
+            controller_config = os.path.join(pkg_dir, 'config', 'diff_drive_controller_high_speed.yaml')
+        else:
+            controller_config = os.path.join(pkg_dir, 'config', 'diff_drive_controller.yaml')
         nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params.yaml')
         robot_name = 'differential_robot'
         spawn_z = '0.15'
@@ -224,6 +231,14 @@ def launch_setup(context, *args, **kwargs):
         bridge_args.append(
             f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
         )
+
+    # 동적 장애물 cmd_vel bridge (stress_test 월드 사용 시)
+    if controller_type == 'stress_test':
+        for obs_name in ['dynamic_obstacle_slow', 'dynamic_obstacle_medium',
+                         'dynamic_obstacle_fast', 'dynamic_obstacle_cross']:
+            bridge_args.append(
+                f'/model/{obs_name}/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist'
+            )
 
     bridge = Node(
         package='ros_gz_bridge',
@@ -604,7 +619,7 @@ def generate_launch_description():
             default_value='custom',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',
