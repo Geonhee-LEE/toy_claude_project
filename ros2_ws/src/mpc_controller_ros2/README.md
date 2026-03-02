@@ -34,7 +34,7 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
 - **C++ Eigen 기반** 고성능 연산 (K=1024, N=30에서 3.9ms — 258Hz)
-- **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve (MotionModel 추상화)
+- **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve / Ackermann (MotionModel 추상화)
 - **11종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI
 - **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
 - **M2 고도화** Colored Noise, Adaptive Temperature, Tube-MPPI
@@ -44,20 +44,20 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 ### MotionModel 추상화
 
 ```
-┌─ MotionModel 인터페이스 ─────────────────────────────────┐
-│                                                           │
-│  MotionModelFactory::create(model_name, params)           │
-│                                                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐  │
-│  │  DiffDrive   │  │   Swerve     │  │ NonCoaxial     │  │
-│  │  nx=3, nu=2  │  │  nx=3, nu=3  │  │ Swerve         │  │
-│  │  (v, omega)  │  │ (vx,vy,omega)│  │ nx=4, nu=3     │  │
-│  │              │  │  홀로노믹     │  │ (v,omega,d_dot)│  │
-│  └──────────────┘  └──────────────┘  └────────────────┘  │
-│                                                           │
-│  YAML: motion_model: "diff_drive" | "swerve"             │
-│                       | "non_coaxial_swerve"              │
-└───────────────────────────────────────────────────────────┘
+┌─ MotionModel 인터페이스 ───────────────────────────────────────────────────┐
+│                                                                             │
+│  MotionModelFactory::create(model_name, params)                             │
+│                                                                             │
+│  ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ ┌────────────────┐  │
+│  │  DiffDrive   │ │   Swerve     │ │ NonCoaxial     │ │  Ackermann     │  │
+│  │  nx=3, nu=2  │ │  nx=3, nu=3  │ │ Swerve         │ │  nx=4, nu=2    │  │
+│  │  (v, omega)  │ │ (vx,vy,omega)│ │ nx=4, nu=3     │ │  (v, d_dot)    │  │
+│  │              │ │  홀로노믹     │ │ (v,omega,d_dot)│ │  θ̇=v·tan(δ)/L │  │
+│  └──────────────┘ └──────────────┘ └────────────────┘ └────────────────┘  │
+│                                                                             │
+│  YAML: motion_model: "diff_drive" | "swerve"                               │
+│                     | "non_coaxial_swerve" | "ackermann"                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 플러그인 계층 구조
@@ -91,6 +91,9 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swe
 
 # Non-Coaxial Swerve
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=non_coaxial
+
+# Ackermann (Bicycle model, 전륜 조향)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ackermann
 ```
 
 **시작 순서 (OnProcessExit 이벤트 체인):**
@@ -281,7 +284,8 @@ ros2 lifecycle get /amcl
 │  │ MotionModel    │  │ CostFunctions  │  │   Sampler     │  │
 │  │ (DiffDrive/    │  │ (6종 비용 +    │  │ (Gaussian /   │  │
 │  │  Swerve/       │  │  CostmapObs)   │  │  ColoredNoise)│  │
-│  │  NonCoaxial)   │  │                │  │               │  │
+│  │  NonCoaxial/   │  │                │  │               │  │
+│  │  Ackermann)    │  │                │  │               │  │
 │  └───────┬────────┘  └───────┬────────┘  └───────┬───────┘  │
 │          │                   │                   │          │
 │  ┌───────┴────────┐         │    ┌───────────────┴───────┐  │
@@ -476,6 +480,7 @@ colcon test-result --verbose
 ├──────────┼───────────┼───────────┼──────────┼───────────────────┤
 │ Swerve   │ 1.95ms    │ 512 Hz    │ (K=512)  │                   │
 │ NonCoax  │ 2.80ms    │ 357 Hz    │ (K=512)  │                   │
+│ Ackermann│ ~1.9ms    │ ~530 Hz   │ (K=512)  │ nu=2, nx=4        │
 └──────────┴───────────┴───────────┴──────────┴───────────────────┘
 
 최적화 기법:
@@ -551,12 +556,12 @@ colcon test-result --verbose
 | test_weight_computation | 30 | ✅ |
 | test_svmpc | 13 | ✅ |
 | test_m35_plugins | 18 | ✅ |
-| test_motion_model | 48 | ✅ |
-| test_cbf | 20 | ✅ |
+| test_motion_model | 68 | ✅ |
+| test_cbf | 22 | ✅ |
 | test_trajectory_stability | 25 | ✅ |
 | test_biased_mppi | 15 | ✅ |
 | test_dial_mppi | 17 | ✅ |
-| **총계** | **271** | **PASSED** |
+| **총계** | **291** | **PASSED** |
 
 ---
 
@@ -574,7 +579,7 @@ colcon test-result --verbose
 | M5a | C++ SOTA 변형 (Log/Tsallis/CVaR/SVMPC) | ✅ |
 | M5b | C++ M2 고도화 (Colored/Adaptive/Tube) | ✅ |
 | M3.5 C++ | Smooth/Spline/SVG-MPPI C++ 포팅 | ✅ |
-| Phase A | MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial) | ✅ |
+| Phase A | MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial/Ackermann) | ✅ |
 | Phase B | Goal 수렴 + 장애물 회피 튜닝 | ✅ |
 | Phase C | Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정 | ✅ |
 | MPPI-CBF | Control Barrier Function 통합 (Python + C++) | ✅ |
@@ -583,6 +588,7 @@ colcon test-result --verbose
 | DIAL-MPPI | Diffusion annealing C++ nav2 플러그인 (PR #125) | ✅ |
 | DIAL-MPPI 최적화 | AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝 (PR #129) | ✅ |
 | 성능 최적화 | True Batch + InPlace + SIMD + 대각 Q (PR #132) | ✅ |
+| Ackermann | Bicycle model MotionModel C++ (PR #138) | ✅ |
 
 ---
 

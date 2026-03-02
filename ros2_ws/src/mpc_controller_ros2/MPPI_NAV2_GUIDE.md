@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │          Gazebo Harmonic Simulation             │
-│  - DiffDrive / Swerve / NonCoaxial robot       │
+│  - DiffDrive / Swerve / NonCoaxial / Ackermann │
 │  - World with obstacles                         │
 │  - Lidar sensor                                 │
 └─────────────────────────────────────────────────┘
@@ -30,7 +30,7 @@
                     ↓ (cmd_vel)
 ┌─────────────────────────────────────────────────┐
 │         Robot Hardware (Gazebo)                 │
-│  - DiffDrive / Swerve controller               │
+│  - DiffDrive / Swerve / Ackermann controller    │
 │  - Odometry feedback                            │
 └─────────────────────────────────────────────────┘
 ```
@@ -71,6 +71,9 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=bia
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial              # DiffDrive
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial_swerve       # Swerve
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial_non_coaxial  # NonCoaxial
+
+# Ackermann (Bicycle model, 전륜 조향, θ̇=v·tan(δ)/L)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ackermann
 ```
 
 실행되는 노드들:
@@ -205,6 +208,7 @@ ros2 param list /controller_server | grep FollowPath
 | DiffDrive | `config/nav2_params.yaml` | (내장) |
 | Swerve | `config/nav2_params_swerve_mppi.yaml` | `config/nav2_params_swerve.yaml` |
 | NonCoaxial | `config/nav2_params_non_coaxial_mppi.yaml` | `config/nav2_params_swerve.yaml` |
+| Ackermann | `config/nav2_params_ackermann_mppi.yaml` | `config/nav2_params.yaml` |
 
 ### Swerve MPPI 튜닝 가이드
 
@@ -373,6 +377,7 @@ ros2 param get /controller_server FollowPath.visualize_samples
 │ DiffDr.  │ 1024 │ 3.88ms   │ 258 Hz    │ 26×                   │
 │ Swerve   │ 512  │ 1.95ms   │ 512 Hz    │ 51×                   │
 │ NonCoax  │ 512  │ 2.80ms   │ 357 Hz    │ 36×                   │
+│ Ackerman │ 512  │ ~1.9ms   │ ~530 Hz   │ ~53×                  │
 └──────────┴──────┴──────────┴───────────┴────────────────────────┘
 
 DIAL-MPPI (N_diffuse=5): Pipeline × 5 ≈ 9.4ms (K=512) → 10Hz 충족
@@ -397,14 +402,15 @@ colcon build --packages-select mpc_controller_ros2 --cmake-args -DCMAKE_BUILD_TY
 - nav2 파라미터 (NonCoaxial): `config/nav2_params_swerve.yaml` + `config/nav2_params_non_coaxial_mppi.yaml`
 - 플러그인 XML: `plugins/mppi_controller_plugin.xml`
 - Goal 전송 스크립트: `scripts/send_nav_goal.py`
-- 로봇 URDF: `urdf/swerve_robot.urdf`
+- 로봇 URDF: `urdf/swerve_robot.urdf`, `urdf/ackermann_robot.urdf`
+- Ackermann 설정: `config/ackermann_steering_controller.yaml`
 - World 파일: `worlds/mppi_test_simple.world`
 
 ## 다음 단계
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
 2. ✅ 고급 MPPI 11종 플러그인 (M3/M3.5/M5 + Biased + DIAL)
-3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial)
+3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial/Ackermann)
 4. ✅ Goal 수렴 + 장애물 회피 튜닝
 5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
 6. ✅ C++ MPPI 성능 최적화 (PR #132) — K=512에서 1.88ms (532Hz)

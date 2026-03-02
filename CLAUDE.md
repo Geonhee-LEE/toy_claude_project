@@ -10,7 +10,7 @@
 
 ## 현재 우선순위
 ```
-P0: Ackermann MotionModel C++
+P0: Ackermann MotionModel C++ ✅ (PR #138, Bicycle model θ̇=v·tan(δ)/L)
 P0: C++ MPPI 성능 프로파일링 + 최적화 ✅ (PR #132, K=512→1.88ms/532Hz)
 P1: 최신 MPPI 변형 C++ (Covariance Steering, π-MPPI, BR-MPPI)
 P1: 안전성 고도화 C++ (CLF-CBF-QP, 다중 CBF)
@@ -22,7 +22,8 @@ mpc_controller/
 ├── models/                  # 로봇 동역학 모델
 │   ├── differential_drive   # 차동 구동 (v, omega)
 │   ├── swerve_drive         # 스워브 구동
-│   └── non_coaxial_swerve   # 비동축 스워브 구동
+│   ├── non_coaxial_swerve   # 비동축 스워브 구동
+│   └── ackermann            # Ackermann 전륜 조향 (v, δ̇)
 ├── controllers/
 │   ├── mpc/                 # CasADi/IPOPT 기반 MPC
 │   ├── mppi/                # MPPI 샘플링 기반 제어
@@ -68,6 +69,7 @@ mpc_controller/
 - DIAL-MPPI C++ nav2 플러그인 (Diffusion Annealing, ICRA 2025): 완료 (PR #125)
 - DIAL-MPPI 실시간 성능 최적화 (AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝): 완료 (PR #129)
 - C++ MPPI 성능 최적화 (True Batch + InPlace + 대각 Q + SIMD): 완료 (PR #132)
+- Ackermann MotionModel C++ (Bicycle model, nx=4 nu=2, wheelbase): 완료 (PR #138)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
