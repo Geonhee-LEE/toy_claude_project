@@ -63,6 +63,7 @@ nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bo
     controller:=ackermann    → Ackermann MPPI (motion_model=ackermann, bicycle model)
     controller:=nav2         → nav2 기본 MPPI (nav2_mppi_controller::MPPIController)
     controller:=stress_test  → Stress Test MPPI (고속 v_max=1.5 + CBF + 동적 장애물)
+    controller:=shield       → Shield-MPPI (per-step CBF + BR-MPPI + Conformal)
 """
 
 import os
@@ -130,6 +131,8 @@ def launch_setup(context, *args, **kwargs):
                         'Stress Test MPPI (고속 + CBF + 동적 장애물)'),
         'ackermann': ('nav2_params_ackermann_mppi.yaml',
                       'Ackermann MPPI (motion_model=ackermann, bicycle model)'),
+        'shield': ('nav2_params_shield_mppi.yaml',
+                   'Shield-MPPI (per-step CBF + BR-MPPI + Conformal)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -707,7 +710,7 @@ def generate_launch_description():
             default_value='custom',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "stress_test", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',
