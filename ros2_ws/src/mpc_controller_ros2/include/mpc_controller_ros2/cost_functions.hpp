@@ -227,6 +227,31 @@ private:
 };
 
 /**
+ * @brief BR-MPPI 장벽 접근율 비용 (Barrier Rate Cost)
+ *
+ * cost = weight * Σ_t Σ_i max(0, -dh_i/dt)²
+ * dh/dt = (h(x_{t+1}) - h(x_t)) / dt
+ *
+ * 음의 dh/dt = 장벽에 접근 중 → 페널티
+ * 양의 dh/dt = 장벽에서 이탈 중 → 비용 없음
+ */
+class BarrierRateCost : public MPPICostFunction
+{
+public:
+  BarrierRateCost(BarrierFunctionSet* barrier_set, double weight, double dt);
+  std::string name() const override { return "barrier_rate"; }
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  BarrierFunctionSet* barrier_set_;
+  double weight_;
+  double dt_;
+};
+
+/**
  * @brief 경로 방향 속도 추적 비용
  *
  * cost = weight × Σ_t (v_along(t) - reference_velocity)²

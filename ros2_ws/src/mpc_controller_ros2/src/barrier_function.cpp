@@ -59,9 +59,25 @@ BarrierFunctionSet::BarrierFunctionSet(double robot_radius,
 
 void BarrierFunctionSet::setObstacles(const std::vector<Eigen::Vector3d>& obstacles)
 {
+  obstacles_raw_ = obstacles;  // 원본 저장 (마진 변경 시 재구축용)
   barriers_.clear();
   barriers_.reserve(obstacles.size());
   for (const auto& obs : obstacles) {
+    barriers_.emplace_back(obs(0), obs(1), obs(2), robot_radius_, safety_margin_);
+  }
+}
+
+void BarrierFunctionSet::updateSafetyMargin(double new_margin)
+{
+  if (std::abs(new_margin - safety_margin_) < 1e-12) {
+    return;  // 변경 없음
+  }
+  safety_margin_ = new_margin;
+
+  // 저장된 장애물 원본으로 재구축
+  barriers_.clear();
+  barriers_.reserve(obstacles_raw_.size());
+  for (const auto& obs : obstacles_raw_) {
     barriers_.emplace_back(obs(0), obs(1), obs(2), robot_radius_, safety_margin_);
   }
 }

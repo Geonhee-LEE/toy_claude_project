@@ -24,6 +24,7 @@
 #include "mpc_controller_ros2/cbf_safety_filter.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
 #include "mpc_controller_ros2/savitzky_golay_filter.hpp"
+#include "mpc_controller_ros2/conformal_predictor.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -173,10 +174,14 @@ private:
   // CostmapObstacleCost 비소유 포인터 (cost_function_ 내부 소유)
   CostmapObstacleCost* costmap_obstacle_cost_ptr_{nullptr};
 
-  // CBF (Control Barrier Function) 컴포넌트
-  BarrierFunctionSet barrier_set_;
+  // CBF (Control Barrier Function) 컴포넌트 (private 내부)
   std::unique_ptr<CBFSafetyFilter> cbf_safety_filter_;
   void updateCBFObstacles();
+
+  // Conformal Predictor (동적 안전 마진)
+  std::unique_ptr<ConformalPredictor> conformal_predictor_;
+  Eigen::VectorXd prev_predicted_state_;
+  bool prev_predicted_state_valid_{false};
 
   // Tube 시각화
   void publishTubeVisualization(
@@ -198,6 +203,9 @@ private:
     const Eigen::VectorXd& current_state);
 
 protected:
+  // CBF barrier set (서브클래스 접근용)
+  BarrierFunctionSet barrier_set_;
+
   // 성능 최적화: 사전 할당 버퍼 (힙 할당 0/call)
   std::vector<Eigen::MatrixXd> noise_buffer_;       // K개, (N, nu)
   std::vector<Eigen::MatrixXd> perturbed_buffer_;   // K개, (N, nu)

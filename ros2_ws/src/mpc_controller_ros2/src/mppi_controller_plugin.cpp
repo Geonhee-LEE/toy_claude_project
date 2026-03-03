@@ -2,6 +2,7 @@
 #include "mpc_controller_ros2/motion_model_factory.hpp"
 #include "mpc_controller_ros2/ackermann_model.hpp"
 #include "mpc_controller_ros2/utils.hpp"
+#include "mpc_controller_ros2/conformal_predictor.hpp"
 #include <pluginlib/class_list_macros.hpp>
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -37,8 +38,16 @@ void MPPIControllerPlugin::configure(
   declareParameters();
   loadParameters();
 
-  // Initialize components (MotionModel 기반)
-  auto model = MotionModelFactory::create(params_.motion_model, params_);
+  // Initialize components (MotionModel 기반 + Residual Dynamics 래핑)
+  std::unique_ptr<MotionModel> model;
+  if (params_.residual_enabled && !params_.residual_weights_path.empty()) {
+    model = MotionModelFactory::createWithResidual(params_.motion_model, params_);
+    RCLCPP_INFO(node_->get_logger(),
+      "Residual Dynamics enabled (alpha=%.2f, path=%s)",
+      params_.residual_alpha, params_.residual_weights_path.c_str());
+  } else {
+    model = MotionModelFactory::create(params_.motion_model, params_);
+  }
   dynamics_ = std::make_unique<BatchDynamicsWrapper>(params_, std::move(model));
 
   // 샘플러 선택: Colored Noise vs Gaussian
@@ -137,10 +146,34 @@ void MPPIControllerPlugin::configure(
         &barrier_set_, params_.cbf_gamma, params_.dt, u_min, u_max);
     }
 
+    // BarrierRateCost (BR-MPPI) 추가 — weight > 0 시 활성화
+    if (params_.barrier_rate_cost_weight > 0.0) {
+      cost_function_->addCost(std::make_unique<BarrierRateCost>(
+        &barrier_set_, params_.barrier_rate_cost_weight, params_.dt));
+      RCLCPP_INFO(node_->get_logger(),
+        "BarrierRateCost enabled (weight=%.1f)", params_.barrier_rate_cost_weight);
+    }
+
     RCLCPP_INFO(node_->get_logger(),
       "CBF enabled (gamma=%.2f, safety_margin=%.2f, cost_weight=%.0f, safety_filter=%s)",
       params_.cbf_gamma, params_.cbf_safety_margin, params_.cbf_cost_weight,
       params_.cbf_use_safety_filter ? "ON" : "OFF");
+
+    // Conformal Predictor 초기화 (동적 안전 마진)
+    if (params_.conformal_enabled) {
+      ConformalPredictor::Params cp_params;
+      cp_params.coverage_probability = params_.conformal_coverage;
+      cp_params.window_size = params_.conformal_window_size;
+      cp_params.initial_margin = params_.conformal_initial_margin;
+      cp_params.min_margin = params_.conformal_min_margin;
+      cp_params.max_margin = params_.conformal_max_margin;
+      cp_params.decay_rate = params_.conformal_decay_rate;
+      conformal_predictor_ = std::make_unique<ConformalPredictor>(cp_params);
+      prev_predicted_state_valid_ = false;
+      RCLCPP_INFO(node_->get_logger(),
+        "ConformalPredictor enabled (coverage=%.2f, window=%d)",
+        params_.conformal_coverage, params_.conformal_window_size);
+    }
   }
 
   // VelocityTrackingCost 등록 (경로 방향 속도 추적)
@@ -287,6 +320,26 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
     // 4.5. CBF 장애물 갱신 (costmap lethal 셀 → point obstacles)
     if (params_.cbf_enabled) {
       updateCBFObstacles();
+    }
+
+    // 4.6. Conformal Predictor 업데이트 (동적 안전 마진)
+    if (conformal_predictor_ && params_.cbf_enabled) {
+      if (prev_predicted_state_valid_) {
+        double error = (current_state.head(2) - prev_predicted_state_.head(2)).norm();
+        conformal_predictor_->update(error);
+        double margin = params_.cbf_safety_margin + conformal_predictor_->getMargin();
+        barrier_set_.updateSafetyMargin(margin);
+      }
+      // 다음 스텝 예측 저장 (1-step ahead)
+      if (control_sequence_.rows() > 0) {
+        Eigen::MatrixXd s(1, current_state.size());
+        s.row(0) = current_state.transpose();
+        Eigen::MatrixXd c(1, control_sequence_.cols());
+        c.row(0) = control_sequence_.row(0);
+        prev_predicted_state_ = dynamics_->model().propagateBatch(
+          s, c, params_.dt).row(0).transpose();
+        prev_predicted_state_valid_ = true;
+      }
     }
 
     // 5. Compute optimal control (measure computation time)
@@ -446,6 +499,8 @@ void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
   prev_cmd_valid_ = false;
   last_delta_ = 0.0;  // 경로 리셋 시 steering angle 초기화
   if (sg_filter_) { sg_filter_->reset(); }  // SG 필터 이력 초기화
+  if (conformal_predictor_) { conformal_predictor_->reset(); }  // Conformal 이력 초기화
+  prev_predicted_state_valid_ = false;
 
   // Reset control sequence for new plan (warm start from zero)
   int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
@@ -1293,6 +1348,27 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "cbf_cost_weight", params_.cbf_cost_weight);
   node_->declare_parameter(prefix + "cbf_use_safety_filter", params_.cbf_use_safety_filter);
 
+  // Residual Dynamics
+  node_->declare_parameter(prefix + "residual_enabled", params_.residual_enabled);
+  node_->declare_parameter(prefix + "residual_weights_path", params_.residual_weights_path);
+  node_->declare_parameter(prefix + "residual_alpha", params_.residual_alpha);
+
+  // Safety Enhancement: BR-MPPI
+  node_->declare_parameter(prefix + "barrier_rate_cost_weight", params_.barrier_rate_cost_weight);
+
+  // Safety Enhancement: Conformal Predictor
+  node_->declare_parameter(prefix + "conformal_enabled", params_.conformal_enabled);
+  node_->declare_parameter(prefix + "conformal_coverage", params_.conformal_coverage);
+  node_->declare_parameter(prefix + "conformal_window_size", params_.conformal_window_size);
+  node_->declare_parameter(prefix + "conformal_initial_margin", params_.conformal_initial_margin);
+  node_->declare_parameter(prefix + "conformal_min_margin", params_.conformal_min_margin);
+  node_->declare_parameter(prefix + "conformal_max_margin", params_.conformal_max_margin);
+  node_->declare_parameter(prefix + "conformal_decay_rate", params_.conformal_decay_rate);
+
+  // Safety Enhancement: Shield-MPPI
+  node_->declare_parameter(prefix + "shield_cbf_stride", params_.shield_cbf_stride);
+  node_->declare_parameter(prefix + "shield_max_iterations", params_.shield_max_iterations);
+
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
   node_->declare_parameter(prefix + "costmap_eval_stride", params_.costmap_eval_stride);
@@ -1507,6 +1583,27 @@ void MPPIControllerPlugin::loadParameters()
   params_.cbf_activation_distance = node_->get_parameter(prefix + "cbf_activation_distance").as_double();
   params_.cbf_cost_weight = node_->get_parameter(prefix + "cbf_cost_weight").as_double();
   params_.cbf_use_safety_filter = node_->get_parameter(prefix + "cbf_use_safety_filter").as_bool();
+
+  // Residual Dynamics
+  params_.residual_enabled = node_->get_parameter(prefix + "residual_enabled").as_bool();
+  params_.residual_weights_path = node_->get_parameter(prefix + "residual_weights_path").as_string();
+  params_.residual_alpha = node_->get_parameter(prefix + "residual_alpha").as_double();
+
+  // Safety Enhancement: BR-MPPI
+  params_.barrier_rate_cost_weight = node_->get_parameter(prefix + "barrier_rate_cost_weight").as_double();
+
+  // Safety Enhancement: Conformal Predictor
+  params_.conformal_enabled = node_->get_parameter(prefix + "conformal_enabled").as_bool();
+  params_.conformal_coverage = node_->get_parameter(prefix + "conformal_coverage").as_double();
+  params_.conformal_window_size = node_->get_parameter(prefix + "conformal_window_size").as_int();
+  params_.conformal_initial_margin = node_->get_parameter(prefix + "conformal_initial_margin").as_double();
+  params_.conformal_min_margin = node_->get_parameter(prefix + "conformal_min_margin").as_double();
+  params_.conformal_max_margin = node_->get_parameter(prefix + "conformal_max_margin").as_double();
+  params_.conformal_decay_rate = node_->get_parameter(prefix + "conformal_decay_rate").as_double();
+
+  // Safety Enhancement: Shield-MPPI
+  params_.shield_cbf_stride = node_->get_parameter(prefix + "shield_cbf_stride").as_int();
+  params_.shield_max_iterations = node_->get_parameter(prefix + "shield_max_iterations").as_int();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();

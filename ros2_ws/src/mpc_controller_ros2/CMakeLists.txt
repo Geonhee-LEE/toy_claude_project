@@ -101,6 +101,10 @@ add_library(mppi_controller_plugin SHARED
   src/barrier_function.cpp
   src/cbf_safety_filter.cpp
   src/savitzky_golay_filter.cpp
+  src/eigen_mlp.cpp
+  src/residual_dynamics_model.cpp
+  src/conformal_predictor.cpp
+  src/shield_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -169,6 +173,7 @@ install(PROGRAMS
   scripts/swerve_e2e_test.py
   scripts/stress_test.py
   scripts/nav2_lifecycle_bringup.py
+  scripts/train_residual_model.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -302,6 +307,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_dial_mppi test/unit/test_dial_mppi.cpp)
   if(TARGET test_dial_mppi)
     target_link_libraries(test_dial_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_residual_dynamics test/unit/test_residual_dynamics.cpp)
+  if(TARGET test_residual_dynamics)
+    target_link_libraries(test_residual_dynamics mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_safety_enhancement test/unit/test_safety_enhancement.cpp)
+  if(TARGET test_safety_enhancement)
+    target_link_libraries(test_safety_enhancement mppi_controller_plugin)
   endif()
 endif()
 

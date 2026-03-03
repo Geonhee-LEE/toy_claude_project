@@ -69,4 +69,11 @@
       N_diffuse inner iterations with Shield-DIAL (CBF) and Adaptive-DIAL extensions.
     </description>
   </class>
+  <class type="mpc_controller_ros2::ShieldMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Shield-MPPI controller plugin for nav2.
+      Per-step CBF projection ensuring all sample trajectories satisfy h(x) &gt; 0.
+      Configurable stride and iteration count for performance tuning.
+    </description>
+  </class>
 </library>

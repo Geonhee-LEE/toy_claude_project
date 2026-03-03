@@ -3,6 +3,8 @@
 #include "mpc_controller_ros2/swerve_drive_model.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
 #include "mpc_controller_ros2/ackermann_model.hpp"
+#include "mpc_controller_ros2/residual_dynamics_model.hpp"
+#include "mpc_controller_ros2/eigen_mlp.hpp"
 #include <stdexcept>
 
 namespace mpc_controller_ros2
@@ -40,6 +42,26 @@ std::unique_ptr<MotionModel> MotionModelFactory::create(
       "Unknown motion model type: '" + model_type + "'. "
       "Supported: 'diff_drive', 'swerve', 'non_coaxial_swerve', 'ackermann'");
   }
+}
+
+std::unique_ptr<MotionModel> MotionModelFactory::createWithResidual(
+  const std::string& model_type,
+  const MPPIParams& params)
+{
+  // 공칭 모델 생성
+  auto nominal = create(model_type, params);
+
+  // MLP 로드
+  if (params.residual_weights_path.empty()) {
+    throw std::runtime_error(
+      "MotionModelFactory::createWithResidual: residual_weights_path is empty");
+  }
+
+  auto mlp = EigenMLP::loadFromFile(params.residual_weights_path);
+
+  // ResidualDynamicsModel로 래핑
+  return std::make_unique<ResidualDynamicsModel>(
+    std::move(nominal), std::move(mlp), params.residual_alpha);
 }
 
 }  // namespace mpc_controller_ros2
