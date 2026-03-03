@@ -102,11 +102,13 @@ controller_server:
       cbf_enabled: true
       cbf_gamma: 0.3
       cbf_safety_margin: 0.4
-      cbf_activation_distance: 2.5
+      cbf_activation_distance: 1.5
 
-      # ---- Shield-MPPI 전용 (per-step CBF 투영) ----
-      shield_cbf_stride: 2
-      shield_max_iterations: 10
+      # ---- Shield-MPPI 전용 (최적 시퀀스 CBF 투영) ----
+      #   stride=1 → 즉시 다음 스텝만 투영 (receding horizon)
+      #   max_iterations=3 → 빠른 수렴
+      shield_cbf_stride: 1
+      shield_max_iterations: 3
 
       # ---- BR-MPPI (Barrier Rate Cost) ----
       barrier_rate_cost_weight: 20.0

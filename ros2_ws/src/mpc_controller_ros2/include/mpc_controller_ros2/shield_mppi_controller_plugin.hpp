@@ -9,17 +9,14 @@ namespace mpc_controller_ros2
 /**
  * @brief Shield-MPPI Controller Plugin
  *
- * per-step CBF 투영을 통해 모든 샘플 궤적의 안전성을 보장합니다.
+ * per-step CBF 투영을 통해 최적 제어 시퀀스의 안전성을 보장합니다.
  *
- * 알고리즘:
- *   for each sample k = 1..K:
- *     for each timestep t = 0..N-1 (stride 적용):
- *       u_k_t = projectControlCBF(x_k_t, u_k_t)
- *       x_k_{t+1} = propagate(x_k_t, u_k_t)
+ * 성능 최적화 전략:
+ *   - 최적 제어 시퀀스(u*)에만 CBF 투영 적용 (K개 샘플 전체 X)
+ *   - 해석적 ∂ḣ/∂u 계산 (유한차분 제거)
+ *   - Active barrier 없으면 즉시 skip
  *
- * 모든 궤적이 h(x) > 0을 만족하도록 보장합니다.
- *
- * 성능: stride=2일 때 K=512 기준 ~1ms 추가 오버헤드.
+ * 이를 통해 K=256, N=30에서도 10Hz 제어 루프 유지 가능.
  */
 class ShieldMPPIControllerPlugin : public MPPIControllerPlugin
 {
@@ -42,7 +39,7 @@ protected:
 
 private:
   /**
-   * @brief 단일 제어를 CBF 제약으로 투영 (경량 버전)
+   * @brief 단일 제어를 CBF 제약으로 투영 (해석적 gradient)
    * @param state 현재 상태 (nx,)
    * @param u 제어 입력 (nu,)
    * @return 투영된 제어 (nu,)

@@ -40,72 +40,59 @@ std::pair<Eigen::VectorXd, MPPIInfo> ShieldMPPIControllerPlugin::computeControl(
     return {u_opt, info};
   }
 
-  int K = params_.K;
+  // 3. 현재 상태에서 active barrier가 없으면 skip (장애물 없는 구간 → 0 오버헤드)
+  auto active_barriers = barrier_set_.getActiveBarriers(current_state);
+  if (active_barriers.empty()) {
+    return {u_opt, info};
+  }
+
   int N = params_.N;
   int nx = dynamics_->model().stateDim();
   int nu = dynamics_->model().controlDim();
 
-  // 3. per-step CBF 투영: 각 샘플의 각 타임스텝에서 투영
-  //    trajectory_buffer_와 perturbed_buffer_를 수정하여 안전 궤적 생성
-  for (int k = 0; k < K; ++k) {
-    Eigen::VectorXd state_k = current_state;
+  // 4. 최적 제어 시퀀스의 처음 shield_steps 스텝만 CBF 투영
+  //    shield_cbf_stride 값을 "투영할 스텝 수"로 재해석:
+  //    stride=3 → 첫 3 스텝만 투영 (나머지는 MPPI 비용이 처리)
+  int shield_steps = std::min(shield_cbf_stride_, N);
+  Eigen::VectorXd state_k = current_state;
+  bool any_projected = false;
 
-    for (int t = 0; t < N; ++t) {
-      if (t % shield_cbf_stride_ == 0) {
-        // CBF 투영
-        Eigen::VectorXd u_t = perturbed_buffer_[k].row(t).transpose();
-        Eigen::VectorXd u_safe = projectControlCBF(state_k, u_t);
-        perturbed_buffer_[k].row(t) = u_safe.transpose();
-      }
+  for (int t = 0; t < shield_steps; ++t) {
+    Eigen::VectorXd u_t = control_sequence_.row(t).transpose();
+    Eigen::VectorXd u_safe = projectControlCBF(state_k, u_t);
 
-      // 상태 전파
-      Eigen::MatrixXd state_mat(1, nx);
-      state_mat.row(0) = state_k.transpose();
-      Eigen::MatrixXd ctrl_mat(1, nu);
-      ctrl_mat.row(0) = perturbed_buffer_[k].row(t);
-      Eigen::MatrixXd next_state = dynamics_->model().propagateBatch(
-        state_mat, ctrl_mat, params_.dt);
-      state_k = next_state.row(0).transpose();
-
-      // 궤적 버퍼 갱신
-      trajectory_buffer_[k].row(t + 1) = state_k.transpose();
+    if ((u_safe - u_t).squaredNorm() > 1e-12) {
+      control_sequence_.row(t) = u_safe.transpose();
+      any_projected = true;
     }
+
+    // 상태 전파
+    Eigen::MatrixXd state_mat(1, nx);
+    state_mat.row(0) = state_k.transpose();
+    Eigen::MatrixXd ctrl_mat(1, nu);
+    ctrl_mat.row(0) = control_sequence_.row(t);
+    state_k = dynamics_->model().propagateBatch(
+      state_mat, ctrl_mat, params_.dt).row(0).transpose();
   }
 
-  // 4. 투영된 궤적으로 비용 재계산
-  Eigen::VectorXd costs = cost_function_->compute(
-    trajectory_buffer_, perturbed_buffer_, reference_trajectory);
-
-  // 5. 가중치 재계산
-  double current_lambda = params_.lambda;
-  Eigen::VectorXd weights = weight_computation_->compute(costs, current_lambda);
-
-  // 6. 제어 시퀀스 업데이트
-  Eigen::MatrixXd weighted_noise = Eigen::MatrixXd::Zero(N, nu);
-  for (int k = 0; k < K; ++k) {
-    weighted_noise.noalias() += weights(k) * noise_buffer_[k];
-  }
-  control_sequence_ += weighted_noise;
-  control_sequence_ = dynamics_->clipControls(control_sequence_);
-
-  // 7. 최적 제어 추출
+  // 5. 투영된 최적 제어 추출
   u_opt = control_sequence_.row(0).transpose();
 
-  // 8. info 갱신
-  info.sample_trajectories = trajectory_buffer_;
-  info.costs = costs;
-  info.sample_weights = weights;
-
-  int best_idx;
-  costs.minCoeff(&best_idx);
-  info.best_trajectory = trajectory_buffer_[best_idx];
-
-  // 가중 평균 궤적
-  Eigen::MatrixXd weighted_traj = Eigen::MatrixXd::Zero(N + 1, nx);
-  for (int k = 0; k < K; ++k) {
-    weighted_traj.noalias() += weights(k) * trajectory_buffer_[k];
+  // 6. info에 투영된 궤적 반영 (시각화용)
+  if (any_projected) {
+    Eigen::MatrixXd projected_traj(N + 1, nx);
+    projected_traj.row(0) = current_state.transpose();
+    Eigen::VectorXd s = current_state;
+    for (int t = 0; t < N; ++t) {
+      Eigen::MatrixXd sm(1, nx);
+      sm.row(0) = s.transpose();
+      Eigen::MatrixXd cm(1, nu);
+      cm.row(0) = control_sequence_.row(t);
+      s = dynamics_->model().propagateBatch(sm, cm, params_.dt).row(0).transpose();
+      projected_traj.row(t + 1) = s.transpose();
+    }
+    info.weighted_avg_trajectory = projected_traj;
   }
-  info.weighted_avg_trajectory = weighted_traj;
 
   return {u_opt, info};
 }
@@ -120,7 +107,6 @@ Eigen::VectorXd ShieldMPPIControllerPlugin::projectControlCBF(
   }
 
   Eigen::VectorXd u_proj = u;
-  int nu = u.size();
 
   for (int iter = 0; iter < shield_max_iterations_; ++iter) {
     bool all_satisfied = true;
@@ -129,7 +115,7 @@ Eigen::VectorXd ShieldMPPIControllerPlugin::projectControlCBF(
       double h = barrier->evaluate(state);
       Eigen::VectorXd grad_h = barrier->gradient(state);
 
-      // ḣ = ∇h · f(x,u) = ∇h · x_dot
+      // ḣ = ∇h · f(x,u)
       Eigen::VectorXd x_dot = computeXdot(state, u_proj);
       double h_dot = grad_h.dot(x_dot);
 
@@ -139,25 +125,31 @@ Eigen::VectorXd ShieldMPPIControllerPlugin::projectControlCBF(
       if (constraint < 0.0) {
         all_satisfied = false;
 
-        // Projected gradient: ∂ḣ/∂u 계산 (유한 차분)
-        Eigen::VectorXd dhdot_du(nu);
-        constexpr double eps = 1e-4;
-        for (int j = 0; j < nu; ++j) {
-          Eigen::VectorXd u_plus = u_proj;
-          u_plus(j) += eps;
-          Eigen::VectorXd x_dot_plus = computeXdot(state, u_plus);
-          double h_dot_plus = grad_h.dot(x_dot_plus);
-          dhdot_du(j) = (h_dot_plus - h_dot) / eps;
+        // 해석적 ∂ḣ/∂u (diff_drive: f = [v·cosθ, v·sinθ, ω])
+        int nu_dim = u.size();
+        Eigen::VectorXd dhdot_du(nu_dim);
+
+        if (nu_dim == 2 && state.size() >= 3) {
+          double theta = state(2);
+          dhdot_du(0) = grad_h(0) * std::cos(theta) + grad_h(1) * std::sin(theta);
+          dhdot_du(1) = (grad_h.size() > 2) ? grad_h(2) : 0.0;
+        } else {
+          // fallback: 유한 차분
+          constexpr double eps = 1e-4;
+          for (int j = 0; j < nu_dim; ++j) {
+            Eigen::VectorXd u_plus = u_proj;
+            u_plus(j) += eps;
+            double h_dot_plus = grad_h.dot(computeXdot(state, u_plus));
+            dhdot_du(j) = (h_dot_plus - h_dot) / eps;
+          }
         }
 
-        // 경사 방향으로 제어 보정
         double dhdot_du_norm_sq = dhdot_du.squaredNorm();
         if (dhdot_du_norm_sq > 1e-12) {
           double step = shield_step_size_ * (-constraint) / dhdot_du_norm_sq;
           u_proj += step * dhdot_du;
         }
 
-        // 제어 한계 클리핑
         u_proj = dynamics_->clipControls(
           Eigen::MatrixXd(u_proj.transpose())).row(0).transpose();
       }
