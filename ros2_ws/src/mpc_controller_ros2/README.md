@@ -35,7 +35,9 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
 - **C++ Eigen 기반** 고성능 연산 (K=1024, N=30에서 3.9ms — 258Hz)
 - **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve / Ackermann (MotionModel 추상화)
-- **11종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI
+- **12종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI, Shield-MPPI
+- **안전성 고도화** CBF Safety Filter, BR-MPPI, Conformal Predictor(ACP), Shield-MPPI(per-step CBF)
+- **학습 기반 동역학** Residual Dynamics (EigenMLP + Decorator pattern, Sim-to-Real)
 - **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
 - **M2 고도화** Colored Noise, Adaptive Temperature, Tube-MPPI
 - **동적 파라미터** 런타임 중 튜닝 가능 (min_lookahead, costmap costs 포함)
@@ -55,8 +57,15 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 │  │              │ │  홀로노믹     │ │ (v,omega,d_dot)│ │  θ̇=v·tan(δ)/L │  │
 │  └──────────────┘ └──────────────┘ └────────────────┘ └────────────────┘  │
 │                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  ResidualDynamicsModel (Decorator)                                   │  │
+│  │  f_total = f_nominal + α·MLP([x, u])     ← Sim-to-Real 보정        │  │
+│  │  EigenMLP: 바이너리 로드, Z-score 정규화, ReLU, BLAS 배치           │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
 │  YAML: motion_model: "diff_drive" | "swerve"                               │
 │                     | "non_coaxial_swerve" | "ackermann"                    │
+│        residual_enabled: true  +  residual_weights_path: "model.bin"        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,6 +80,7 @@ MPPIControllerPlugin (base, Vanilla MPPI)
 ├── SplineMPPIControllerPlugin  (B-spline basis)
 ├── BiasedMPPIControllerPlugin  (Ancillary biased sampling, RA-L 2024)
 ├── DialMPPIControllerPlugin    (Diffusion annealing, ICRA 2025)
+├── ShieldMPPIControllerPlugin  (per-step CBF 투영, 10Hz@K=256)
 └── SVMPCControllerPlugin       (SVGD)
     └── SVGMPPIControllerPlugin (Guide + follower)
 ```
@@ -283,9 +293,10 @@ ros2 lifecycle get /amcl
 │  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
 │  │ MotionModel    │  │ CostFunctions  │  │   Sampler     │  │
 │  │ (DiffDrive/    │  │ (6종 비용 +    │  │ (Gaussian /   │  │
-│  │  Swerve/       │  │  CostmapObs)   │  │  ColoredNoise)│  │
-│  │  NonCoaxial/   │  │                │  │               │  │
-│  │  Ackermann)    │  │                │  │               │  │
+│  │  Swerve/       │  │  CostmapObs +  │  │  ColoredNoise)│  │
+│  │  NonCoaxial/   │  │  BarrierRate)  │  │               │  │
+│  │  Ackermann/    │  │                │  │               │  │
+│  │  +Residual)    │  │                │  │               │  │
 │  └───────┬────────┘  └───────┬────────┘  └───────┬───────┘  │
 │          │                   │                   │          │
 │  ┌───────┴────────┐         │    ┌───────────────┴───────┐  │
@@ -303,6 +314,13 @@ ros2 lifecycle get /amcl
 │                 │ 4. 비용 계산          │                   │
 │                 │ 5. 가중치 (Strategy)  │                   │
 │                 │ 6. 가중 평균 업데이트 │                   │
+│                 └──────────┬───────────┘                   │
+│                            ▼                                │
+│                 ┌──────────────────────┐                   │
+│                 │   Safety Layer       │                   │
+│                 │ • CBF Safety Filter  │                   │
+│                 │ • Shield-MPPI (투영) │                   │
+│                 │ • Conformal ACP      │                   │
 │                 └──────────────────────┘                   │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
@@ -561,7 +579,9 @@ colcon test-result --verbose
 | test_trajectory_stability | 25 | ✅ |
 | test_biased_mppi | 15 | ✅ |
 | test_dial_mppi | 17 | ✅ |
-| **총계** | **291** | **PASSED** |
+| test_residual_dynamics | 15 | ✅ |
+| test_safety_enhancement | 24 | ✅ |
+| **총계** | **330** | **PASSED** |
 
 ---
 
@@ -589,6 +609,8 @@ colcon test-result --verbose
 | DIAL-MPPI 최적화 | AnnealingResult 재사용 + Swerve/NonCoaxial 튜닝 (PR #129) | ✅ |
 | 성능 최적화 | True Batch + InPlace + SIMD + 대각 Q (PR #132) | ✅ |
 | Ackermann | Bicycle model MotionModel C++ (PR #138) | ✅ |
+| Residual Dynamics | EigenMLP + ResidualDynamicsModel Decorator (PR #140) | ✅ |
+| Safety Enhancement | BR-MPPI + ConformalPredictor + Shield-MPPI (PR #140) | ✅ |
 
 ---
 

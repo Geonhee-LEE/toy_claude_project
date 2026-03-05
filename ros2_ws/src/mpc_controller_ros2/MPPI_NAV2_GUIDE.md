@@ -18,7 +18,7 @@
 │         ↓ (goal)          ↓ (path)              │
 │  ┌──────────────┐   ┌──────────────────────┐   │
 │  │planner_server│   │ controller_server    │   │
-│  │  (NavFn)     │   │ (MPPI 11종 플러그인) │   │
+│  │  (NavFn)     │   │ (MPPI 12종 플러그인) │   │
 │  └──────────────┘   └──────────────────────┘   │
 │         ↓                    ↓                   │
 │  ┌─────────────────────────────────────────┐   │
@@ -74,6 +74,9 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dia
 
 # Ackermann (Bicycle model, 전륜 조향, θ̇=v·tan(δ)/L)
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ackermann
+
+# Shield-MPPI (per-step CBF + BR-MPPI + Conformal Predictor)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=shield
 ```
 
 실행되는 노드들:
@@ -209,6 +212,7 @@ ros2 param list /controller_server | grep FollowPath
 | Swerve | `config/nav2_params_swerve_mppi.yaml` | `config/nav2_params_swerve.yaml` |
 | NonCoaxial | `config/nav2_params_non_coaxial_mppi.yaml` | `config/nav2_params_swerve.yaml` |
 | Ackermann | `config/nav2_params_ackermann_mppi.yaml` | `config/nav2_params.yaml` |
+| Shield-MPPI | `config/nav2_params_shield_mppi.yaml` | (내장, CBF+BR-MPPI+Conformal) |
 
 ### Swerve MPPI 튜닝 가이드
 
@@ -381,6 +385,7 @@ ros2 param get /controller_server FollowPath.visualize_samples
 └──────────┴──────┴──────────┴───────────┴────────────────────────┘
 
 DIAL-MPPI (N_diffuse=5): Pipeline × 5 ≈ 9.4ms (K=512) → 10Hz 충족
+Shield-MPPI (stride=1, 3iter): +~0.1ms (barrier 없을 때 0) → 10Hz 충족
 ```
 
 벤치마크 실행:
@@ -404,15 +409,18 @@ colcon build --packages-select mpc_controller_ros2 --cmake-args -DCMAKE_BUILD_TY
 - Goal 전송 스크립트: `scripts/send_nav_goal.py`
 - 로봇 URDF: `urdf/swerve_robot.urdf`, `urdf/ackermann_robot.urdf`
 - Ackermann 설정: `config/ackermann_steering_controller.yaml`
+- nav2 파라미터 (Shield-MPPI): `config/nav2_params_shield_mppi.yaml`
+- Residual MLP 학습: `scripts/train_residual_model.py`
 - World 파일: `worlds/mppi_test_simple.world`
 
 ## 다음 단계
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
-2. ✅ 고급 MPPI 11종 플러그인 (M3/M3.5/M5 + Biased + DIAL)
+2. ✅ 고급 MPPI 12종 플러그인 (M3/M3.5/M5 + Biased + DIAL + Shield)
 3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial/Ackermann)
 4. ✅ Goal 수렴 + 장애물 회피 튜닝
 5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
 6. ✅ C++ MPPI 성능 최적화 (PR #132) — K=512에서 1.88ms (532Hz)
-7. 🔄 실제 로봇 테스트
-8. 📊 GPU 가속 (M2 잔여)
+7. ✅ Residual Dynamics + Safety Enhancement (PR #140) — EigenMLP + Shield-MPPI + BR-MPPI + ACP
+8. 🔄 실제 로봇 테스트
+9. 📊 GPU 가속 (M2 잔여)
