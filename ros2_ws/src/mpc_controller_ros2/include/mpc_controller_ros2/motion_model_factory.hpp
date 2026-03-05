@@ -18,6 +18,7 @@ namespace mpc_controller_ros2
  *   "diff_drive"            → DiffDriveModel (nx=3, nu=2)
  *   "swerve"                → SwerveDriveModel (nx=3, nu=3)
  *   "non_coaxial_swerve"    → NonCoaxialSwerveModel (nx=4, nu=3)
+ *   "ackermann"             → AckermannModel (nx=4, nu=2)
  */
 class MotionModelFactory
 {
@@ -30,6 +31,17 @@ public:
    * @throws std::invalid_argument 지원하지 않는 model_type인 경우
    */
   static std::unique_ptr<MotionModel> create(
+    const std::string& model_type,
+    const MPPIParams& params);
+
+  /**
+   * @brief Residual Dynamics 래핑된 MotionModel 생성
+   * @param model_type 공칭 모델 타입 문자열
+   * @param params MPPI 파라미터
+   * @return ResidualDynamicsModel (내부에 공칭 모델 + MLP)
+   * @throws std::runtime_error MLP 로드 실패 시
+   */
+  static std::unique_ptr<MotionModel> createWithResidual(
     const std::string& model_type,
     const MPPIParams& params);
 };

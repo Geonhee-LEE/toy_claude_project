@@ -537,6 +537,57 @@ Eigen::VectorXd CBFCost::compute(
 }
 
 // ============================================================================
+// BarrierRateCost (BR-MPPI)
+// ============================================================================
+
+BarrierRateCost::BarrierRateCost(BarrierFunctionSet* barrier_set, double weight, double dt)
+: barrier_set_(barrier_set), weight_(weight), dt_(dt)
+{
+}
+
+Eigen::VectorXd BarrierRateCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)controls;
+  (void)reference;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (!barrier_set_ || barrier_set_->empty()) {
+    return costs;
+  }
+
+  for (const auto& barrier : barrier_set_->barriers()) {
+    #pragma omp parallel for schedule(static) if(K > 4096)
+    for (int k = 0; k < K; ++k) {
+      const auto& traj = trajectories[k];
+      int N = traj.rows() - 1;
+
+      // 배치 평가: h(x_0), ..., h(x_N)
+      Eigen::VectorXd h_all = barrier.evaluateBatch(traj);
+
+      double cost_k = 0.0;
+      for (int t = 0; t < N; ++t) {
+        // dh/dt ≈ (h(x_{t+1}) - h(x_t)) / dt
+        double dh_dt = (h_all(t + 1) - h_all(t)) / dt_;
+
+        // 음의 dh/dt (접근 중) → 페널티
+        if (dh_dt < 0.0) {
+          cost_k += weight_ * dh_dt * dh_dt;
+        }
+      }
+      costs(k) += cost_k;
+    }
+  }
+
+  return costs;
+}
+
+// ============================================================================
 // VelocityTrackingCost
 // ============================================================================
 

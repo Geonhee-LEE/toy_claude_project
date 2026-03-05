@@ -65,6 +65,17 @@ public:
   /** @brief 모든 barrier의 h(x) 값 반환 */
   Eigen::VectorXd evaluateAll(const Eigen::VectorXd& state) const;
 
+  /**
+   * @brief 안전 마진 동적 갱신 (Conformal Predictor 통합)
+   *
+   * 저장된 장애물 목록을 새로운 마진으로 재구축합니다.
+   * @param new_margin 새로운 안전 마진 (m)
+   */
+  void updateSafetyMargin(double new_margin);
+
+  /** @brief 현재 안전 마진 반환 */
+  double safetyMargin() const { return safety_margin_; }
+
   /** @brief 장애물 수 */
   size_t size() const { return barriers_.size(); }
 
@@ -78,6 +89,9 @@ private:
   double safety_margin_;
   double activation_distance_;
   std::vector<CircleBarrier> barriers_;
+
+  // 장애물 원본 저장 (마진 변경 시 재구축용)
+  std::vector<Eigen::Vector3d> obstacles_raw_;
 };
 
 }  // namespace mpc_controller_ros2

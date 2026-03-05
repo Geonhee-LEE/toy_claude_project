@@ -167,6 +167,33 @@ struct MPPIParams
   int dial_adaptive_max_iter{10};                // 최대 반복 횟수
 
   // ============================================================================
+  // Residual Dynamics (학습 기반 잔차 동역학)
+  // ============================================================================
+  bool residual_enabled{false};                    // 잔차 MLP 활성화
+  std::string residual_weights_path{""};           // MLP 바이너리 파일 경로
+  double residual_alpha{1.0};                      // 잔차 블렌딩 계수 (0=공칭, 1=전체)
+
+  // ============================================================================
+  // Safety Enhancement 파라미터
+  // ============================================================================
+
+  // BarrierRateCost (BR-MPPI)
+  double barrier_rate_cost_weight{0.0};  // 0=비활성화 (하위호환)
+
+  // ConformalPredictor (동적 안전 마진)
+  bool conformal_enabled{false};                   // ACP 마진 활성화
+  double conformal_coverage{0.95};                 // 목표 커버리지 확률
+  int conformal_window_size{100};                  // 슬라이딩 윈도우
+  double conformal_initial_margin{0.3};            // 초기 마진 (m)
+  double conformal_min_margin{0.05};               // 최소 마진 (m)
+  double conformal_max_margin{1.0};                // 최대 마진 (m)
+  double conformal_decay_rate{0.99};               // ACP 가중치 감쇄율
+
+  // Shield-MPPI (per-step CBF 투영)
+  int shield_cbf_stride{1};                        // CBF 투영 간격 (1=매 스텝, 2=매 2번째)
+  int shield_max_iterations{10};                   // 투영 최대 반복
+
+  // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
   // Non-Coaxial Swerve / Ackermann 공통 파라미터
