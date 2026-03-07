@@ -10,6 +10,14 @@ namespace mpc_controller_ros2
 {
 
 /**
+ * @brief 동역학 선형화 결과 (이산 시간 Jacobian)
+ */
+struct Linearization {
+  Eigen::MatrixXd A;  // (nx, nx) — df/dx
+  Eigen::MatrixXd B;  // (nx, nu) — df/du
+};
+
+/**
  * @brief MotionModel 추상 인터페이스
  *
  * DiffDrive / Swerve / NonCoaxialSwerve 등 다양한 로봇 동역학 모델을
@@ -95,6 +103,20 @@ public:
    * @return DiffDrive/Swerve={2}, NonCoaxial={2}
    */
   virtual std::vector<int> angleIndices() const = 0;
+
+  /**
+   * @brief 동역학 선형화 (이산 시간 Jacobian)
+   *
+   * x_{t+1} ≈ A_t · x_t + B_t · u_t 형태의 이산 Jacobian 반환.
+   * 기본 구현: 유한차분 (fallback), 서브클래스에서 해석적 override 가능.
+   *
+   * @param state (nx,), control (nu,), dt 시간 간격
+   * @return {A_t, B_t} — 이산 시간 Jacobian
+   */
+  virtual Linearization getLinearization(
+    const Eigen::VectorXd& state,
+    const Eigen::VectorXd& control,
+    double dt) const;
 
   /**
    * @brief RK4 적분 (단일 스텝, 배치) — 기본 구현 제공

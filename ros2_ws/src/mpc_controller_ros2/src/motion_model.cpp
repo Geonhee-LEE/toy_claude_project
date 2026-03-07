@@ -4,6 +4,42 @@
 namespace mpc_controller_ros2
 {
 
+Linearization MotionModel::getLinearization(
+  const Eigen::VectorXd& state,
+  const Eigen::VectorXd& control,
+  double dt) const
+{
+  int nx = stateDim();
+  int nu = controlDim();
+
+  // 유한차분 fallback
+  constexpr double eps = 1e-5;
+
+  // 단일 상태/제어 → 배치(1행)
+  Eigen::MatrixXd s0(1, nx), c0(1, nu);
+  s0.row(0) = state.transpose();
+  c0.row(0) = control.transpose();
+  Eigen::VectorXd f0 = propagateBatch(s0, c0, dt).row(0).transpose();
+
+  Eigen::MatrixXd A(nx, nx);
+  for (int j = 0; j < nx; ++j) {
+    Eigen::MatrixXd s_plus = s0;
+    s_plus(0, j) += eps;
+    Eigen::VectorXd f_plus = propagateBatch(s_plus, c0, dt).row(0).transpose();
+    A.col(j) = (f_plus - f0) / eps;
+  }
+
+  Eigen::MatrixXd B(nx, nu);
+  for (int j = 0; j < nu; ++j) {
+    Eigen::MatrixXd c_plus = c0;
+    c_plus(0, j) += eps;
+    Eigen::VectorXd f_plus = propagateBatch(s0, c_plus, dt).row(0).transpose();
+    B.col(j) = (f_plus - f0) / eps;
+  }
+
+  return {A, B};
+}
+
 Eigen::MatrixXd MotionModel::propagateBatch(
   const Eigen::MatrixXd& states,
   const Eigen::MatrixXd& controls,

@@ -1369,6 +1369,13 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "shield_cbf_stride", params_.shield_cbf_stride);
   node_->declare_parameter(prefix + "shield_max_iterations", params_.shield_max_iterations);
 
+  // iLQR Warm-Start
+  node_->declare_parameter(prefix + "ilqr_enabled", params_.ilqr_enabled);
+  node_->declare_parameter(prefix + "ilqr_max_iterations", params_.ilqr_max_iterations);
+  node_->declare_parameter(prefix + "ilqr_regularization", params_.ilqr_regularization);
+  node_->declare_parameter(prefix + "ilqr_line_search_steps", params_.ilqr_line_search_steps);
+  node_->declare_parameter(prefix + "ilqr_cost_tolerance", params_.ilqr_cost_tolerance);
+
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
   node_->declare_parameter(prefix + "costmap_eval_stride", params_.costmap_eval_stride);
@@ -1604,6 +1611,13 @@ void MPPIControllerPlugin::loadParameters()
   // Safety Enhancement: Shield-MPPI
   params_.shield_cbf_stride = node_->get_parameter(prefix + "shield_cbf_stride").as_int();
   params_.shield_max_iterations = node_->get_parameter(prefix + "shield_max_iterations").as_int();
+
+  // iLQR Warm-Start
+  params_.ilqr_enabled = node_->get_parameter(prefix + "ilqr_enabled").as_bool();
+  params_.ilqr_max_iterations = node_->get_parameter(prefix + "ilqr_max_iterations").as_int();
+  params_.ilqr_regularization = node_->get_parameter(prefix + "ilqr_regularization").as_double();
+  params_.ilqr_line_search_steps = node_->get_parameter(prefix + "ilqr_line_search_steps").as_int();
+  params_.ilqr_cost_tolerance = node_->get_parameter(prefix + "ilqr_cost_tolerance").as_double();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();
