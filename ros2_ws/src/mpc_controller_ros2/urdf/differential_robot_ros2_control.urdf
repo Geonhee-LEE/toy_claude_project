@@ -73,7 +73,7 @@
     <child link="left_wheel"/>
     <origin xyz="0 ${wheel_separation/2} 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <dynamics damping="0.1" friction="0.1"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
 
   <!-- Right wheel -->
@@ -107,11 +107,11 @@
     <child link="right_wheel"/>
     <origin xyz="0 ${-wheel_separation/2} 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <dynamics damping="0.1" friction="0.1"/>
+    <dynamics damping="0.5" friction="0.1"/>
   </joint>
 
-  <!-- Caster wheel (passive) -->
-  <link name="caster_wheel">
+  <!-- Rear caster wheel (passive) -->
+  <link name="rear_caster_wheel">
     <visual>
       <geometry>
         <sphere radius="0.05"/>
@@ -133,10 +133,39 @@
     </inertial>
   </link>
 
-  <joint name="caster_wheel_joint" type="fixed">
+  <joint name="rear_caster_wheel_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="caster_wheel"/>
+    <child link="rear_caster_wheel"/>
     <origin xyz="-0.25 0 -0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Front caster wheel (passive, anti-pitching) -->
+  <link name="front_caster_wheel">
+    <visual>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0"
+               iyy="0.001" iyz="0.0"
+               izz="0.001"/>
+    </inertial>
+  </link>
+
+  <joint name="front_caster_wheel_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="front_caster_wheel"/>
+    <origin xyz="0.25 0 -0.05" rpy="0 0 0"/>
   </joint>
 
   <!-- Lidar sensor -->
@@ -225,12 +254,12 @@
     </sensor>
   </gazebo>
 
-  <!-- Gazebo surface properties -->
+  <!-- Gazebo surface properties (kd=500: 피칭 진동 억제 강화) -->
   <gazebo reference="left_wheel">
     <mu1>1.2</mu1>
     <mu2>0.5</mu2>
     <kp>1000000</kp>
-    <kd>100</kd>
+    <kd>500</kd>
     <minDepth>0.001</minDepth>
   </gazebo>
 
@@ -238,15 +267,23 @@
     <mu1>1.2</mu1>
     <mu2>0.5</mu2>
     <kp>1000000</kp>
-    <kd>100</kd>
+    <kd>500</kd>
     <minDepth>0.001</minDepth>
   </gazebo>
 
-  <gazebo reference="caster_wheel">
+  <gazebo reference="rear_caster_wheel">
     <mu1>0.0</mu1>
     <mu2>0.0</mu2>
     <kp>1000000</kp>
-    <kd>100</kd>
+    <kd>500</kd>
+    <minDepth>0.001</minDepth>
+  </gazebo>
+
+  <gazebo reference="front_caster_wheel">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000</kp>
+    <kd>500</kd>
     <minDepth>0.001</minDepth>
   </gazebo>
 
