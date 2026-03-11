@@ -161,8 +161,6 @@ private:
   double speed_limit_{1.0};
   bool speed_limit_valid_{false};
   Eigen::VectorXd current_velocity_;  // (nu,) 현재 속도
-  double goal_dist_{std::numeric_limits<double>::max()};  // 목표까지 남은 거리
-
   // EMA 출력 필터 / SG 필터
   Eigen::VectorXd prev_cmd_;
   bool prev_cmd_valid_{false};
@@ -203,6 +201,9 @@ private:
     const Eigen::VectorXd& current_state);
 
 protected:
+  // Goal distance (서브클래스 접근용 — CS-MPPI 등)
+  double goal_dist_{std::numeric_limits<double>::max()};
+
   // CBF barrier set (서브클래스 접근용)
   BarrierFunctionSet barrier_set_;
 

@@ -107,6 +107,7 @@ add_library(mppi_controller_plugin SHARED
   src/shield_mppi_controller_plugin.cpp
   src/ilqr_solver.cpp
   src/ilqr_mppi_controller_plugin.cpp
+  src/cs_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -329,6 +330,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_ilqr_mppi test/unit/test_ilqr_mppi.cpp)
   if(TARGET test_ilqr_mppi)
     target_link_libraries(test_ilqr_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cs_mppi test/unit/test_cs_mppi.cpp)
+  if(TARGET test_cs_mppi)
+    target_link_libraries(test_cs_mppi mppi_controller_plugin)
   endif()
 endif()
 

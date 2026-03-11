@@ -83,4 +83,11 @@
       Based on IT-MPC (2018) and MPPI-IPDDP (2022). Overhead ~1.6%.
     </description>
   </class>
+  <class type="mpc_controller_ros2::CSMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CS-MPPI (Covariance Steering) controller plugin for nav2.
+      CoVO-MPC (CoRL 2023) based adaptive noise covariance via dynamics Jacobian B_t sensitivity.
+      Per-step noise scaling: scale_t = clamp(||B_t||_F / mean, min, max). Overhead &lt; 5%.
+    </description>
+  </class>
 </library>

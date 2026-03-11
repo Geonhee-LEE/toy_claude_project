@@ -1401,6 +1401,13 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "shield_cbf_stride", params_.shield_cbf_stride);
   node_->declare_parameter(prefix + "shield_max_iterations", params_.shield_max_iterations);
 
+  // Covariance Steering MPPI (CS-MPPI)
+  node_->declare_parameter(prefix + "cs_enabled", params_.cs_enabled);
+  node_->declare_parameter(prefix + "cs_scale_min", params_.cs_scale_min);
+  node_->declare_parameter(prefix + "cs_scale_max", params_.cs_scale_max);
+  node_->declare_parameter(prefix + "cs_feedback_enabled", params_.cs_feedback_enabled);
+  node_->declare_parameter(prefix + "cs_feedback_gain", params_.cs_feedback_gain);
+
   // iLQR Warm-Start
   node_->declare_parameter(prefix + "ilqr_enabled", params_.ilqr_enabled);
   node_->declare_parameter(prefix + "ilqr_max_iterations", params_.ilqr_max_iterations);
@@ -1643,6 +1650,13 @@ void MPPIControllerPlugin::loadParameters()
   // Safety Enhancement: Shield-MPPI
   params_.shield_cbf_stride = node_->get_parameter(prefix + "shield_cbf_stride").as_int();
   params_.shield_max_iterations = node_->get_parameter(prefix + "shield_max_iterations").as_int();
+
+  // Covariance Steering MPPI (CS-MPPI)
+  params_.cs_enabled = node_->get_parameter(prefix + "cs_enabled").as_bool();
+  params_.cs_scale_min = node_->get_parameter(prefix + "cs_scale_min").as_double();
+  params_.cs_scale_max = node_->get_parameter(prefix + "cs_scale_max").as_double();
+  params_.cs_feedback_enabled = node_->get_parameter(prefix + "cs_feedback_enabled").as_bool();
+  params_.cs_feedback_gain = node_->get_parameter(prefix + "cs_feedback_gain").as_double();
 
   // iLQR Warm-Start
   params_.ilqr_enabled = node_->get_parameter(prefix + "ilqr_enabled").as_bool();

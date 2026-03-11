@@ -135,6 +135,8 @@ def launch_setup(context, *args, **kwargs):
                    'Shield-MPPI (per-step CBF + BR-MPPI + Conformal)'),
         'ilqr_mppi': ('nav2_params_ilqr_mppi.yaml',
                       'iLQR-MPPI (iLQR warm-start + MPPI sampling)'),
+        'cs_mppi': ('nav2_params_cs_mppi.yaml',
+                    'CS-MPPI (Covariance Steering, CoVO-MPC CoRL 2023)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

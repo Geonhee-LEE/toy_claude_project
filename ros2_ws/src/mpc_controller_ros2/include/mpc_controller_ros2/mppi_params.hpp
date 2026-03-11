@@ -194,6 +194,16 @@ struct MPPIParams
   int shield_max_iterations{10};                   // 투영 최대 반복
 
   // ============================================================================
+  // Covariance Steering MPPI (CS-MPPI) 파라미터
+  // CoVO-MPC (CoRL 2023): 동역학 Jacobian B_t 감도 기반 노이즈 공분산 적응
+  // ============================================================================
+  bool cs_enabled{true};              // CS 공분산 적응 활성화
+  double cs_scale_min{0.1};           // 최소 노이즈 스케일 팩터
+  double cs_scale_max{3.0};           // 최대 노이즈 스케일 팩터
+  bool cs_feedback_enabled{false};    // per-step 피드백 보정 (V2 확장)
+  double cs_feedback_gain{0.5};       // 피드백 게인
+
+  // ============================================================================
   // iLQR Warm-Start 파라미터
   // ============================================================================
   bool ilqr_enabled{false};                          // iLQR warm-start 활성화
