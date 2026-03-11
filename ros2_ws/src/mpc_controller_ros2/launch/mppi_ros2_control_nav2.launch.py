@@ -542,16 +542,29 @@ rclpy.spin(TwistStamper())
         arguments=['-d', rviz_config] if os.path.exists(rviz_config) else []
     )
 
+    # ========== Nav2 노드 그룹 (이벤트 체인에서 사용) ==========
+    nav2_start_actions = [
+        LogInfo(msg=f'Controllers ready — starting nav2 ({controller_type} MPPI)...'),
+        map_server_node,
+        amcl_node,
+        controller_server_node,
+        planner_server_node,
+        behavior_server_node,
+        bt_navigator_node,
+        lifecycle_bringup,
+    ]
+
     # ========== Launch Nodes ==========
     #
-    # 실행 순서:
-    #   1. Gazebo + RSP + Bridge (즉시)
-    #   2. spawn_robot (5s 딜레이)
-    #   3. spawn_robot 종료 → wait_for_hw_active → JSB spawner → DD spawner
-    #      (OnProcessExit 이벤트 체인, 공식 Jazzy 패턴)
-    #   4. nav2 localization (20s 딜레이)
-    #   5. nav2 navigation + lifecycle (30s 딜레이)
-    #   6. RVIZ (60s 딜레이, headless 제외)
+    # 이벤트 기반 실행 순서 (하드코딩 타이머 제거):
+    #   1. Gazebo + RSP + Bridge + RVIZ (즉시)
+    #   2. spawn_robot (2s 딜레이 — Gazebo 월드 로드 최소 대기)
+    #   3. spawn_robot 종료 → JSB spawner + cmd_vel relay
+    #   4. JSB 종료 → DD/Swerve/Ackermann spawner
+    #   5. 마지막 controller spawner 종료 → nav2 전체 노드 + lifecycle bringup
+    #
+    # Before: 하드코딩 타이머 (5s + 20s + 30s + 60s) → ~60초
+    # After:  이벤트 체인 → ~10초 (각 단계 완료 즉시 다음 시작)
 
     nodes = [
         LogInfo(msg=f'[MPPI Controller] {controller_label}'),
@@ -570,16 +583,16 @@ rclpy.spin(TwistStamper())
         # 3. Bridge
         bridge,
 
-        # 4. Spawn robot (5s delay)
+        # 4. Spawn robot (2s delay — Gazebo 월드 로드 최소 대기)
         TimerAction(
-            period=5.0,
+            period=2.0,
             actions=[
                 LogInfo(msg='Spawning robot...'),
                 spawn_robot,
             ]
         ),
 
-        # 5. Controller event chain: spawn_robot → JSB → DD/Swerve
+        # 5. Controller event chain: spawn_robot → JSB → DD/Swerve/Ackermann → nav2
         #    spawner 내부 bash retry loop가 controller_manager 대기 + 재시도 처리
         RegisterEventHandler(
             OnProcessExit(
@@ -595,6 +608,10 @@ rclpy.spin(TwistStamper())
         ),
     ]
 
+    # RVIZ 즉시 시작 (headless 제외) — 토픽 구독이므로 대기 불필요
+    if not headless:
+        nodes.append(rviz)
+
     if is_ackermann:
         nodes.extend([
             RegisterEventHandler(
@@ -603,11 +620,13 @@ rclpy.spin(TwistStamper())
                     on_exit=[ackermann_spawner],
                 )
             ),
+            # 마지막 controller → nav2 전체 시작
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=ackermann_spawner,
                     on_exit=[
                         LogInfo(msg='Ackermann steering controller activated'),
+                        *nav2_start_actions,
                     ],
                 )
             ),
@@ -626,11 +645,13 @@ rclpy.spin(TwistStamper())
                     on_exit=[wheel_spawner],
                 )
             ),
+            # 마지막 controller → nav2 전체 시작
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=wheel_spawner,
                     on_exit=[
                         LogInfo(msg='All swerve controllers activated'),
+                        *nav2_start_actions,
                     ],
                 )
             ),
@@ -643,53 +664,17 @@ rclpy.spin(TwistStamper())
                     on_exit=[dd_spawner],
                 )
             ),
+            # 마지막 controller → nav2 전체 시작
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=dd_spawner,
                     on_exit=[
                         LogInfo(msg='All diff_drive controllers activated'),
+                        *nav2_start_actions,
                     ],
                 )
             ),
         ])
-
-    nodes.extend([
-        # 6. Nav2 Localization nodes (20s delay)
-        TimerAction(
-            period=20.0,
-            actions=[
-                LogInfo(msg='Starting nav2 localization nodes...'),
-                map_server_node,
-                amcl_node,
-            ]
-        ),
-
-        # 7. Nav2 Navigation nodes + lifecycle bringup (30s delay)
-        TimerAction(
-            period=30.0,
-            actions=[
-                LogInfo(msg=f'Starting nav2 navigation nodes ({controller_type} MPPI)...'),
-                controller_server_node,
-                planner_server_node,
-                behavior_server_node,
-                bt_navigator_node,
-                # Lifecycle bringup: subprocess로 configure/activate + bond 유지
-                lifecycle_bringup,
-            ]
-        ),
-    ])
-
-    # 8. RVIZ (60s delay) - headless 모드에서는 비활성화
-    if not headless:
-        nodes.append(
-            TimerAction(
-                period=60.0,
-                actions=[
-                    LogInfo(msg='Starting RVIZ...'),
-                    rviz
-                ]
-            )
-        )
 
     return nodes
 
