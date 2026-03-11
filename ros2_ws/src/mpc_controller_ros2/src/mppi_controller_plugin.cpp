@@ -945,14 +945,46 @@ void MPPIControllerPlugin::updateCBFObstacles()
   unsigned int size_x = costmap->getSizeInCellsX();
   unsigned int size_y = costmap->getSizeInCellsY();
 
+  // costmap 프레임 → plan 프레임 변환 준비
+  // local costmap은 odom 프레임이지만 current_state는 map 프레임이므로
+  // 장애물 좌표를 map 프레임으로 변환해야 CBF 거리 계산이 정확함
+  std::string costmap_frame = costmap_ros_->getGlobalFrameID();
+  std::string plan_frame = global_plan_.header.frame_id;
+  if (plan_frame.empty()) { plan_frame = "map"; }
+
+  bool need_transform = (costmap_frame != plan_frame);
+  geometry_msgs::msg::TransformStamped tf_costmap_to_plan;
+  if (need_transform && tf_buffer_) {
+    try {
+      tf_costmap_to_plan = tf_buffer_->lookupTransform(
+        plan_frame, costmap_frame, tf2::TimePointZero);
+    } catch (const tf2::TransformException& ex) {
+      RCLCPP_WARN_THROTTLE(
+        node_->get_logger(), *node_->get_clock(), 2000,
+        "CBF: Failed to get %s→%s transform: %s. Using costmap frame directly.",
+        costmap_frame.c_str(), plan_frame.c_str(), ex.what());
+      need_transform = false;
+    }
+  }
+
   for (unsigned int mx = 0; mx < size_x; ++mx) {
     for (unsigned int my = 0; my < size_y; ++my) {
       unsigned char cost = costmap->getCost(mx, my);
       if (cost >= nav2_costmap_2d::LETHAL_OBSTACLE) {
         double wx, wy;
         costmap->mapToWorld(mx, my, wx, wy);
-        // odom→map 변환이 필요할 수 있으나, CBF는 map 프레임에서 동작
-        // 현재 구현은 costmap 프레임 직접 사용 (odom 프레임)
+
+        if (need_transform) {
+          // odom→map 프레임 변환
+          geometry_msgs::msg::PointStamped pt_in, pt_out;
+          pt_in.point.x = wx;
+          pt_in.point.y = wy;
+          pt_in.point.z = 0.0;
+          tf2::doTransform(pt_in, pt_out, tf_costmap_to_plan);
+          wx = pt_out.point.x;
+          wy = pt_out.point.y;
+        }
+
         obstacles.emplace_back(wx, wy, resolution * 0.5);
       }
     }
