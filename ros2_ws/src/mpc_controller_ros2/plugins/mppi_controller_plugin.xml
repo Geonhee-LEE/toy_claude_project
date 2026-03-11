@@ -76,4 +76,11 @@
       Configurable stride and iteration count for performance tuning.
     </description>
   </class>
+  <class type="mpc_controller_ros2::IlqrMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      iLQR Warm-Start MPPI controller plugin for nav2.
+      Uses 1-2 iLQR iterations to improve control_sequence before MPPI sampling.
+      Based on IT-MPC (2018) and MPPI-IPDDP (2022). Overhead ~1.6%.
+    </description>
+  </class>
 </library>

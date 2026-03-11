@@ -60,4 +60,29 @@ Eigen::VectorXd DiffDriveModel::twistToControl(
   return control;
 }
 
+Linearization DiffDriveModel::getLinearization(
+  const Eigen::VectorXd& state,
+  const Eigen::VectorXd& control,
+  double dt) const
+{
+  double theta = state(2);
+  double v = control(0);
+
+  double cos_t = std::cos(theta);
+  double sin_t = std::sin(theta);
+
+  // A = I + dt * df/dx
+  Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
+  A(0, 2) += dt * (-v * sin_t);
+  A(1, 2) += dt * (v * cos_t);
+
+  // B = dt * df/du
+  Eigen::MatrixXd B(3, 2);
+  B(0, 0) = dt * cos_t;   B(0, 1) = 0.0;
+  B(1, 0) = dt * sin_t;   B(1, 1) = 0.0;
+  B(2, 0) = 0.0;          B(2, 1) = dt;
+
+  return {A, B};
+}
+
 }  // namespace mpc_controller_ros2

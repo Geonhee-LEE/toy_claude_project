@@ -105,6 +105,8 @@ add_library(mppi_controller_plugin SHARED
   src/residual_dynamics_model.cpp
   src/conformal_predictor.cpp
   src/shield_mppi_controller_plugin.cpp
+  src/ilqr_solver.cpp
+  src/ilqr_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -317,6 +319,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_safety_enhancement test/unit/test_safety_enhancement.cpp)
   if(TARGET test_safety_enhancement)
     target_link_libraries(test_safety_enhancement mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_ilqr_solver test/unit/test_ilqr_solver.cpp)
+  if(TARGET test_ilqr_solver)
+    target_link_libraries(test_ilqr_solver mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_ilqr_mppi test/unit/test_ilqr_mppi.cpp)
+  if(TARGET test_ilqr_mppi)
+    target_link_libraries(test_ilqr_mppi mppi_controller_plugin)
   endif()
 endif()
 

@@ -95,4 +95,34 @@ Eigen::VectorXd AckermannModel::twistToControl(
   return control;
 }
 
+Linearization AckermannModel::getLinearization(
+  const Eigen::VectorXd& state,
+  const Eigen::VectorXd& control,
+  double dt) const
+{
+  double theta = state(2);
+  double delta = state(3);
+  double v = control(0);
+
+  double cos_t = std::cos(theta);
+  double sin_t = std::sin(theta);
+  double tan_d = std::tan(delta);
+  double sec2_d = 1.0 / (std::cos(delta) * std::cos(delta));
+
+  // A = I + dt * df/dx
+  Eigen::Matrix4d A = Eigen::Matrix4d::Identity();
+  A(0, 2) += dt * (-v * sin_t);
+  A(1, 2) += dt * (v * cos_t);
+  A(2, 3) += dt * (v * sec2_d / wheelbase_);
+
+  // B = dt * df/du
+  Eigen::MatrixXd B(4, 2);
+  B(0, 0) = dt * cos_t;              B(0, 1) = 0.0;
+  B(1, 0) = dt * sin_t;              B(1, 1) = 0.0;
+  B(2, 0) = dt * tan_d / wheelbase_; B(2, 1) = 0.0;
+  B(3, 0) = 0.0;                     B(3, 1) = dt;
+
+  return {A, B};
+}
+
 }  // namespace mpc_controller_ros2

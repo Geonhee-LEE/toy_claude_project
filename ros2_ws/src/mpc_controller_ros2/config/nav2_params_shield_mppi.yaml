@@ -98,28 +98,32 @@ controller_server:
       lambda_min: 0.1
       lambda_max: 100.0
 
-      # ---- CBF 안전 필터 (활성화) ----
+      # ---- CBF 안전 필터 ----
       cbf_enabled: true
-      cbf_gamma: 0.3
-      cbf_safety_margin: 0.4
+      cbf_gamma: 0.5
+      cbf_safety_margin: 0.3
+      cbf_robot_radius: 0.2
       cbf_activation_distance: 1.5
+      # Shield-MPPI가 이미 per-step CBF 투영을 수행하므로
+      # 최종 safety filter는 비활성화 (이중 투영 방지)
+      cbf_use_safety_filter: false
 
       # ---- Shield-MPPI 전용 (최적 시퀀스 CBF 투영) ----
-      #   stride=1 → 즉시 다음 스텝만 투영 (receding horizon)
-      #   max_iterations=3 → 빠른 수렴
-      shield_cbf_stride: 1
-      shield_max_iterations: 3
+      #   stride=5 → 첫 5 스텝 CBF 투영 (0.5초 안전 보장)
+      #   max_iterations=5 → 충분한 수렴
+      shield_cbf_stride: 5
+      shield_max_iterations: 5
 
       # ---- BR-MPPI (Barrier Rate Cost) ----
-      barrier_rate_cost_weight: 20.0
+      barrier_rate_cost_weight: 10.0
 
       # ---- Conformal Predictor (동적 안전 마진) ----
       conformal_enabled: true
-      conformal_coverage: 0.95
+      conformal_coverage: 0.90
       conformal_window_size: 100
-      conformal_initial_margin: 0.3
+      conformal_initial_margin: 0.1
       conformal_min_margin: 0.05
-      conformal_max_margin: 1.0
+      conformal_max_margin: 0.3
       conformal_decay_rate: 0.99
 
       # 궤적 안정화

@@ -194,6 +194,15 @@ struct MPPIParams
   int shield_max_iterations{10};                   // 투영 최대 반복
 
   // ============================================================================
+  // iLQR Warm-Start 파라미터
+  // ============================================================================
+  bool ilqr_enabled{false};                          // iLQR warm-start 활성화
+  int ilqr_max_iterations{2};                        // iLQR 반복 횟수 (1-2회 충분)
+  double ilqr_regularization{1e-6};                  // Q_uu 정규화 (rho)
+  int ilqr_line_search_steps{4};                     // line search alpha 후보 수
+  double ilqr_cost_tolerance{1e-4};                  // 수렴 판정 임계값
+
+  // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
   // Non-Coaxial Swerve / Ackermann 공통 파라미터

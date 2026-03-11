@@ -46,6 +46,11 @@ public:
 
   std::vector<int> angleIndices() const override { return {2}; }
 
+  Linearization getLinearization(
+    const Eigen::VectorXd& state,
+    const Eigen::VectorXd& control,
+    double dt) const override;
+
 private:
   double v_min_, v_max_, omega_min_, omega_max_;
 };

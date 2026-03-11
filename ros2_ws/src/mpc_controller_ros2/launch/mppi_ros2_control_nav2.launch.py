@@ -133,6 +133,8 @@ def launch_setup(context, *args, **kwargs):
                       'Ackermann MPPI (motion_model=ackermann, bicycle model)'),
         'shield': ('nav2_params_shield_mppi.yaml',
                    'Shield-MPPI (per-step CBF + BR-MPPI + Conformal)'),
+        'ilqr_mppi': ('nav2_params_ilqr_mppi.yaml',
+                      'iLQR-MPPI (iLQR warm-start + MPPI sampling)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

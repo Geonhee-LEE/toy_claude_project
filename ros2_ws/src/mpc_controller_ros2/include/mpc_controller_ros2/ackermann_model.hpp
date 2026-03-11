@@ -50,6 +50,11 @@ public:
 
   std::vector<int> angleIndices() const override { return {2}; }
 
+  Linearization getLinearization(
+    const Eigen::VectorXd& state,
+    const Eigen::VectorXd& control,
+    double dt) const override;
+
   // delta clamp 추가된 RK4 propagation
   Eigen::MatrixXd propagateBatch(
     const Eigen::MatrixXd& states,
