@@ -1408,6 +1408,18 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "cs_feedback_enabled", params_.cs_feedback_enabled);
   node_->declare_parameter(prefix + "cs_feedback_gain", params_.cs_feedback_gain);
 
+  // pi-MPPI (Projection MPPI)
+  node_->declare_parameter(prefix + "pi_enabled", params_.pi_enabled);
+  node_->declare_parameter(prefix + "pi_admm_iterations", params_.pi_admm_iterations);
+  node_->declare_parameter(prefix + "pi_admm_rho", params_.pi_admm_rho);
+  node_->declare_parameter(prefix + "pi_derivative_order", params_.pi_derivative_order);
+  node_->declare_parameter(prefix + "pi_rate_max_v", params_.pi_rate_max_v);
+  node_->declare_parameter(prefix + "pi_rate_max_omega", params_.pi_rate_max_omega);
+  node_->declare_parameter(prefix + "pi_rate_max_vy", params_.pi_rate_max_vy);
+  node_->declare_parameter(prefix + "pi_accel_max_v", params_.pi_accel_max_v);
+  node_->declare_parameter(prefix + "pi_accel_max_omega", params_.pi_accel_max_omega);
+  node_->declare_parameter(prefix + "pi_accel_max_vy", params_.pi_accel_max_vy);
+
   // iLQR Warm-Start
   node_->declare_parameter(prefix + "ilqr_enabled", params_.ilqr_enabled);
   node_->declare_parameter(prefix + "ilqr_max_iterations", params_.ilqr_max_iterations);
@@ -1657,6 +1669,18 @@ void MPPIControllerPlugin::loadParameters()
   params_.cs_scale_max = node_->get_parameter(prefix + "cs_scale_max").as_double();
   params_.cs_feedback_enabled = node_->get_parameter(prefix + "cs_feedback_enabled").as_bool();
   params_.cs_feedback_gain = node_->get_parameter(prefix + "cs_feedback_gain").as_double();
+
+  // pi-MPPI (Projection MPPI)
+  params_.pi_enabled = node_->get_parameter(prefix + "pi_enabled").as_bool();
+  params_.pi_admm_iterations = node_->get_parameter(prefix + "pi_admm_iterations").as_int();
+  params_.pi_admm_rho = node_->get_parameter(prefix + "pi_admm_rho").as_double();
+  params_.pi_derivative_order = node_->get_parameter(prefix + "pi_derivative_order").as_int();
+  params_.pi_rate_max_v = node_->get_parameter(prefix + "pi_rate_max_v").as_double();
+  params_.pi_rate_max_omega = node_->get_parameter(prefix + "pi_rate_max_omega").as_double();
+  params_.pi_rate_max_vy = node_->get_parameter(prefix + "pi_rate_max_vy").as_double();
+  params_.pi_accel_max_v = node_->get_parameter(prefix + "pi_accel_max_v").as_double();
+  params_.pi_accel_max_omega = node_->get_parameter(prefix + "pi_accel_max_omega").as_double();
+  params_.pi_accel_max_vy = node_->get_parameter(prefix + "pi_accel_max_vy").as_double();
 
   // iLQR Warm-Start
   params_.ilqr_enabled = node_->get_parameter(prefix + "ilqr_enabled").as_bool();

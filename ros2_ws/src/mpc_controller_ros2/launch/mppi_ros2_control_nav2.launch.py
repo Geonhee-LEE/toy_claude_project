@@ -137,6 +137,8 @@ def launch_setup(context, *args, **kwargs):
                       'iLQR-MPPI (iLQR warm-start + MPPI sampling)'),
         'cs_mppi': ('nav2_params_cs_mppi.yaml',
                     'CS-MPPI (Covariance Steering, CoVO-MPC CoRL 2023)'),
+        'pi_mppi': ('nav2_params_pi_mppi.yaml',
+                    'pi-MPPI (Projection MPPI, ADMM QP, RA-L 2025)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

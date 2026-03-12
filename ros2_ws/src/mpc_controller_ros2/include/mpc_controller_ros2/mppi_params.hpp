@@ -204,6 +204,21 @@ struct MPPIParams
   double cs_feedback_gain{0.5};       // 피드백 게인
 
   // ============================================================================
+  // pi-MPPI (Projection MPPI, Andrejev et al. RA-L 2025) 파라미터
+  // ADMM QP 투영 필터: 제어 크기/변화율/가속도 hard bounds 보장
+  // ============================================================================
+  bool pi_enabled{true};                  // 투영 필터 활성화
+  int pi_admm_iterations{10};             // ADMM 반복 횟수
+  double pi_admm_rho{1.0};               // ADMM 페널티 파라미터
+  int pi_derivative_order{2};             // 1=rate, 2=rate+accel
+  double pi_rate_max_v{2.0};             // m/s² (선속도 변화율 상한)
+  double pi_rate_max_omega{3.0};         // rad/s² (각속도 변화율 상한)
+  double pi_rate_max_vy{2.0};            // m/s² (swerve 횡방향 변화율)
+  double pi_accel_max_v{5.0};            // m/s³ (jerk 상한)
+  double pi_accel_max_omega{8.0};        // rad/s³ (각가속도 jerk 상한)
+  double pi_accel_max_vy{5.0};           // m/s³ (swerve 횡방향 jerk)
+
+  // ============================================================================
   // iLQR Warm-Start 파라미터
   // ============================================================================
   bool ilqr_enabled{false};                          // iLQR warm-start 활성화
