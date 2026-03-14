@@ -83,4 +83,27 @@
       Based on IT-MPC (2018) and MPPI-IPDDP (2022). Overhead ~1.6%.
     </description>
   </class>
+  <class type="mpc_controller_ros2::CSMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CS-MPPI (Covariance Steering) controller plugin for nav2.
+      CoVO-MPC (CoRL 2023) based adaptive noise covariance via dynamics Jacobian B_t sensitivity.
+      Per-step noise scaling: scale_t = clamp(||B_t||_F / mean, min, max). Overhead &lt; 5%.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::PiMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      pi-MPPI (Projection MPPI) controller plugin for nav2.
+      Andrejev et al. RA-L 2025. ADMM QP projection filter enforcing hard bounds
+      on control magnitude, rate (du/dt), and acceleration (d²u/dt²).
+      Guarantees smooth, feasible controls without post-hoc filtering.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::HybridSwerveMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      MPPI-H (Hybrid Swerve MPPI) controller plugin for nav2.
+      IROS 2024 (arXiv:2409.08648). Switches sampling space between Low-D (body velocity)
+      and 4D (diagonal wheel pairs) in real-time based on tracking error.
+      Supports both Coaxial and Non-Coaxial Swerve configurations.
+    </description>
+  </class>
 </library>

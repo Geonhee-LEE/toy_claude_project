@@ -1,19 +1,19 @@
 # ============================================================
-# nav2 파라미터 - iLQR Warm-Start MPPI (mpc_controller_ros2)
+# nav2 파라미터 - MPPI-H Hybrid Swerve (Coaxial, mpc_controller_ros2)
 # ============================================================
 # 사용법:
-#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ilqr_mppi
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=hybrid_swerve
 #
-# iLQR(1-2 iter)로 control_sequence warm-start 후 MPPI 샘플링.
-# 근거: IT-MPC (2018), MPPI-IPDDP (2022), Feedback-MPPI (RA-L 2025)
+# IROS 2024 (arXiv:2409.08648): Low-D(body velocity) ↔ 4D(대각 바퀴) 실시간 전환
+# Coaxial Swerve: Low-D = SwerveDriveModel (nx=3, nu=3)
 # ============================================================
 
 controller_server:
   ros__parameters:
-    # ---- iLQR Warm-Start MPPI Controller ----
+    # ---- MPPI-H Hybrid Swerve Controller ----
     FollowPath:
-      plugin: "mpc_controller_ros2::IlqrMPPIControllerPlugin"
-      motion_model: "diff_drive"
+      plugin: "mpc_controller_ros2::HybridSwerveMPPIControllerPlugin"
+      motion_model: "swerve"
 
       # Prediction horizon
       N: 30
@@ -23,15 +23,17 @@ controller_server:
       K: 512
       lambda: 10.0
 
-      # Noise parameters [v, omega]
+      # Low-D Noise parameters [vx, vy, omega]
       noise_sigma_v: 0.5
+      noise_sigma_vy: 0.3
       noise_sigma_omega: 0.5
 
-      # Control limits
-      v_max: 0.5
-      v_min: 0.0
+      # Control limits (Swerve)
+      v_max: 0.8
+      v_min: -0.5
       omega_max: 1.0
       omega_min: -1.0
+      vy_max: 0.5
 
       # State tracking cost weights (Q)
       Q_x: 10.0
@@ -43,12 +45,14 @@ controller_server:
       Qf_y: 20.0
       Qf_theta: 2.0
 
-      # Control effort weights (R)
+      # Control effort weights (R) — Low-D
       R_v: 0.1
+      R_vy: 0.1
       R_omega: 0.1
 
-      # Control rate weights (R_rate)
+      # Control rate weights (R_rate) — Low-D
       R_rate_v: 1.0
+      R_rate_vy: 1.0
       R_rate_omega: 1.0
 
       # Obstacle avoidance
@@ -74,12 +78,31 @@ controller_server:
       lambda_min: 0.1
       lambda_max: 100.0
 
-      # ---- iLQR Warm-Start ----
-      ilqr_enabled: true
-      ilqr_max_iterations: 2
-      ilqr_regularization: 1.0e-6
-      ilqr_line_search_steps: 4
-      ilqr_cost_tolerance: 1.0e-4
+      # ---- MPPI-H (Hybrid) ----
+      hybrid_enabled: true
+      hybrid_cdist_threshold: 0.3
+      hybrid_cangle_threshold: 0.3
+      hybrid_hysteresis_count: 3
+
+      # 4D 바퀴 기하 (swerve_robot.urdf 기준)
+      hybrid_lf: 0.25
+      hybrid_lr: 0.25
+      hybrid_dl: 0.22
+      hybrid_dr: 0.22
+      hybrid_v_wheel_max: 2.0
+      hybrid_delta_max: 1.5708
+
+      # 4D 모드 노이즈
+      hybrid_noise_sigma_vfl: 0.5
+      hybrid_noise_sigma_vrr: 0.5
+      hybrid_noise_sigma_dfl: 0.3
+      hybrid_noise_sigma_drr: 0.3
+
+      # 4D 모드 제어 비용 R
+      hybrid_R_vfl: 0.1
+      hybrid_R_vrr: 0.1
+      hybrid_R_dfl: 0.3
+      hybrid_R_drr: 0.3
 
       # Visualization
       visualize_samples: true

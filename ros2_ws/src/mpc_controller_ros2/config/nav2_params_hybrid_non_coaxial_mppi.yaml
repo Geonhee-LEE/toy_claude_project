@@ -1,0 +1,117 @@
+# ============================================================
+# nav2 파라미터 - MPPI-H Hybrid Non-Coaxial Swerve (mpc_controller_ros2)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=hybrid_non_coaxial
+#
+# IROS 2024 (arXiv:2409.08648): Low-D(body velocity) ↔ 4D(대각 바퀴) 실시간 전환
+# Non-Coaxial Swerve: Low-D = NonCoaxialSwerveModel (nx=4, nu=3)
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- MPPI-H Hybrid Non-Coaxial Swerve Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::HybridSwerveMPPIControllerPlugin"
+      motion_model: "non_coaxial_swerve"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 10.0
+
+      # Low-D Noise parameters [v, omega, delta_dot]
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+      noise_sigma_delta_dot: 0.3
+
+      # Control limits (Non-Coaxial Swerve)
+      v_max: 0.8
+      v_min: -0.5
+      omega_max: 1.0
+      omega_min: -1.0
+      max_steering_rate: 2.0
+      max_steering_angle: 1.5708
+
+      # State tracking cost weights (Q) — nx=4 [x, y, theta, delta]
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+      Q_delta: 0.5
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+      Qf_delta: 1.0
+
+      # Control effort weights (R) — Low-D [v, omega, delta_dot]
+      R_v: 0.1
+      R_omega: 0.1
+      R_delta_dot: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+      R_rate_delta_dot: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # Costmap obstacle cost
+      use_costmap_cost: true
+      costmap_lethal_cost: 500.0
+      costmap_critical_cost: 50.0
+      lookahead_dist: 0.0
+      min_lookahead: 0.5
+      goal_slowdown_dist: 1.0
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+      prefer_forward_linear_ratio: 0.5
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.5
+      adaptation_rate: 0.1
+      lambda_min: 0.1
+      lambda_max: 100.0
+
+      # ---- MPPI-H (Hybrid) ----
+      hybrid_enabled: true
+      hybrid_cdist_threshold: 0.3
+      hybrid_cangle_threshold: 0.3
+      hybrid_hysteresis_count: 3
+
+      # 4D 바퀴 기하 (swerve_robot.urdf 기준)
+      hybrid_lf: 0.25
+      hybrid_lr: 0.25
+      hybrid_dl: 0.22
+      hybrid_dr: 0.22
+      hybrid_v_wheel_max: 2.0
+      hybrid_delta_max: 1.5708
+
+      # 4D 모드 노이즈
+      hybrid_noise_sigma_vfl: 0.5
+      hybrid_noise_sigma_vrr: 0.5
+      hybrid_noise_sigma_dfl: 0.3
+      hybrid_noise_sigma_drr: 0.3
+
+      # 4D 모드 제어 비용 R
+      hybrid_R_vfl: 0.1
+      hybrid_R_vrr: 0.1
+      hybrid_R_dfl: 0.3
+      hybrid_R_drr: 0.3
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

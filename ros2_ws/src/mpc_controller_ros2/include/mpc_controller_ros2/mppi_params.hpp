@@ -194,6 +194,31 @@ struct MPPIParams
   int shield_max_iterations{10};                   // 투영 최대 반복
 
   // ============================================================================
+  // Covariance Steering MPPI (CS-MPPI) 파라미터
+  // CoVO-MPC (CoRL 2023): 동역학 Jacobian B_t 감도 기반 노이즈 공분산 적응
+  // ============================================================================
+  bool cs_enabled{true};              // CS 공분산 적응 활성화
+  double cs_scale_min{0.1};           // 최소 노이즈 스케일 팩터
+  double cs_scale_max{3.0};           // 최대 노이즈 스케일 팩터
+  bool cs_feedback_enabled{false};    // per-step 피드백 보정 (V2 확장)
+  double cs_feedback_gain{0.5};       // 피드백 게인
+
+  // ============================================================================
+  // pi-MPPI (Projection MPPI, Andrejev et al. RA-L 2025) 파라미터
+  // ADMM QP 투영 필터: 제어 크기/변화율/가속도 hard bounds 보장
+  // ============================================================================
+  bool pi_enabled{true};                  // 투영 필터 활성화
+  int pi_admm_iterations{10};             // ADMM 반복 횟수
+  double pi_admm_rho{1.0};               // ADMM 페널티 파라미터
+  int pi_derivative_order{2};             // 1=rate, 2=rate+accel
+  double pi_rate_max_v{2.0};             // m/s² (선속도 변화율 상한)
+  double pi_rate_max_omega{3.0};         // rad/s² (각속도 변화율 상한)
+  double pi_rate_max_vy{2.0};            // m/s² (swerve 횡방향 변화율)
+  double pi_accel_max_v{5.0};            // m/s³ (jerk 상한)
+  double pi_accel_max_omega{8.0};        // rad/s³ (각가속도 jerk 상한)
+  double pi_accel_max_vy{5.0};           // m/s³ (swerve 횡방향 jerk)
+
+  // ============================================================================
   // iLQR Warm-Start 파라미터
   // ============================================================================
   bool ilqr_enabled{false};                          // iLQR warm-start 활성화
@@ -201,6 +226,35 @@ struct MPPIParams
   double ilqr_regularization{1e-6};                  // Q_uu 정규화 (rho)
   int ilqr_line_search_steps{4};                     // line search alpha 후보 수
   double ilqr_cost_tolerance{1e-4};                  // 수렴 판정 임계값
+
+  // ============================================================================
+  // Hybrid Swerve MPPI (MPPI-H) 파라미터
+  // IROS 2024, arXiv:2409.08648: Low-D↔4D 샘플링 공간 실시간 전환
+  // ============================================================================
+  bool hybrid_enabled{true};                    // 하이브리드 모드 활성화
+  double hybrid_cdist_threshold{0.3};           // 추적 거리 임계값 (m)
+  double hybrid_cangle_threshold{0.3};          // 추적 각도 임계값 (rad)
+  int hybrid_hysteresis_count{3};               // 모드 전환 히스테리시스 (cycles)
+
+  // 4D 바퀴 기하 파라미터
+  double hybrid_lf{0.25};                       // 전방 바퀴 종방향 거리 (m)
+  double hybrid_lr{0.25};                       // 후방 바퀴 종방향 거리 (m)
+  double hybrid_dl{0.22};                       // 좌측 바퀴 횡방향 거리 (m)
+  double hybrid_dr{0.22};                       // 우측 바퀴 횡방향 거리 (m)
+  double hybrid_v_wheel_max{2.0};               // 최대 바퀴 속도 (m/s)
+  double hybrid_delta_max{1.5708};              // 최대 바퀴 조향각 (rad, π/2)
+
+  // 4D 모드 노이즈 σ
+  double hybrid_noise_sigma_vfl{0.5};
+  double hybrid_noise_sigma_vrr{0.5};
+  double hybrid_noise_sigma_dfl{0.3};
+  double hybrid_noise_sigma_drr{0.3};
+
+  // 4D 모드 제어 비용 R
+  double hybrid_R_vfl{0.1};
+  double hybrid_R_vrr{0.1};
+  double hybrid_R_dfl{0.3};
+  double hybrid_R_drr{0.3};
 
   // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터

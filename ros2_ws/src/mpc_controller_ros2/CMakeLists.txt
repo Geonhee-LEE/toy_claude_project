@@ -107,6 +107,10 @@ add_library(mppi_controller_plugin SHARED
   src/shield_mppi_controller_plugin.cpp
   src/ilqr_solver.cpp
   src/ilqr_mppi_controller_plugin.cpp
+  src/cs_mppi_controller_plugin.cpp
+  src/pi_mppi_controller_plugin.cpp
+  src/wheel_level_4d_model.cpp
+  src/hybrid_swerve_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -176,6 +180,7 @@ install(PROGRAMS
   scripts/stress_test.py
   scripts/nav2_lifecycle_bringup.py
   scripts/train_residual_model.py
+  scripts/pi_mppi_e2e_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -329,6 +334,21 @@ if(BUILD_TESTING)
   ament_add_gtest(test_ilqr_mppi test/unit/test_ilqr_mppi.cpp)
   if(TARGET test_ilqr_mppi)
     target_link_libraries(test_ilqr_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cs_mppi test/unit/test_cs_mppi.cpp)
+  if(TARGET test_cs_mppi)
+    target_link_libraries(test_cs_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_pi_mppi test/unit/test_pi_mppi.cpp)
+  if(TARGET test_pi_mppi)
+    target_link_libraries(test_pi_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_hybrid_swerve_mppi test/unit/test_hybrid_swerve_mppi.cpp)
+  if(TARGET test_hybrid_swerve_mppi)
+    target_link_libraries(test_hybrid_swerve_mppi mppi_controller_plugin)
   endif()
 endif()
 

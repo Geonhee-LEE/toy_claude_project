@@ -135,6 +135,14 @@ def launch_setup(context, *args, **kwargs):
                    'Shield-MPPI (per-step CBF + BR-MPPI + Conformal)'),
         'ilqr_mppi': ('nav2_params_ilqr_mppi.yaml',
                       'iLQR-MPPI (iLQR warm-start + MPPI sampling)'),
+        'cs_mppi': ('nav2_params_cs_mppi.yaml',
+                    'CS-MPPI (Covariance Steering, CoVO-MPC CoRL 2023)'),
+        'pi_mppi': ('nav2_params_pi_mppi.yaml',
+                    'pi-MPPI (Projection MPPI, ADMM QP, RA-L 2025)'),
+        'hybrid_swerve': ('nav2_params_hybrid_swerve_mppi.yaml',
+                          'MPPI-H Hybrid Swerve (IROS 2024, Low-D↔4D)'),
+        'hybrid_non_coaxial': ('nav2_params_hybrid_non_coaxial_mppi.yaml',
+                               'MPPI-H Hybrid Non-Coaxial (IROS 2024, Low-D↔4D)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -148,6 +156,7 @@ def launch_setup(context, *args, **kwargs):
     is_swerve = controller_type in [
         'swerve', 'non_coaxial', 'non_coaxial_60deg',
         'dial_swerve', 'dial_non_coaxial',
+        'hybrid_swerve', 'hybrid_non_coaxial',
     ]
 
     # Ackermann 판별
@@ -248,6 +257,11 @@ def launch_setup(context, *args, **kwargs):
         bridge_args.append(
             f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
         )
+    if is_swerve:
+        # IMU + Depth Camera bridges (swerve robot only)
+        bridge_args.append('/imu@sensor_msgs/msg/Imu[gz.msgs.IMU')
+        bridge_args.append('/depth@sensor_msgs/msg/Image[gz.msgs.Image')
+        bridge_args.append('/depth/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked')
 
     # 동적 장애물 cmd_vel bridge (stress_test 월드 사용 시)
     if controller_type == 'stress_test':
