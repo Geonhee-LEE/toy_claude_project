@@ -120,6 +120,337 @@ class E2EMetrics:
     num_samples: int = 0
 
 
+## ============================================================================
+## 순수 분석 함수 (ROS2 의존성 없음 — 단위 테스트 가능)
+## ============================================================================
+
+def parse_goals_string(goals_str: str) -> List[Tuple[float, float, float]]:
+    """'(x1,y1);(x2,y2)' → [(x1,y1,0), (x2,y2,0)]"""
+    goals = []
+    for part in goals_str.split(';'):
+        part = part.strip().strip('()')
+        coords = part.split(',')
+        x = float(coords[0])
+        y = float(coords[1]) if len(coords) > 1 else 0.0
+        yaw = float(coords[2]) if len(coords) > 2 else 0.0
+        goals.append((x, y, yaw))
+    return goals
+
+
+def compute_time_response(values: List[float], times: List[float]):
+    """시간 응답 분석: rise time, settling time, overshoot"""
+    if len(values) < 10:
+        return 0.0, 0.0, 0.0
+
+    n = len(values)
+    tail = values[int(n * 0.8):]
+    if not tail:
+        return 0.0, 0.0, 0.0
+    steady = sum(tail) / len(tail)
+    if abs(steady) < 0.01:
+        return 0.0, 0.0, 0.0
+
+    # Rise time: 10% → 90%
+    t10 = t90 = None
+    for i, v in enumerate(values):
+        if t10 is None and v >= 0.1 * steady:
+            t10 = times[i]
+        if t90 is None and v >= 0.9 * steady:
+            t90 = times[i]
+            break
+    rise = (t90 - t10) if (t10 is not None and t90 is not None) else 0.0
+
+    # Settling time: 마지막으로 ±5% 벗어난 시점
+    settle = 0.0
+    for i in range(n - 1, -1, -1):
+        if abs(values[i] - steady) > 0.05 * abs(steady):
+            settle = times[i] - times[0]
+            break
+
+    # Overshoot
+    peak = max(values)
+    overshoot = (peak - steady) / abs(steady) if abs(steady) > 0.01 else 0.0
+    overshoot = max(0.0, overshoot)
+
+    return rise, settle, overshoot
+
+
+def compute_e2e_metrics(
+    samples: List[SamplePoint],
+    goals: List[Tuple[float, float, float]],
+    last_odom_x: float,
+    last_odom_y: float,
+    last_odom_theta: float,
+    rate_max_v: float,
+    rate_max_omega: float,
+    accel_max_v: float,
+    accel_max_omega: float,
+    goals_reached: int = 0,
+    goals_total: int = 0,
+) -> E2EMetrics:
+    """순수 메트릭 계산 (ROS2 없이 호출 가능)"""
+    m = E2EMetrics()
+    m.goals_reached = goals_reached
+    m.goals_total = goals_total
+    m.all_goals_reached = (goals_reached == goals_total and goals_total > 0)
+    n = len(samples)
+    m.num_samples = n
+
+    if n < 3:
+        return m
+
+    # ─── 궤적 통계 ───
+    m.travel_time = samples[-1].t - samples[0].t
+
+    dist = 0.0
+    for i in range(1, n):
+        dx = samples[i].x - samples[i - 1].x
+        dy = samples[i].y - samples[i - 1].y
+        dist += math.sqrt(dx * dx + dy * dy)
+    m.travel_distance = dist
+
+    last_goal = goals[-1] if goals else (0, 0, 0)
+    m.final_position_error = math.sqrt(
+        (last_odom_x - last_goal[0]) ** 2 +
+        (last_odom_y - last_goal[1]) ** 2)
+    yaw_diff = last_odom_theta - last_goal[2]
+    m.final_yaw_error = abs(math.atan2(math.sin(yaw_diff), math.cos(yaw_diff)))
+
+    # ─── 속도 통계 ───
+    speeds = [math.sqrt(s.vx**2 + s.vy**2) for s in samples]
+    m.mean_speed = sum(speeds) / n
+    m.max_speed = max(speeds)
+
+    # ─── Rate (1차 미분) 계산 ───
+    rates_vx, rates_omega = [], []
+    for i in range(1, n):
+        dt = samples[i].t - samples[i - 1].t
+        if dt < 1e-6 or dt > 1.0:
+            continue
+        rv = abs(samples[i].vx - samples[i - 1].vx) / dt
+        rw = abs(samples[i].omega - samples[i - 1].omega) / dt
+        rates_vx.append(rv)
+        rates_omega.append(rw)
+
+    # ─── Accel/Jerk (2차 미분) 계산 ───
+    jerks_vx, jerks_vy, jerks_omega = [], [], []
+    for i in range(2, n):
+        dt1 = samples[i].t - samples[i - 1].t
+        dt2 = samples[i - 1].t - samples[i - 2].t
+        if dt1 < 1e-6 or dt2 < 1e-6 or dt1 > 1.0 or dt2 > 1.0:
+            continue
+
+        acc1_vx = (samples[i].vx - samples[i - 1].vx) / dt1
+        acc0_vx = (samples[i - 1].vx - samples[i - 2].vx) / dt2
+        dt_avg = (dt1 + dt2) / 2.0
+        j_vx = abs(acc1_vx - acc0_vx) / dt_avg
+
+        acc1_vy = (samples[i].vy - samples[i - 1].vy) / dt1
+        acc0_vy = (samples[i - 1].vy - samples[i - 2].vy) / dt2
+        j_vy = abs(acc1_vy - acc0_vy) / dt_avg
+
+        acc1_w = (samples[i].omega - samples[i - 1].omega) / dt1
+        acc0_w = (samples[i - 1].omega - samples[i - 2].omega) / dt2
+        j_w = abs(acc1_w - acc0_w) / dt_avg
+
+        jerks_vx.append(j_vx)
+        jerks_vy.append(j_vy)
+        jerks_omega.append(j_w)
+
+    # Jerk 통계
+    if jerks_vx:
+        m.mean_jerk_vx = sum(jerks_vx) / len(jerks_vx)
+        m.mean_jerk_vy = sum(jerks_vy) / len(jerks_vy)
+        m.mean_jerk_omega = sum(jerks_omega) / len(jerks_omega)
+        rms_sq = sum(j**2 for j in jerks_vx) + sum(j**2 for j in jerks_vy)
+        m.rms_jerk = math.sqrt(rms_sq / (len(jerks_vx) + len(jerks_vy)))
+
+    # ─── ★ π-MPPI 제약 만족도 ───
+    cm = ConstraintMetrics()
+
+    if rates_vx:
+        cm.rate_max_vx = max(rates_vx)
+        cm.rate_max_omega = max(rates_omega)
+        cm.rate_mean_vx = sum(rates_vx) / len(rates_vx)
+        cm.rate_mean_omega = sum(rates_omega) / len(rates_omega)
+        cm.rate_violation_count_vx = sum(
+            1 for r in rates_vx if r > rate_max_v)
+        cm.rate_violation_count_omega = sum(
+            1 for r in rates_omega if r > rate_max_omega)
+        cm.rate_total_samples = len(rates_vx)
+        cm.rate_violation_ratio_vx = (
+            cm.rate_violation_count_vx / cm.rate_total_samples)
+        cm.rate_violation_ratio_omega = (
+            cm.rate_violation_count_omega / cm.rate_total_samples)
+
+    if jerks_vx:
+        cm.accel_max_vx = max(jerks_vx)
+        cm.accel_max_omega = max(jerks_omega)
+        cm.accel_mean_vx = sum(jerks_vx) / len(jerks_vx)
+        cm.accel_mean_omega = sum(jerks_omega) / len(jerks_omega)
+        cm.accel_violation_count_vx = sum(
+            1 for j in jerks_vx if j > accel_max_v)
+        cm.accel_violation_count_omega = sum(
+            1 for j in jerks_omega if j > accel_max_omega)
+        cm.accel_total_samples = len(jerks_vx)
+        cm.accel_violation_ratio_vx = (
+            cm.accel_violation_count_vx / cm.accel_total_samples)
+        cm.accel_violation_ratio_omega = (
+            cm.accel_violation_count_omega / cm.accel_total_samples)
+
+    m.constraints = cm
+
+    # ─── 정체 감지 ───
+    stall_count = sum(1 for s in speeds if s < 0.01)
+    m.num_stalls = stall_count
+    m.stall_ratio = stall_count / n if n > 0 else 0.0
+
+    # ─── 시간 응답 분석 (vx 기준) ───
+    m.rise_time, m.settling_time, m.overshoot_vx = compute_time_response(
+        [s.vx for s in samples],
+        [s.t for s in samples])
+
+    return m
+
+
+def print_e2e_report(
+    m: E2EMetrics,
+    rate_max_v: float,
+    rate_max_omega: float,
+    accel_max_v: float,
+    accel_max_omega: float,
+):
+    """ASCII 리포트 출력 (순수 함수)"""
+    cm = m.constraints or ConstraintMetrics()
+    W = 64
+
+    def bar(ratio, width=20):
+        filled = int(ratio * width)
+        return '█' * filled + '░' * (width - filled)
+
+    def status(ratio, label=""):
+        if ratio < 0.01:
+            return f'PASS ({label})'
+        elif ratio < 0.1:
+            return f'WARN ({label})'
+        else:
+            return f'FAIL ({label})'
+
+    print()
+    print('┌' + '─' * W + '┐')
+    print('│' + ' π-MPPI E2E Analysis Report'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+
+    goal_str = 'YES' if m.all_goals_reached else 'NO'
+    print(f'│  Goals reached    : {m.goals_reached}/{m.goals_total} ({goal_str})'
+          .ljust(W + 1) + '│')
+    print(f'│  Samples          : {m.num_samples}'
+          .ljust(W + 1) + '│')
+    print(f'│  Travel time      : {m.travel_time:.1f} s'
+          .ljust(W + 1) + '│')
+    print(f'│  Travel distance  : {m.travel_distance:.2f} m'
+          .ljust(W + 1) + '│')
+    print(f'│  Position error   : {m.final_position_error:.3f} m'
+          .ljust(W + 1) + '│')
+    print(f'│  Yaw error        : {math.degrees(m.final_yaw_error):.1f} deg'
+          .ljust(W + 1) + '│')
+
+    print('├' + '─' * W + '┤')
+    print('│' + ' Speed Profile'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+    print(f'│  Mean speed       : {m.mean_speed:.3f} m/s'
+          .ljust(W + 1) + '│')
+    print(f'│  Max speed        : {m.max_speed:.3f} m/s'
+          .ljust(W + 1) + '│')
+    print(f'│  Stalls           : {m.num_stalls} ({m.stall_ratio:.1%})'
+          .ljust(W + 1) + '│')
+
+    print('├' + '─' * W + '┤')
+    print('│' + ' Time Response'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+    print(f'│  Rise time (10→90%): {m.rise_time:.2f} s'
+          .ljust(W + 1) + '│')
+    print(f'│  Settling time     : {m.settling_time:.2f} s'
+          .ljust(W + 1) + '│')
+    print(f'│  Overshoot vx      : {m.overshoot_vx:.1%}'
+          .ljust(W + 1) + '│')
+
+    print('├' + '─' * W + '┤')
+    print('│' + ' Smoothness (lower = better)'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+    print(f'│  Jerk vx   (mean) : {m.mean_jerk_vx:.3f} m/s³'
+          .ljust(W + 1) + '│')
+    print(f'│  Jerk vy   (mean) : {m.mean_jerk_vy:.3f} m/s³'
+          .ljust(W + 1) + '│')
+    print(f'│  Jerk omega(mean) : {m.mean_jerk_omega:.3f} rad/s³'
+          .ljust(W + 1) + '│')
+    print(f'│  Jerk RMS         : {m.rms_jerk:.3f}'
+          .ljust(W + 1) + '│')
+
+    print('├' + '─' * W + '┤')
+    print('│' + ' ★ Constraint Satisfaction (π-MPPI)'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+
+    print(f'│  Rate bound vx    : {rate_max_v:.1f} m/s²'
+          .ljust(W + 1) + '│')
+    print(f'│    measured max   : {cm.rate_max_vx:.3f} m/s²'
+          .ljust(W + 1) + '│')
+    print(f'│    measured mean  : {cm.rate_mean_vx:.3f} m/s²'
+          .ljust(W + 1) + '│')
+    s = status(cm.rate_violation_ratio_vx, f'{cm.rate_violation_count_vx}/{cm.rate_total_samples}')
+    print(f'│    violations     : {bar(cm.rate_violation_ratio_vx)} {s}'
+          .ljust(W + 1) + '│')
+
+    print(f'│  Rate bound omega : {rate_max_omega:.1f} rad/s²'
+          .ljust(W + 1) + '│')
+    print(f'│    measured max   : {cm.rate_max_omega:.3f} rad/s²'
+          .ljust(W + 1) + '│')
+    s = status(cm.rate_violation_ratio_omega, f'{cm.rate_violation_count_omega}/{cm.rate_total_samples}')
+    print(f'│    violations     : {bar(cm.rate_violation_ratio_omega)} {s}'
+          .ljust(W + 1) + '│')
+
+    print(f'│  Accel bound vx   : {accel_max_v:.1f} m/s³'
+          .ljust(W + 1) + '│')
+    print(f'│    measured max   : {cm.accel_max_vx:.3f} m/s³'
+          .ljust(W + 1) + '│')
+    s = status(cm.accel_violation_ratio_vx, f'{cm.accel_violation_count_vx}/{cm.accel_total_samples}')
+    print(f'│    violations     : {bar(cm.accel_violation_ratio_vx)} {s}'
+          .ljust(W + 1) + '│')
+
+    print(f'│  Accel bound omega: {accel_max_omega:.1f} rad/s³'
+          .ljust(W + 1) + '│')
+    print(f'│    measured max   : {cm.accel_max_omega:.3f} rad/s³'
+          .ljust(W + 1) + '│')
+    s = status(cm.accel_violation_ratio_omega, f'{cm.accel_violation_count_omega}/{cm.accel_total_samples}')
+    print(f'│    violations     : {bar(cm.accel_violation_ratio_omega)} {s}'
+          .ljust(W + 1) + '│')
+
+    # ─── 종합 판정 ───
+    print('├' + '─' * W + '┤')
+    print('│' + ' Summary'.center(W) + '│')
+    print('├' + '─' * W + '┤')
+
+    checks = [
+        ('goal_reached', m.all_goals_reached or m.goals_total == 0),
+        ('rate_vx_ok', cm.rate_violation_ratio_vx < 0.1),
+        ('rate_omega_ok', cm.rate_violation_ratio_omega < 0.1),
+        ('accel_vx_ok', cm.accel_violation_ratio_vx < 0.1),
+        ('accel_omega_ok', cm.accel_violation_ratio_omega < 0.1),
+        ('jerk_ok', m.rms_jerk < 50.0),
+        ('no_stall', m.stall_ratio < 0.3),
+    ]
+    for name, ok in checks:
+        mark = 'PASS' if ok else 'FAIL'
+        print(f'│  [{mark}] {name}'.ljust(W + 1) + '│')
+
+    all_pass = all(ok for _, ok in checks)
+    result = 'ALL PASS' if all_pass else 'SOME FAILED'
+    print('├' + '─' * W + '┤')
+    print(f'│  Result: {result}'.ljust(W + 1) + '│')
+    print('└' + '─' * W + '┘')
+    print()
+
+
 class PiMPPIE2ETest(Node):
     def __init__(self, args):
         super().__init__('pi_mppi_e2e_test')
@@ -166,15 +497,7 @@ class PiMPPIE2ETest(Node):
     def _parse_goals(self, args) -> List[Tuple[float, float, float]]:
         """--goals "(x1,y1);(x2,y2)" 또는 --x/--y/--yaw 파싱"""
         if args.goals:
-            goals = []
-            for part in args.goals.split(';'):
-                part = part.strip().strip('()')
-                coords = part.split(',')
-                x = float(coords[0])
-                y = float(coords[1]) if len(coords) > 1 else 0.0
-                yaw = float(coords[2]) if len(coords) > 2 else 0.0
-                goals.append((x, y, yaw))
-            return goals
+            return parse_goals_string(args.goals)
         return [(args.x, args.y, args.yaw)]
 
     def odom_callback(self, msg):
@@ -278,307 +601,27 @@ class PiMPPIE2ETest(Node):
             rclpy.spin_once(self, timeout_sec=0.1)
 
     # ─────────────────────────────────────────
-    # 메트릭 계산
+    # 메트릭 계산 (순수 함수 위임)
     # ─────────────────────────────────────────
 
     def compute_metrics(self, goals_reached=0, goals_total=0) -> E2EMetrics:
-        m = E2EMetrics()
-        m.goals_reached = goals_reached
-        m.goals_total = goals_total
-        m.all_goals_reached = (goals_reached == goals_total and goals_total > 0)
-        n = len(self.samples)
-        m.num_samples = n
-
-        if n < 3:
-            return m
-
-        # ─── 궤적 통계 ───
-        m.travel_time = self.samples[-1].t - self.samples[0].t
-
-        dist = 0.0
-        for i in range(1, n):
-            dx = self.samples[i].x - self.samples[i - 1].x
-            dy = self.samples[i].y - self.samples[i - 1].y
-            dist += math.sqrt(dx * dx + dy * dy)
-        m.travel_distance = dist
-
-        last_goal = self.goals[-1] if self.goals else (0, 0, 0)
-        m.final_position_error = math.sqrt(
-            (self.last_odom_x - last_goal[0]) ** 2 +
-            (self.last_odom_y - last_goal[1]) ** 2)
-        yaw_diff = self.last_odom_theta - last_goal[2]
-        m.final_yaw_error = abs(math.atan2(math.sin(yaw_diff), math.cos(yaw_diff)))
-
-        # ─── 속도 통계 ───
-        speeds = [math.sqrt(s.vx**2 + s.vy**2) for s in self.samples]
-        m.mean_speed = sum(speeds) / n
-        m.max_speed = max(speeds)
-
-        # ─── Rate (1차 미분) 계산 ───
-        rates_vx, rates_omega = [], []
-        for i in range(1, n):
-            dt = self.samples[i].t - self.samples[i - 1].t
-            if dt < 1e-6 or dt > 1.0:  # 이상치 필터
-                continue
-            rate_vx = abs(self.samples[i].vx - self.samples[i - 1].vx) / dt
-            rate_omega = abs(self.samples[i].omega - self.samples[i - 1].omega) / dt
-            rates_vx.append(rate_vx)
-            rates_omega.append(rate_omega)
-
-        # ─── Accel/Jerk (2차 미분) 계산 ───
-        jerks_vx, jerks_vy, jerks_omega = [], [], []
-        for i in range(2, n):
-            dt1 = self.samples[i].t - self.samples[i - 1].t
-            dt2 = self.samples[i - 1].t - self.samples[i - 2].t
-            if dt1 < 1e-6 or dt2 < 1e-6 or dt1 > 1.0 or dt2 > 1.0:
-                continue
-
-            acc1_vx = (self.samples[i].vx - self.samples[i - 1].vx) / dt1
-            acc0_vx = (self.samples[i - 1].vx - self.samples[i - 2].vx) / dt2
-            dt_avg = (dt1 + dt2) / 2.0
-            j_vx = abs(acc1_vx - acc0_vx) / dt_avg
-
-            acc1_vy = (self.samples[i].vy - self.samples[i - 1].vy) / dt1
-            acc0_vy = (self.samples[i - 1].vy - self.samples[i - 2].vy) / dt2
-            j_vy = abs(acc1_vy - acc0_vy) / dt_avg
-
-            acc1_w = (self.samples[i].omega - self.samples[i - 1].omega) / dt1
-            acc0_w = (self.samples[i - 1].omega - self.samples[i - 2].omega) / dt2
-            j_w = abs(acc1_w - acc0_w) / dt_avg
-
-            jerks_vx.append(j_vx)
-            jerks_vy.append(j_vy)
-            jerks_omega.append(j_w)
-
-        # Jerk 통계
-        if jerks_vx:
-            m.mean_jerk_vx = sum(jerks_vx) / len(jerks_vx)
-            m.mean_jerk_vy = sum(jerks_vy) / len(jerks_vy)
-            m.mean_jerk_omega = sum(jerks_omega) / len(jerks_omega)
-            rms_sq = sum(j**2 for j in jerks_vx) + sum(j**2 for j in jerks_vy)
-            m.rms_jerk = math.sqrt(rms_sq / (len(jerks_vx) + len(jerks_vy)))
-
-        # ─── ★ π-MPPI 제약 만족도 ───
-        cm = ConstraintMetrics()
-
-        if rates_vx:
-            cm.rate_max_vx = max(rates_vx)
-            cm.rate_max_omega = max(rates_omega)
-            cm.rate_mean_vx = sum(rates_vx) / len(rates_vx)
-            cm.rate_mean_omega = sum(rates_omega) / len(rates_omega)
-            cm.rate_violation_count_vx = sum(
-                1 for r in rates_vx if r > self.rate_max_v)
-            cm.rate_violation_count_omega = sum(
-                1 for r in rates_omega if r > self.rate_max_omega)
-            cm.rate_total_samples = len(rates_vx)
-            cm.rate_violation_ratio_vx = (
-                cm.rate_violation_count_vx / cm.rate_total_samples)
-            cm.rate_violation_ratio_omega = (
-                cm.rate_violation_count_omega / cm.rate_total_samples)
-
-        if jerks_vx:
-            cm.accel_max_vx = max(jerks_vx)
-            cm.accel_max_omega = max(jerks_omega)
-            cm.accel_mean_vx = sum(jerks_vx) / len(jerks_vx)
-            cm.accel_mean_omega = sum(jerks_omega) / len(jerks_omega)
-            cm.accel_violation_count_vx = sum(
-                1 for j in jerks_vx if j > self.accel_max_v)
-            cm.accel_violation_count_omega = sum(
-                1 for j in jerks_omega if j > self.accel_max_omega)
-            cm.accel_total_samples = len(jerks_vx)
-            cm.accel_violation_ratio_vx = (
-                cm.accel_violation_count_vx / cm.accel_total_samples)
-            cm.accel_violation_ratio_omega = (
-                cm.accel_violation_count_omega / cm.accel_total_samples)
-
-        m.constraints = cm
-
-        # ─── 정체 감지 ───
-        stall_count = sum(1 for s in speeds if s < 0.01)
-        m.num_stalls = stall_count
-        m.stall_ratio = stall_count / n if n > 0 else 0.0
-
-        # ─── 시간 응답 분석 (vx 기준) ───
-        m.rise_time, m.settling_time, m.overshoot_vx = self._time_response(
-            [s.vx for s in self.samples],
-            [s.t for s in self.samples])
-
-        return m
-
-    def _time_response(self, values, times):
-        """시간 응답 분석: rise time, settling time, overshoot"""
-        if len(values) < 10:
-            return 0.0, 0.0, 0.0
-
-        # 정상 상태 추정: 후반 20%의 평균
-        n = len(values)
-        tail = values[int(n * 0.8):]
-        if not tail:
-            return 0.0, 0.0, 0.0
-        steady = sum(tail) / len(tail)
-        if abs(steady) < 0.01:
-            return 0.0, 0.0, 0.0
-
-        # Rise time: 10% → 90%
-        t10 = t90 = None
-        for i, v in enumerate(values):
-            if t10 is None and v >= 0.1 * steady:
-                t10 = times[i]
-            if t90 is None and v >= 0.9 * steady:
-                t90 = times[i]
-                break
-        rise = (t90 - t10) if (t10 is not None and t90 is not None) else 0.0
-
-        # Settling time: 마지막으로 ±5% 벗어난 시점
-        settle = 0.0
-        for i in range(n - 1, -1, -1):
-            if abs(values[i] - steady) > 0.05 * abs(steady):
-                settle = times[i] - times[0]
-                break
-
-        # Overshoot
-        peak = max(values)
-        overshoot = (peak - steady) / abs(steady) if abs(steady) > 0.01 else 0.0
-        overshoot = max(0.0, overshoot)
-
-        return rise, settle, overshoot
-
-    # ─────────────────────────────────────────
-    # 리포트 출력
-    # ─────────────────────────────────────────
+        return compute_e2e_metrics(
+            samples=self.samples,
+            goals=self.goals,
+            last_odom_x=self.last_odom_x,
+            last_odom_y=self.last_odom_y,
+            last_odom_theta=self.last_odom_theta,
+            rate_max_v=self.rate_max_v,
+            rate_max_omega=self.rate_max_omega,
+            accel_max_v=self.accel_max_v,
+            accel_max_omega=self.accel_max_omega,
+            goals_reached=goals_reached,
+            goals_total=goals_total,
+        )
 
     def print_report(self, m: E2EMetrics):
-        cm = m.constraints or ConstraintMetrics()
-        W = 64
-
-        def bar(ratio, width=20):
-            """제약 만족도 바 (0%=전부 만족, 100%=전부 위반)"""
-            filled = int(ratio * width)
-            return '█' * filled + '░' * (width - filled)
-
-        def status(ratio, label=""):
-            if ratio < 0.01:
-                return f'PASS ({label})'
-            elif ratio < 0.1:
-                return f'WARN ({label})'
-            else:
-                return f'FAIL ({label})'
-
-        print()
-        print('┌' + '─' * W + '┐')
-        print('│' + ' π-MPPI E2E Analysis Report'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-
-        # Goal
-        goal_str = 'YES' if m.all_goals_reached else 'NO'
-        print(f'│  Goals reached    : {m.goals_reached}/{m.goals_total} ({goal_str})'
-              .ljust(W + 1) + '│')
-        print(f'│  Samples          : {m.num_samples}'
-              .ljust(W + 1) + '│')
-        print(f'│  Travel time      : {m.travel_time:.1f} s'
-              .ljust(W + 1) + '│')
-        print(f'│  Travel distance  : {m.travel_distance:.2f} m'
-              .ljust(W + 1) + '│')
-        print(f'│  Position error   : {m.final_position_error:.3f} m'
-              .ljust(W + 1) + '│')
-        print(f'│  Yaw error        : {math.degrees(m.final_yaw_error):.1f} deg'
-              .ljust(W + 1) + '│')
-
-        print('├' + '─' * W + '┤')
-        print('│' + ' Speed Profile'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-        print(f'│  Mean speed       : {m.mean_speed:.3f} m/s'
-              .ljust(W + 1) + '│')
-        print(f'│  Max speed        : {m.max_speed:.3f} m/s'
-              .ljust(W + 1) + '│')
-        print(f'│  Stalls           : {m.num_stalls} ({m.stall_ratio:.1%})'
-              .ljust(W + 1) + '│')
-
-        print('├' + '─' * W + '┤')
-        print('│' + ' Time Response'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-        print(f'│  Rise time (10→90%): {m.rise_time:.2f} s'
-              .ljust(W + 1) + '│')
-        print(f'│  Settling time     : {m.settling_time:.2f} s'
-              .ljust(W + 1) + '│')
-        print(f'│  Overshoot vx      : {m.overshoot_vx:.1%}'
-              .ljust(W + 1) + '│')
-
-        print('├' + '─' * W + '┤')
-        print('│' + ' Smoothness (lower = better)'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-        print(f'│  Jerk vx   (mean) : {m.mean_jerk_vx:.3f} m/s³'
-              .ljust(W + 1) + '│')
-        print(f'│  Jerk vy   (mean) : {m.mean_jerk_vy:.3f} m/s³'
-              .ljust(W + 1) + '│')
-        print(f'│  Jerk omega(mean) : {m.mean_jerk_omega:.3f} rad/s³'
-              .ljust(W + 1) + '│')
-        print(f'│  Jerk RMS         : {m.rms_jerk:.3f}'
-              .ljust(W + 1) + '│')
-
-        # ★ 핵심: 제약 만족도
-        print('├' + '─' * W + '┤')
-        print('│' + ' ★ Constraint Satisfaction (π-MPPI)'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-
-        print(f'│  Rate bound vx    : {self.rate_max_v:.1f} m/s²'
-              .ljust(W + 1) + '│')
-        print(f'│    measured max   : {cm.rate_max_vx:.3f} m/s²'
-              .ljust(W + 1) + '│')
-        print(f'│    measured mean  : {cm.rate_mean_vx:.3f} m/s²'
-              .ljust(W + 1) + '│')
-        s = status(cm.rate_violation_ratio_vx, f'{cm.rate_violation_count_vx}/{cm.rate_total_samples}')
-        print(f'│    violations     : {bar(cm.rate_violation_ratio_vx)} {s}'
-              .ljust(W + 1) + '│')
-
-        print(f'│  Rate bound omega : {self.rate_max_omega:.1f} rad/s²'
-              .ljust(W + 1) + '│')
-        print(f'│    measured max   : {cm.rate_max_omega:.3f} rad/s²'
-              .ljust(W + 1) + '│')
-        s = status(cm.rate_violation_ratio_omega, f'{cm.rate_violation_count_omega}/{cm.rate_total_samples}')
-        print(f'│    violations     : {bar(cm.rate_violation_ratio_omega)} {s}'
-              .ljust(W + 1) + '│')
-
-        print(f'│  Accel bound vx   : {self.accel_max_v:.1f} m/s³'
-              .ljust(W + 1) + '│')
-        print(f'│    measured max   : {cm.accel_max_vx:.3f} m/s³'
-              .ljust(W + 1) + '│')
-        s = status(cm.accel_violation_ratio_vx, f'{cm.accel_violation_count_vx}/{cm.accel_total_samples}')
-        print(f'│    violations     : {bar(cm.accel_violation_ratio_vx)} {s}'
-              .ljust(W + 1) + '│')
-
-        print(f'│  Accel bound omega: {self.accel_max_omega:.1f} rad/s³'
-              .ljust(W + 1) + '│')
-        print(f'│    measured max   : {cm.accel_max_omega:.3f} rad/s³'
-              .ljust(W + 1) + '│')
-        s = status(cm.accel_violation_ratio_omega, f'{cm.accel_violation_count_omega}/{cm.accel_total_samples}')
-        print(f'│    violations     : {bar(cm.accel_violation_ratio_omega)} {s}'
-              .ljust(W + 1) + '│')
-
-        # ─── 종합 판정 ───
-        print('├' + '─' * W + '┤')
-        print('│' + ' Summary'.center(W) + '│')
-        print('├' + '─' * W + '┤')
-
-        checks = [
-            ('goal_reached', m.all_goals_reached or m.goals_total == 0),
-            ('rate_vx_ok', cm.rate_violation_ratio_vx < 0.1),
-            ('rate_omega_ok', cm.rate_violation_ratio_omega < 0.1),
-            ('accel_vx_ok', cm.accel_violation_ratio_vx < 0.1),
-            ('accel_omega_ok', cm.accel_violation_ratio_omega < 0.1),
-            ('jerk_ok', m.rms_jerk < 50.0),
-            ('no_stall', m.stall_ratio < 0.3),
-        ]
-        for name, ok in checks:
-            mark = 'PASS' if ok else 'FAIL'
-            print(f'│  [{mark}] {name}'.ljust(W + 1) + '│')
-
-        all_pass = all(ok for _, ok in checks)
-        result = 'ALL PASS' if all_pass else 'SOME FAILED'
-        print('├' + '─' * W + '┤')
-        print(f'│  Result: {result}'.ljust(W + 1) + '│')
-        print('└' + '─' * W + '┘')
-        print()
+        print_e2e_report(m, self.rate_max_v, self.rate_max_omega,
+                         self.accel_max_v, self.accel_max_omega)
 
     # ─────────────────────────────────────────
     # 데이터 저장

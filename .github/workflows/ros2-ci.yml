@@ -71,6 +71,25 @@ jobs:
           python3 -m pytest src/mpc_controller_ros2/test/python/ -v \
             --override-ini="addopts="
 
+      - name: Run E2E logic tests
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          source install/setup.bash
+          python3 -m pytest src/mpc_controller_ros2/test/python/test_pi_mppi_e2e_logic.py -v \
+            --override-ini="addopts="
+
+      - name: Run performance benchmark
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          source install/setup.bash
+          if [ -f ./build/mpc_controller_ros2/bench_mppi_pipeline ]; then
+            timeout 60 ./build/mpc_controller_ros2/bench_mppi_pipeline 2>&1 | tee /tmp/bench_result.txt || true
+            echo "=== Benchmark Summary ==="
+            grep -E "K=|mean|median|Hz" /tmp/bench_result.txt || true
+          fi
+
       - name: Show test results
         if: always()
         run: |

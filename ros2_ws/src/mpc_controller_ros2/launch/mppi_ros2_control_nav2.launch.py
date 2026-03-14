@@ -257,6 +257,11 @@ def launch_setup(context, *args, **kwargs):
         bridge_args.append(
             f'/model/{robot_name}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'
         )
+    if is_swerve:
+        # IMU + Depth Camera bridges (swerve robot only)
+        bridge_args.append('/imu@sensor_msgs/msg/Imu[gz.msgs.IMU')
+        bridge_args.append('/depth@sensor_msgs/msg/Image[gz.msgs.Image')
+        bridge_args.append('/depth/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked')
 
     # 동적 장애물 cmd_vel bridge (stress_test 월드 사용 시)
     if controller_type == 'stress_test':

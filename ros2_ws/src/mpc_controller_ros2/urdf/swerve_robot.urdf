@@ -53,12 +53,13 @@
       </inertial>
     </link>
 
-    <joint name="${prefix}_steer_joint" type="continuous">
+    <joint name="${prefix}_steer_joint" type="revolute">
       <parent link="base_link"/>
       <child link="${prefix}_steer_link"/>
       <origin xyz="${x} ${y} ${-base_height/2}" rpy="0 0 0"/>
       <axis xyz="0 0 1"/>
-      <dynamics damping="0.05" friction="0.05"/>
+      <limit lower="${-pi}" upper="${pi}" effort="10.0" velocity="3.0"/>
+      <dynamics damping="0.1" friction="0.05"/>
     </joint>
 
     <!-- Wheel link -->
@@ -168,6 +169,59 @@
     <origin xyz="0.2 0 ${base_height/2 + 0.05}" rpy="0 0 0"/>
   </joint>
 
+  <!-- ========== IMU sensor ========== -->
+  <link name="imu_link">
+    <visual>
+      <geometry>
+        <box size="0.02 0.02 0.01"/>
+      </geometry>
+      <material name="yellow">
+        <color rgba="0.9 0.9 0.1 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0"
+               iyy="0.000001" iyz="0.0"
+               izz="0.000001"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========== Depth Camera ========== -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.03 0.08 0.03"/>
+      </geometry>
+      <material name="dark_gray">
+        <color rgba="0.3 0.3 0.3 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.03 0.08 0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.00001" ixy="0.0" ixz="0.0"
+               iyy="0.00001" iyz="0.0"
+               izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.25 0 ${base_height/2 + 0.08}" rpy="0 0 0"/>
+  </joint>
+
   <!-- ========== ros2_control ========== -->
   <ros2_control name="IgnitionSystem" type="system">
     <hardware>
@@ -254,6 +308,55 @@
       </lidar>
       <always_on>1</always_on>
       <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU sensor for Gazebo Harmonic -->
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>/imu</topic>
+      <update_rate>100</update_rate>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.001</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.001</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.001</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <always_on>1</always_on>
+    </sensor>
+  </gazebo>
+
+  <!-- Depth camera sensor for Gazebo Harmonic -->
+  <gazebo reference="camera_link">
+    <sensor name="depth_camera" type="depth_camera">
+      <topic>/depth</topic>
+      <update_rate>15</update_rate>
+      <gz_frame_id>camera_link</gz_frame_id>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>
+        <image>
+          <width>320</width>
+          <height>240</height>
+          <format>R_FLOAT32</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>10.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.005</stddev>
+        </noise>
+      </camera>
+      <always_on>1</always_on>
     </sensor>
   </gazebo>
 
