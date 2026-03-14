@@ -139,6 +139,10 @@ def launch_setup(context, *args, **kwargs):
                     'CS-MPPI (Covariance Steering, CoVO-MPC CoRL 2023)'),
         'pi_mppi': ('nav2_params_pi_mppi.yaml',
                     'pi-MPPI (Projection MPPI, ADMM QP, RA-L 2025)'),
+        'hybrid_swerve': ('nav2_params_hybrid_swerve_mppi.yaml',
+                          'MPPI-H Hybrid Swerve (IROS 2024, Low-D↔4D)'),
+        'hybrid_non_coaxial': ('nav2_params_hybrid_non_coaxial_mppi.yaml',
+                               'MPPI-H Hybrid Non-Coaxial (IROS 2024, Low-D↔4D)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -152,6 +156,7 @@ def launch_setup(context, *args, **kwargs):
     is_swerve = controller_type in [
         'swerve', 'non_coaxial', 'non_coaxial_60deg',
         'dial_swerve', 'dial_non_coaxial',
+        'hybrid_swerve', 'hybrid_non_coaxial',
     ]
 
     # Ackermann 판별

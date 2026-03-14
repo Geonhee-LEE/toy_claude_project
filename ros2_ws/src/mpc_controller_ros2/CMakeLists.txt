@@ -109,6 +109,8 @@ add_library(mppi_controller_plugin SHARED
   src/ilqr_mppi_controller_plugin.cpp
   src/cs_mppi_controller_plugin.cpp
   src/pi_mppi_controller_plugin.cpp
+  src/wheel_level_4d_model.cpp
+  src/hybrid_swerve_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -342,6 +344,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_pi_mppi test/unit/test_pi_mppi.cpp)
   if(TARGET test_pi_mppi)
     target_link_libraries(test_pi_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_hybrid_swerve_mppi test/unit/test_hybrid_swerve_mppi.cpp)
+  if(TARGET test_hybrid_swerve_mppi)
+    target_link_libraries(test_hybrid_swerve_mppi mppi_controller_plugin)
   endif()
 endif()
 

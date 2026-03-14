@@ -3,6 +3,7 @@
 #include "mpc_controller_ros2/swerve_drive_model.hpp"
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
 #include "mpc_controller_ros2/ackermann_model.hpp"
+#include "mpc_controller_ros2/wheel_level_4d_model.hpp"
 #include "mpc_controller_ros2/residual_dynamics_model.hpp"
 #include "mpc_controller_ros2/eigen_mlp.hpp"
 #include <stdexcept>
@@ -37,10 +38,16 @@ std::unique_ptr<MotionModel> MotionModelFactory::create(
       params.max_steering_rate, params.max_steering_angle,
       params.wheelbase);
   }
+  else if (model_type == "wheel_level_4d") {
+    return std::make_unique<WheelLevel4DModel>(
+      params.hybrid_lf, params.hybrid_lr,
+      params.hybrid_dl, params.hybrid_dr,
+      params.hybrid_v_wheel_max, params.hybrid_delta_max);
+  }
   else {
     throw std::invalid_argument(
       "Unknown motion model type: '" + model_type + "'. "
-      "Supported: 'diff_drive', 'swerve', 'non_coaxial_swerve', 'ackermann'");
+      "Supported: 'diff_drive', 'swerve', 'non_coaxial_swerve', 'ackermann', 'wheel_level_4d'");
   }
 }
 

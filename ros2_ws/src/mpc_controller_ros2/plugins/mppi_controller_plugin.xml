@@ -98,4 +98,12 @@
       Guarantees smooth, feasible controls without post-hoc filtering.
     </description>
   </class>
+  <class type="mpc_controller_ros2::HybridSwerveMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      MPPI-H (Hybrid Swerve MPPI) controller plugin for nav2.
+      IROS 2024 (arXiv:2409.08648). Switches sampling space between Low-D (body velocity)
+      and 4D (diagonal wheel pairs) in real-time based on tracking error.
+      Supports both Coaxial and Non-Coaxial Swerve configurations.
+    </description>
+  </class>
 </library>

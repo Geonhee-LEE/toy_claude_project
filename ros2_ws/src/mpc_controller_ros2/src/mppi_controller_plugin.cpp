@@ -1420,6 +1420,26 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "pi_accel_max_omega", params_.pi_accel_max_omega);
   node_->declare_parameter(prefix + "pi_accel_max_vy", params_.pi_accel_max_vy);
 
+  // Hybrid Swerve MPPI (MPPI-H)
+  node_->declare_parameter(prefix + "hybrid_enabled", params_.hybrid_enabled);
+  node_->declare_parameter(prefix + "hybrid_cdist_threshold", params_.hybrid_cdist_threshold);
+  node_->declare_parameter(prefix + "hybrid_cangle_threshold", params_.hybrid_cangle_threshold);
+  node_->declare_parameter(prefix + "hybrid_hysteresis_count", params_.hybrid_hysteresis_count);
+  node_->declare_parameter(prefix + "hybrid_lf", params_.hybrid_lf);
+  node_->declare_parameter(prefix + "hybrid_lr", params_.hybrid_lr);
+  node_->declare_parameter(prefix + "hybrid_dl", params_.hybrid_dl);
+  node_->declare_parameter(prefix + "hybrid_dr", params_.hybrid_dr);
+  node_->declare_parameter(prefix + "hybrid_v_wheel_max", params_.hybrid_v_wheel_max);
+  node_->declare_parameter(prefix + "hybrid_delta_max", params_.hybrid_delta_max);
+  node_->declare_parameter(prefix + "hybrid_noise_sigma_vfl", params_.hybrid_noise_sigma_vfl);
+  node_->declare_parameter(prefix + "hybrid_noise_sigma_vrr", params_.hybrid_noise_sigma_vrr);
+  node_->declare_parameter(prefix + "hybrid_noise_sigma_dfl", params_.hybrid_noise_sigma_dfl);
+  node_->declare_parameter(prefix + "hybrid_noise_sigma_drr", params_.hybrid_noise_sigma_drr);
+  node_->declare_parameter(prefix + "hybrid_R_vfl", params_.hybrid_R_vfl);
+  node_->declare_parameter(prefix + "hybrid_R_vrr", params_.hybrid_R_vrr);
+  node_->declare_parameter(prefix + "hybrid_R_dfl", params_.hybrid_R_dfl);
+  node_->declare_parameter(prefix + "hybrid_R_drr", params_.hybrid_R_drr);
+
   // iLQR Warm-Start
   node_->declare_parameter(prefix + "ilqr_enabled", params_.ilqr_enabled);
   node_->declare_parameter(prefix + "ilqr_max_iterations", params_.ilqr_max_iterations);
@@ -1681,6 +1701,26 @@ void MPPIControllerPlugin::loadParameters()
   params_.pi_accel_max_v = node_->get_parameter(prefix + "pi_accel_max_v").as_double();
   params_.pi_accel_max_omega = node_->get_parameter(prefix + "pi_accel_max_omega").as_double();
   params_.pi_accel_max_vy = node_->get_parameter(prefix + "pi_accel_max_vy").as_double();
+
+  // Hybrid Swerve MPPI (MPPI-H)
+  params_.hybrid_enabled = node_->get_parameter(prefix + "hybrid_enabled").as_bool();
+  params_.hybrid_cdist_threshold = node_->get_parameter(prefix + "hybrid_cdist_threshold").as_double();
+  params_.hybrid_cangle_threshold = node_->get_parameter(prefix + "hybrid_cangle_threshold").as_double();
+  params_.hybrid_hysteresis_count = node_->get_parameter(prefix + "hybrid_hysteresis_count").as_int();
+  params_.hybrid_lf = node_->get_parameter(prefix + "hybrid_lf").as_double();
+  params_.hybrid_lr = node_->get_parameter(prefix + "hybrid_lr").as_double();
+  params_.hybrid_dl = node_->get_parameter(prefix + "hybrid_dl").as_double();
+  params_.hybrid_dr = node_->get_parameter(prefix + "hybrid_dr").as_double();
+  params_.hybrid_v_wheel_max = node_->get_parameter(prefix + "hybrid_v_wheel_max").as_double();
+  params_.hybrid_delta_max = node_->get_parameter(prefix + "hybrid_delta_max").as_double();
+  params_.hybrid_noise_sigma_vfl = node_->get_parameter(prefix + "hybrid_noise_sigma_vfl").as_double();
+  params_.hybrid_noise_sigma_vrr = node_->get_parameter(prefix + "hybrid_noise_sigma_vrr").as_double();
+  params_.hybrid_noise_sigma_dfl = node_->get_parameter(prefix + "hybrid_noise_sigma_dfl").as_double();
+  params_.hybrid_noise_sigma_drr = node_->get_parameter(prefix + "hybrid_noise_sigma_drr").as_double();
+  params_.hybrid_R_vfl = node_->get_parameter(prefix + "hybrid_R_vfl").as_double();
+  params_.hybrid_R_vrr = node_->get_parameter(prefix + "hybrid_R_vrr").as_double();
+  params_.hybrid_R_dfl = node_->get_parameter(prefix + "hybrid_R_dfl").as_double();
+  params_.hybrid_R_drr = node_->get_parameter(prefix + "hybrid_R_drr").as_double();
 
   // iLQR Warm-Start
   params_.ilqr_enabled = node_->get_parameter(prefix + "ilqr_enabled").as_bool();

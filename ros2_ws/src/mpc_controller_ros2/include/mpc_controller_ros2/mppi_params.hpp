@@ -228,6 +228,35 @@ struct MPPIParams
   double ilqr_cost_tolerance{1e-4};                  // 수렴 판정 임계값
 
   // ============================================================================
+  // Hybrid Swerve MPPI (MPPI-H) 파라미터
+  // IROS 2024, arXiv:2409.08648: Low-D↔4D 샘플링 공간 실시간 전환
+  // ============================================================================
+  bool hybrid_enabled{true};                    // 하이브리드 모드 활성화
+  double hybrid_cdist_threshold{0.3};           // 추적 거리 임계값 (m)
+  double hybrid_cangle_threshold{0.3};          // 추적 각도 임계값 (rad)
+  int hybrid_hysteresis_count{3};               // 모드 전환 히스테리시스 (cycles)
+
+  // 4D 바퀴 기하 파라미터
+  double hybrid_lf{0.25};                       // 전방 바퀴 종방향 거리 (m)
+  double hybrid_lr{0.25};                       // 후방 바퀴 종방향 거리 (m)
+  double hybrid_dl{0.22};                       // 좌측 바퀴 횡방향 거리 (m)
+  double hybrid_dr{0.22};                       // 우측 바퀴 횡방향 거리 (m)
+  double hybrid_v_wheel_max{2.0};               // 최대 바퀴 속도 (m/s)
+  double hybrid_delta_max{1.5708};              // 최대 바퀴 조향각 (rad, π/2)
+
+  // 4D 모드 노이즈 σ
+  double hybrid_noise_sigma_vfl{0.5};
+  double hybrid_noise_sigma_vrr{0.5};
+  double hybrid_noise_sigma_dfl{0.3};
+  double hybrid_noise_sigma_drr{0.3};
+
+  // 4D 모드 제어 비용 R
+  double hybrid_R_vfl{0.1};
+  double hybrid_R_vrr{0.1};
+  double hybrid_R_dfl{0.3};
+  double hybrid_R_drr{0.3};
+
+  // ============================================================================
   // CBF (Control Barrier Function) 안전성 보장 파라미터
   // ============================================================================
   // Non-Coaxial Swerve / Ackermann 공통 파라미터
