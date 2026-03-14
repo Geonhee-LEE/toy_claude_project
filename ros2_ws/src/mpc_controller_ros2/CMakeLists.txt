@@ -178,6 +178,7 @@ install(PROGRAMS
   scripts/stress_test.py
   scripts/nav2_lifecycle_bringup.py
   scripts/train_residual_model.py
+  scripts/pi_mppi_e2e_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
