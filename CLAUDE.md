@@ -13,7 +13,7 @@
 P0: Ackermann MotionModel C++ ✅ (PR #138, Bicycle model θ̇=v·tan(δ)/L)
 P0: C++ MPPI 성능 프로파일링 + 최적화 ✅ (PR #132, K=512→1.88ms/532Hz)
 P0: Residual Dynamics + Safety Enhancement C++ ✅ (PR #140, EigenMLP + Shield-MPPI + BR-MPPI + ACP)
-P1: 최신 MPPI 변형 C++ (Covariance Steering, π-MPPI)
+P1: 최신 MPPI 변형 C++ (Covariance Steering ✅, π-MPPI ✅, MPPI-H ✅)
 P1: 추가 안전성 고도화 C++ (CLF-CBF-QP, 다중 CBF, QP 솔버)
 ```
 
@@ -55,7 +55,7 @@ mpc_controller/
 - M2 고도화 (Colored Noise, Adaptive Temp, Tube-MPPI, ControlRateCost): 완료
 - M3 SOTA 변형 (Log, Tsallis, Risk-Aware, SVMPC): 완료
 - M3.5 확장 (Smooth, Spline, SVG-MPPI): 완료
-- M4 ROS2 nav2 통합 (11종 C++ 플러그인 + Swerve): 완료
+- M4 ROS2 nav2 통합 (15종 C++ 플러그인 + Swerve): 완료
 - M5 C++ 포팅 (SOTA + M2 고도화 + M3.5): 완료
 - GPU 가속 (JAX JIT + lax.scan + vmap): 완료 (PR #103)
 - GPU 8종 변형 확장 (가중치 Strategy + SVGD JIT): 완료 (PR #105)
@@ -72,6 +72,10 @@ mpc_controller/
 - C++ MPPI 성능 최적화 (True Batch + InPlace + 대각 Q + SIMD): 완료 (PR #132)
 - Ackermann MotionModel C++ (Bicycle model, nx=4 nu=2, wheelbase): 완료 (PR #138)
 - Residual Dynamics + Safety Enhancement C++ (EigenMLP, Shield-MPPI, BR-MPPI, ACP): 완료 (PR #140)
+- iLQR-MPPI C++ (iLQR warm-start + MPPI 파이프라인): 완료 (PR #142)
+- CS-MPPI C++ (Covariance Steering, CoVO-MPC CoRL 2023): 완료 (PR #150)
+- π-MPPI C++ (ADMM QP 투영 필터, rate/accel hard bounds, RA-L 2025): 완료 (PR #152)
+- MPPI-H C++ (Hybrid Swerve, Low-D↔4D 전환, IROS 2024): 완료 (PR #153)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

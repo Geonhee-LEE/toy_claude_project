@@ -35,7 +35,7 @@ ROS2 Jazzy용 Model Predictive Control 패키지입니다.
 - **nav2_core::Controller** 플러그인으로 nav2 스택과 완전 통합
 - **C++ Eigen 기반** 고성능 연산 (K=1024, N=30에서 3.9ms — 258Hz)
 - **다모델 지원** DiffDrive / Swerve / NonCoaxialSwerve / Ackermann (MotionModel 추상화)
-- **12종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI, Shield-MPPI
+- **15종 MPPI 플러그인** Vanilla, Log, Tsallis, CVaR, SVMPC, Smooth, Spline, SVG-MPPI, Biased-MPPI, DIAL-MPPI, Shield-MPPI, iLQR-MPPI, CS-MPPI, π-MPPI
 - **안전성 고도화** CBF Safety Filter, BR-MPPI, Conformal Predictor(ACP), Shield-MPPI(per-step CBF)
 - **학습 기반 동역학** Residual Dynamics (EigenMLP + Decorator pattern, Sim-to-Real)
 - **비용 함수 계층화** StateTracking, Terminal, ControlEffort, ControlRate, CostmapObstacle, PreferForward
@@ -81,6 +81,9 @@ MPPIControllerPlugin (base, Vanilla MPPI)
 ├── BiasedMPPIControllerPlugin  (Ancillary biased sampling, RA-L 2024)
 ├── DialMPPIControllerPlugin    (Diffusion annealing, ICRA 2025)
 ├── ShieldMPPIControllerPlugin  (per-step CBF 투영, 10Hz@K=256)
+├── IlqrMPPIControllerPlugin   (iLQR warm-start + MPPI)
+├── CSMPPIControllerPlugin     (Covariance Steering, CoVO-MPC CoRL 2023)
+├── PiMPPIControllerPlugin     (ADMM QP 투영, π-MPPI RA-L 2025)
 └── SVMPCControllerPlugin       (SVGD)
     └── SVGMPPIControllerPlugin (Guide + follower)
 ```
@@ -581,7 +584,11 @@ colcon test-result --verbose
 | test_dial_mppi | 17 | ✅ |
 | test_residual_dynamics | 15 | ✅ |
 | test_safety_enhancement | 24 | ✅ |
-| **총계** | **330** | **PASSED** |
+| test_ilqr_solver | 12 | ✅ |
+| test_ilqr_mppi | 8 | ✅ |
+| test_cs_mppi | 16 | ✅ |
+| test_pi_mppi | 16 | ✅ |
+| **총계** | **382** | **PASSED** |
 
 ---
 
@@ -611,6 +618,9 @@ colcon test-result --verbose
 | Ackermann | Bicycle model MotionModel C++ (PR #138) | ✅ |
 | Residual Dynamics | EigenMLP + ResidualDynamicsModel Decorator (PR #140) | ✅ |
 | Safety Enhancement | BR-MPPI + ConformalPredictor + Shield-MPPI (PR #140) | ✅ |
+| iLQR-MPPI | iLQR warm-start + MPPI 파이프라인 (PR #142) | ✅ |
+| CS-MPPI | Covariance Steering, CoVO-MPC (PR #150) | ✅ |
+| π-MPPI | ADMM QP 투영 필터, hard rate/accel bounds (PR #152) | ✅ |
 
 ---
 

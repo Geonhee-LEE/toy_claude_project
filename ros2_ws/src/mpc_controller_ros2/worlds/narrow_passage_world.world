@@ -5,13 +5,13 @@
 
   레이아웃 (top-down):
   ┌──────────────────────────────────────┐
-  │ S(0,0)                               │
   │                                      │
-  │  ███████  0.8m  ███████████████████  │
+  │  ███████  0.8m  ███████████████████  │  y=5
   │          ↕gap                        │
-  │  ███████████████████  0.8m  ███████  │
+  │  S(0,0)                              │
+  │  ███████████████████  0.8m  ███████  │  y=−2
   │                      ↕gap            │
-  │  ███████  0.8m  ███████████████████  │
+  │  ███████  0.8m  ███████████████████  │  y=−5
   │          ↕gap                  G(7,−7)│
   └──────────────────────────────────────┘
 -->
@@ -110,15 +110,15 @@
     <!-- ==================== NARROW PASSAGE BARRIERS ==================== -->
     <!--
     3개의 수평 장벽, 각각 0.8m 간격으로 통과구멍
-    장벽 y 좌표: +4, 0, -4
+    장벽 y 좌표: +5, -2, -5
+    스폰 (0,0)은 y=+5와 y=-2 사이 안전 영역
     통과구멍 위치를 좌우 교대로 배치 (S자 경로 유도)
     -->
 
-    <!-- Barrier 1 (y=4): 왼쪽 통과구멍 (x=-5) -->
-    <!-- 왼쪽 벽: x=-10 ~ -5.4 (길이 4.6) -->
+    <!-- Barrier 1 (y=5): 왼쪽 통과구멍 (x=-5) -->
     <model name="barrier1_left">
       <static>true</static>
-      <pose>-7.7 4 0.5 0 0 0</pose>
+      <pose>-7.7 5 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -127,10 +127,10 @@
         </visual>
       </link>
     </model>
-    <!-- 오른쪽 벽: x=-4.6 ~ +10 (길이 14.6) → gap at x=-5.0, width=0.8 -->
+    <!-- 오른쪽 벽: gap at x=-5.0, width=0.8 -->
     <model name="barrier1_right">
       <static>true</static>
-      <pose>2.7 4 0.5 0 0 0</pose>
+      <pose>2.7 5 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -140,11 +140,10 @@
       </link>
     </model>
 
-    <!-- Barrier 2 (y=0): 오른쪽 통과구멍 (x=5) -->
-    <!-- 왼쪽 벽: x=-10 ~ +4.6 (길이 14.6) -->
+    <!-- Barrier 2 (y=-2): 오른쪽 통과구멍 (x=5) -->
     <model name="barrier2_left">
       <static>true</static>
-      <pose>-2.7 0 0.5 0 0 0</pose>
+      <pose>-2.7 -2 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -153,10 +152,9 @@
         </visual>
       </link>
     </model>
-    <!-- 오른쪽 벽: x=+5.4 ~ +10 (길이 4.6) -->
     <model name="barrier2_right">
       <static>true</static>
-      <pose>7.7 0 0.5 0 0 0</pose>
+      <pose>7.7 -2 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -166,10 +164,10 @@
       </link>
     </model>
 
-    <!-- Barrier 3 (y=-4): 왼쪽 통과구멍 (x=-5) -->
+    <!-- Barrier 3 (y=-5): 왼쪽 통과구멍 (x=-5) -->
     <model name="barrier3_left">
       <static>true</static>
-      <pose>-7.7 -4 0.5 0 0 0</pose>
+      <pose>-7.7 -5 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -180,7 +178,7 @@
     </model>
     <model name="barrier3_right">
       <static>true</static>
-      <pose>2.7 -4 0.5 0 0 0</pose>
+      <pose>2.7 -5 0.5 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
         <visual name="visual">
@@ -194,7 +192,7 @@
     <!-- 통과구멍 부근 원기둥 장애물 (통과를 더 어렵게) -->
     <model name="pillar_1">
       <static>true</static>
-      <pose>-5 5.5 0.4 0 0 0</pose>
+      <pose>-5 6.5 0.4 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
         <visual name="visual">
@@ -205,7 +203,7 @@
     </model>
     <model name="pillar_2">
       <static>true</static>
-      <pose>5 -1.5 0.4 0 0 0</pose>
+      <pose>5 -3.5 0.4 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
         <visual name="visual">
@@ -216,7 +214,7 @@
     </model>
     <model name="pillar_3">
       <static>true</static>
-      <pose>-5 -2.5 0.4 0 0 0</pose>
+      <pose>-5 -3.5 0.4 0 0 0</pose>
       <link name="link">
         <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
         <visual name="visual">

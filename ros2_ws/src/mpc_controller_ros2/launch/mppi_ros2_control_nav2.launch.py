@@ -87,9 +87,9 @@ from launch.actions import (
     GroupAction,
     RegisterEventHandler,
     EmitEvent,
-    Shutdown,
 )
-from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown as ShutdownEvent
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
 import xacro
@@ -228,6 +228,8 @@ def launch_setup(context, *args, **kwargs):
         cmd=gz_cmd,
         output='screen',
         additional_env=gz_env,
+        sigterm_timeout='5',
+        sigkill_timeout='3',
     )
 
     # ========== 2. Robot State Publisher ==========
@@ -286,6 +288,8 @@ def launch_setup(context, *args, **kwargs):
         executable='parameter_bridge',
         name='ros_gz_bridge',
         output='screen',
+        sigterm_timeout='3',
+        sigkill_timeout='2',
         parameters=[{
             'use_sim_time': True,
             # /clock QoS → reliable (best_effort의 UDP 순서 역전 방지)
@@ -345,7 +349,7 @@ def launch_setup(context, *args, **kwargs):
             if retcode != 0:
                 return [
                     LogInfo(msg=f'[FATAL] {ctrl_name} spawner failed (exit code {retcode}) — shutting down'),
-                    EmitEvent(event=Shutdown(reason=f'{ctrl_name} spawner failed after 10 retries')),
+                    EmitEvent(event=ShutdownEvent(reason=f'{ctrl_name} spawner failed after 10 retries')),
                 ]
             return []
         return _check_exit
@@ -487,6 +491,12 @@ rclpy.spin(TwistStamper())
 
     # --- Localization nodes ---
     # bond_heartbeat_period: 0.0 → bond 생성 건너뜀 (lifecycle_manager 없이 직접 활성화)
+    # sigterm/sigkill timeout: 좀비 프로세스 방지 (Shutdown 시 확실히 종료)
+    _node_kill_args = {
+        'sigterm_timeout': '5',
+        'sigkill_timeout': '3',
+    }
+
     map_server_node = Node(
         package='nav2_map_server',
         executable='map_server',
@@ -497,6 +507,7 @@ rclpy.spin(TwistStamper())
             'yaml_filename': map_file,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     amcl_node = Node(
         package='nav2_amcl',
@@ -507,6 +518,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
 
     # --- Navigation nodes ---
@@ -520,6 +532,7 @@ rclpy.spin(TwistStamper())
             'bond_heartbeat_period': 0.0,
         }],
         remappings=[('cmd_vel', '/cmd_vel_nav')],
+        **_node_kill_args,
     )
     planner_server_node = Node(
         package='nav2_planner',
@@ -530,6 +543,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     behavior_server_node = Node(
         package='nav2_behaviors',
@@ -540,6 +554,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     bt_navigator_node = Node(
         package='nav2_bt_navigator',
@@ -550,6 +565,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
 
     # --- Lifecycle bringup (bond-free) ---
@@ -566,6 +582,7 @@ rclpy.spin(TwistStamper())
             'max_retries': 10,
             'check_interval': 10.0,
         }],
+        **_node_kill_args,
     )
 
     # ========== 8. RVIZ ==========
@@ -653,9 +670,78 @@ rclpy.spin(TwistStamper())
         ),
     ]
 
+    # cleanup 명령: 모든 관련 프로세스 강제 종료
+    # trap '' TERM: launch의 Shutdown SIGTERM이 cleanup bash 자체를 죽이는 것 방지
+    _cleanup_cmd = (
+        'trap "" TERM; '
+        'pkill -9 -f "gz sim" 2>/dev/null; '
+        'pkill -9 -f "parameter_bridge" 2>/dev/null; '
+        'pkill -9 -f "twist_stamper" 2>/dev/null; '
+        'pkill -9 -f "swerve_kinematics_node" 2>/dev/null; '
+        'pkill -9 -f "odom_to_tf" 2>/dev/null; '
+        'pkill -9 -f "nav2_lifecycle_bringup" 2>/dev/null; '
+        'pkill -9 -f "robot_state_publisher" 2>/dev/null; '
+        'pkill -9 -f "map_server --ros" 2>/dev/null; '
+        'pkill -9 -f "amcl --ros" 2>/dev/null; '
+        'pkill -9 -f "controller_server --ros" 2>/dev/null; '
+        'pkill -9 -f "planner_server --ros" 2>/dev/null; '
+        'pkill -9 -f "behavior_server --ros" 2>/dev/null; '
+        'pkill -9 -f "bt_navigator --ros" 2>/dev/null; '
+        'pkill -9 -f "rviz2" 2>/dev/null; '
+        'pkill -9 -f "ros2 lifecycle" 2>/dev/null; '
+        'echo "[Shutdown] Cleanup complete"'
+    )
+
+    def _make_cleanup_action():
+        return ExecuteProcess(
+            cmd=['bash', '-c', _cleanup_cmd],
+            output='screen',
+            sigterm_timeout='2',
+            sigkill_timeout='2',
+        )
+
+    # Gazebo 종료 → cleanup + Shutdown (좀비 프로세스 방지)
+    nodes.append(
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=gz_sim,
+                on_exit=[
+                    LogInfo(msg='[Shutdown] Gazebo exited — cleaning up all nodes'),
+                    _make_cleanup_action(),
+                    EmitEvent(event=ShutdownEvent(reason='Gazebo process exited')),
+                ],
+            )
+        )
+    )
+
+    # Shutdown 시 남은 프로세스 강제 정리
+    nodes.append(
+        RegisterEventHandler(
+            OnShutdown(
+                on_shutdown=[
+                    LogInfo(msg='[Shutdown] Launch shutting down — cleaning up...'),
+                    _make_cleanup_action(),
+                ],
+            )
+        )
+    )
+
     # RVIZ 즉시 시작 (headless 제외) — 토픽 구독이므로 대기 불필요
     if not headless:
         nodes.append(rviz)
+        # RVIZ 종료 → cleanup + Shutdown
+        nodes.append(
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=rviz,
+                    on_exit=[
+                        LogInfo(msg='[Shutdown] RVIZ closed — cleaning up all nodes'),
+                        _make_cleanup_action(),
+                        EmitEvent(event=ShutdownEvent(reason='RVIZ closed')),
+                    ],
+                )
+            )
+        )
 
     if is_ackermann:
         nodes.extend([
