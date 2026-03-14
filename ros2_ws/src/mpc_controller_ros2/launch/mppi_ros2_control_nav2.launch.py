@@ -24,6 +24,14 @@ nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bo
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
         world:=corridor_world.world map:=corridor_map.yaml
 
+    # Narrow Passage 환경 (0.8m 통과폭 테스트)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
+        world:=narrow_passage_world.world map:=narrow_passage_map.yaml
+
+    # Random Forest 환경 (장애물 회피 테스트)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
+        world:=random_forest_world.world map:=random_forest_map.yaml
+
     # Tsallis-MPPI (q-exponential 가중치)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tsallis
 
@@ -78,6 +86,8 @@ from launch.actions import (
     OpaqueFunction,
     GroupAction,
     RegisterEventHandler,
+    EmitEvent,
+    Shutdown,
 )
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
@@ -327,6 +337,18 @@ def launch_setup(context, *args, **kwargs):
             f'echo "[controllers] WARNING: {ctrl_name} failed after 10 attempts"; '
             f'exit 1; '
         ]
+
+    def _on_spawner_failure(ctrl_name):
+        """spawner 실패 시 Shutdown 이벤트를 발생시키는 이벤트 핸들러 생성."""
+        def _check_exit(event, context):
+            retcode = event.returncode
+            if retcode != 0:
+                return [
+                    LogInfo(msg=f'[FATAL] {ctrl_name} spawner failed (exit code {retcode}) — shutting down'),
+                    EmitEvent(event=Shutdown(reason=f'{ctrl_name} spawner failed after 10 retries')),
+                ]
+            return []
+        return _check_exit
 
     jsb_spawner = ExecuteProcess(
         cmd=_make_spawner_cmd('joint_state_broadcaster'),
@@ -608,6 +630,7 @@ rclpy.spin(TwistStamper())
 
         # 5. Controller event chain: spawn_robot → JSB → DD/Swerve/Ackermann → nav2
         #    spawner 내부 bash retry loop가 controller_manager 대기 + 재시도 처리
+        #    실패 시 (exit code != 0) → Shutdown 이벤트 발생
         RegisterEventHandler(
             OnProcessExit(
                 target_action=spawn_robot,
@@ -618,6 +641,14 @@ rclpy.spin(TwistStamper())
                     cmd_vel_relay,
                     *([odom_to_tf] if (is_swerve or is_ackermann) else []),
                 ],
+            )
+        ),
+
+        # JSB spawner 실패 감지
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=jsb_spawner,
+                on_exit=_on_spawner_failure('joint_state_broadcaster'),
             )
         ),
     ]
@@ -632,6 +663,13 @@ rclpy.spin(TwistStamper())
                 OnProcessExit(
                     target_action=jsb_spawner,
                     on_exit=[ackermann_spawner],
+                )
+            ),
+            # Ackermann spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=ackermann_spawner,
+                    on_exit=_on_spawner_failure('ackermann_steering_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
@@ -653,10 +691,24 @@ rclpy.spin(TwistStamper())
                     on_exit=[steer_spawner],
                 )
             ),
+            # Steer spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=steer_spawner,
+                    on_exit=_on_spawner_failure('steer_position_controller'),
+                )
+            ),
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=steer_spawner,
                     on_exit=[wheel_spawner],
+                )
+            ),
+            # Wheel spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=wheel_spawner,
+                    on_exit=_on_spawner_failure('wheel_velocity_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
@@ -676,6 +728,13 @@ rclpy.spin(TwistStamper())
                 OnProcessExit(
                     target_action=jsb_spawner,
                     on_exit=[dd_spawner],
+                )
+            ),
+            # DD spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=dd_spawner,
+                    on_exit=_on_spawner_failure('diff_drive_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
