@@ -192,6 +192,8 @@ install(PROGRAMS
   scripts/nav2_lifecycle_bringup.py
   scripts/train_residual_model.py
   scripts/pi_mppi_e2e_test.py
+  scripts/controller_benchmark.py
+  scripts/benchmark_report.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
