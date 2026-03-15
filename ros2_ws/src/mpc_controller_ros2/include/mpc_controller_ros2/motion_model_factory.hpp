@@ -44,6 +44,17 @@ public:
   static std::unique_ptr<MotionModel> createWithResidual(
     const std::string& model_type,
     const MPPIParams& params);
+
+  /**
+   * @brief Ensemble Dynamics 래핑된 MotionModel 생성
+   * @param model_type 공칭 모델 타입 문자열
+   * @param params MPPI 파라미터 (ensemble_weights_dir, ensemble_size, ensemble_alpha)
+   * @return EnsembleDynamicsModel (내부에 공칭 모델 + M개 MLP)
+   * @throws std::runtime_error MLP 로드 실패 시
+   */
+  static std::unique_ptr<MotionModel> createWithEnsemble(
+    const std::string& model_type,
+    const MPPIParams& params);
 };
 
 }  // namespace mpc_controller_ros2

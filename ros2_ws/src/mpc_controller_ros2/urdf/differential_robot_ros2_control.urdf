@@ -194,9 +194,9 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <!-- 높이 0.35m: 지면에서 ~0.45m, 5° pitch에서 ground intercept ~5.2m -->
-    <!-- pitch 5° 상향(-0.087rad): 바닥 반사 회피 + 장애물 검출 유지 -->
-    <origin xyz="0.15 0 0.35" rpy="0 -0.087 0"/>
+    <!-- 높이: base_link 상단(0.15) + 오프셋 = 지면에서 ~0.3m -->
+    <!-- pitch=0: 후방 바닥 검출 방지 (기존 -0.087rad pitch는 후방에서 하향이 됨) -->
+    <origin xyz="0.15 0 0.20" rpy="0 0 0"/>
   </joint>
 
   <!-- ========== ros2_control ========== -->

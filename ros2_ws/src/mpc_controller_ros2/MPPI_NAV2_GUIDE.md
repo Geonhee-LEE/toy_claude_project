@@ -18,7 +18,7 @@
 │         ↓ (goal)          ↓ (path)              │
 │  ┌──────────────┐   ┌──────────────────────┐   │
 │  │planner_server│   │ controller_server    │   │
-│  │  (NavFn)     │   │ (MPPI 12종 플러그인) │   │
+│  │  (NavFn)     │   │ (MPPI 15종 플러그인) │   │
 │  └──────────────┘   └──────────────────────┘   │
 │         ↓                    ↓                   │
 │  ┌─────────────────────────────────────────┐   │
@@ -77,6 +77,15 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ack
 
 # Shield-MPPI (per-step CBF + BR-MPPI + Conformal Predictor)
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=shield
+
+# iLQR-MPPI (iLQR warm-start + MPPI)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=ilqr_mppi
+
+# CS-MPPI (Covariance Steering, CoVO-MPC)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cs_mppi
+
+# π-MPPI (ADMM QP 투영 — rate/accel hard bounds)
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=pi_mppi
 ```
 
 실행되는 노드들:
@@ -213,6 +222,9 @@ ros2 param list /controller_server | grep FollowPath
 | NonCoaxial | `config/nav2_params_non_coaxial_mppi.yaml` | `config/nav2_params_swerve.yaml` |
 | Ackermann | `config/nav2_params_ackermann_mppi.yaml` | `config/nav2_params.yaml` |
 | Shield-MPPI | `config/nav2_params_shield_mppi.yaml` | (내장, CBF+BR-MPPI+Conformal) |
+| iLQR-MPPI | `config/nav2_params_ilqr_mppi.yaml` | (iLQR warm-start) |
+| CS-MPPI | `config/nav2_params_cs_mppi.yaml` | (Covariance Steering) |
+| π-MPPI | `config/nav2_params_pi_mppi.yaml` | (ADMM QP 투영) |
 
 ### Swerve MPPI 튜닝 가이드
 
@@ -386,6 +398,9 @@ ros2 param get /controller_server FollowPath.visualize_samples
 
 DIAL-MPPI (N_diffuse=5): Pipeline × 5 ≈ 9.4ms (K=512) → 10Hz 충족
 Shield-MPPI (stride=1, 3iter): +~0.1ms (barrier 없을 때 0) → 10Hz 충족
+iLQR-MPPI (2 iter): +~0.054ms → 10Hz 충족
+CS-MPPI (Frobenius norm): +~0.1ms → 10Hz 충족
+π-MPPI (ADMM 10iter, K=512): +~7ms → ~60Hz (10Hz 충족)
 ```
 
 벤치마크 실행:
@@ -416,11 +431,14 @@ colcon build --packages-select mpc_controller_ros2 --cmake-args -DCMAKE_BUILD_TY
 ## 다음 단계
 
 1. ✅ Gazebo + nav2 + MPPI 통합 완료
-2. ✅ 고급 MPPI 12종 플러그인 (M3/M3.5/M5 + Biased + DIAL + Shield)
+2. ✅ 고급 MPPI 15종 플러그인 (M3/M3.5/M5 + Biased + DIAL + Shield + iLQR + CS + π-MPPI)
 3. ✅ MotionModel 추상화 (DiffDrive/Swerve/NonCoaxial/Ackermann)
 4. ✅ Goal 수렴 + 장애물 회피 튜닝
 5. ✅ Swerve 오실레이션 진단 + MPPI 옵티마이저 수렴 수정
 6. ✅ C++ MPPI 성능 최적화 (PR #132) — K=512에서 1.88ms (532Hz)
 7. ✅ Residual Dynamics + Safety Enhancement (PR #140) — EigenMLP + Shield-MPPI + BR-MPPI + ACP
-8. 🔄 실제 로봇 테스트
-9. 📊 GPU 가속 (M2 잔여)
+8. ✅ iLQR-MPPI (PR #142) — iLQR warm-start + MPPI 파이프라인
+9. ✅ CS-MPPI (PR #150) — Covariance Steering (CoVO-MPC, CoRL 2023)
+10. ✅ π-MPPI (PR #152) — ADMM QP 투영 필터, hard rate/accel bounds
+11. 🔄 실제 로봇 테스트
+12. 📊 GPU 가속 (M2 잔여)

@@ -24,6 +24,14 @@ nav2 노드는 non-composition 모드로 실행하며, bond_timeout=0.0으로 bo
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
         world:=corridor_world.world map:=corridor_map.yaml
 
+    # Narrow Passage 환경 (0.8m 통과폭 테스트)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
+        world:=narrow_passage_world.world map:=narrow_passage_map.yaml
+
+    # Random Forest 환경 (장애물 회피 테스트)
+    ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
+        world:=random_forest_world.world map:=random_forest_map.yaml
+
     # Tsallis-MPPI (q-exponential 가중치)
     ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tsallis
 
@@ -78,8 +86,10 @@ from launch.actions import (
     OpaqueFunction,
     GroupAction,
     RegisterEventHandler,
+    EmitEvent,
 )
-from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown as ShutdownEvent
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter
 import xacro
@@ -94,6 +104,7 @@ def launch_setup(context, *args, **kwargs):
     # Resolve arguments
     controller_type = LaunchConfiguration('controller').perform(context)
     headless = LaunchConfiguration('headless').perform(context).lower() == 'true'
+    nav2_stress = LaunchConfiguration('nav2_stress').perform(context).lower() == 'true'
 
     # 컨트롤러별 파라미터 파일 선택
     controller_map = {
@@ -143,6 +154,26 @@ def launch_setup(context, *args, **kwargs):
                           'MPPI-H Hybrid Swerve (IROS 2024, Low-D↔4D)'),
         'hybrid_non_coaxial': ('nav2_params_hybrid_non_coaxial_mppi.yaml',
                                'MPPI-H Hybrid Non-Coaxial (IROS 2024, Low-D↔4D)'),
+        'log_swerve': ('nav2_params_log_swerve_mppi.yaml',
+                       'Log-MPPI Swerve (log-space weights + swerve)'),
+        'tsallis_swerve': ('nav2_params_tsallis_swerve_mppi.yaml',
+                           'Tsallis-MPPI Swerve (q-exponential + swerve)'),
+        'smooth_swerve': ('nav2_params_smooth_swerve_mppi.yaml',
+                          'Smooth-MPPI Swerve (Δu space + jerk + swerve)'),
+        'biased_swerve': ('nav2_params_biased_swerve_mppi.yaml',
+                          'Biased-MPPI Swerve (ancillary + swerve, RA-L 2024)'),
+        'shield_swerve': ('nav2_params_shield_swerve_mppi.yaml',
+                          'Shield-MPPI Swerve (CBF + BR-MPPI + swerve)'),
+        'cs_swerve': ('nav2_params_cs_swerve_mppi.yaml',
+                      'CS-MPPI Swerve (Covariance Steering + swerve)'),
+        'pi_swerve': ('nav2_params_pi_swerve_mppi.yaml',
+                      'pi-MPPI Swerve (ADMM QP projection + swerve)'),
+        'svg_swerve': ('nav2_params_svg_swerve_mppi.yaml',
+                       'SVG-MPPI Swerve (Guide SVGD + swerve)'),
+        'ilqr_swerve': ('nav2_params_ilqr_swerve_mppi.yaml',
+                        'iLQR-MPPI Swerve (iLQR warm-start + swerve)'),
+        'adaptive_shield': ('nav2_params_adaptive_shield_mppi.yaml',
+                            'Adaptive Shield-MPPI (distance/velocity adaptive CBF)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -157,6 +188,9 @@ def launch_setup(context, *args, **kwargs):
         'swerve', 'non_coaxial', 'non_coaxial_60deg',
         'dial_swerve', 'dial_non_coaxial',
         'hybrid_swerve', 'hybrid_non_coaxial',
+        'log_swerve', 'tsallis_swerve', 'smooth_swerve',
+        'biased_swerve', 'shield_swerve', 'cs_swerve',
+        'pi_swerve', 'svg_swerve', 'ilqr_swerve',
     ]
 
     # Ackermann 판별
@@ -172,7 +206,8 @@ def launch_setup(context, *args, **kwargs):
     elif is_swerve:
         urdf_file = os.path.join(pkg_dir, 'urdf', 'swerve_robot.urdf')
         controller_config = os.path.join(pkg_dir, 'config', 'swerve_drive_controller.yaml')
-        nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params_swerve.yaml')
+        swerve_nav2 = 'nav2_params_swerve_stress.yaml' if nav2_stress else 'nav2_params_swerve.yaml'
+        nav2_params_file = os.path.join(pkg_dir, 'config', swerve_nav2)
         robot_name = 'swerve_robot'
         spawn_z = '0.20'
     else:
@@ -218,6 +253,8 @@ def launch_setup(context, *args, **kwargs):
         cmd=gz_cmd,
         output='screen',
         additional_env=gz_env,
+        sigterm_timeout='5',
+        sigkill_timeout='3',
     )
 
     # ========== 2. Robot State Publisher ==========
@@ -276,6 +313,8 @@ def launch_setup(context, *args, **kwargs):
         executable='parameter_bridge',
         name='ros_gz_bridge',
         output='screen',
+        sigterm_timeout='3',
+        sigkill_timeout='2',
         parameters=[{
             'use_sim_time': True,
             # /clock QoS → reliable (best_effort의 UDP 순서 역전 방지)
@@ -327,6 +366,18 @@ def launch_setup(context, *args, **kwargs):
             f'echo "[controllers] WARNING: {ctrl_name} failed after 10 attempts"; '
             f'exit 1; '
         ]
+
+    def _on_spawner_failure(ctrl_name):
+        """spawner 실패 시 Shutdown 이벤트를 발생시키는 이벤트 핸들러 생성."""
+        def _check_exit(event, context):
+            retcode = event.returncode
+            if retcode != 0:
+                return [
+                    LogInfo(msg=f'[FATAL] {ctrl_name} spawner failed (exit code {retcode}) — shutting down'),
+                    EmitEvent(event=ShutdownEvent(reason=f'{ctrl_name} spawner failed after 10 retries')),
+                ]
+            return []
+        return _check_exit
 
     jsb_spawner = ExecuteProcess(
         cmd=_make_spawner_cmd('joint_state_broadcaster'),
@@ -465,6 +516,12 @@ rclpy.spin(TwistStamper())
 
     # --- Localization nodes ---
     # bond_heartbeat_period: 0.0 → bond 생성 건너뜀 (lifecycle_manager 없이 직접 활성화)
+    # sigterm/sigkill timeout: 좀비 프로세스 방지 (Shutdown 시 확실히 종료)
+    _node_kill_args = {
+        'sigterm_timeout': '5',
+        'sigkill_timeout': '3',
+    }
+
     map_server_node = Node(
         package='nav2_map_server',
         executable='map_server',
@@ -475,6 +532,7 @@ rclpy.spin(TwistStamper())
             'yaml_filename': map_file,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     amcl_node = Node(
         package='nav2_amcl',
@@ -485,6 +543,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
 
     # --- Navigation nodes ---
@@ -498,6 +557,7 @@ rclpy.spin(TwistStamper())
             'bond_heartbeat_period': 0.0,
         }],
         remappings=[('cmd_vel', '/cmd_vel_nav')],
+        **_node_kill_args,
     )
     planner_server_node = Node(
         package='nav2_planner',
@@ -508,6 +568,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     behavior_server_node = Node(
         package='nav2_behaviors',
@@ -518,6 +579,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
     bt_navigator_node = Node(
         package='nav2_bt_navigator',
@@ -528,6 +590,7 @@ rclpy.spin(TwistStamper())
             'use_sim_time': True,
             'bond_heartbeat_period': 0.0,
         }],
+        **_node_kill_args,
     )
 
     # --- Lifecycle bringup (bond-free) ---
@@ -544,6 +607,7 @@ rclpy.spin(TwistStamper())
             'max_retries': 10,
             'check_interval': 10.0,
         }],
+        **_node_kill_args,
     )
 
     # ========== 8. RVIZ ==========
@@ -608,6 +672,7 @@ rclpy.spin(TwistStamper())
 
         # 5. Controller event chain: spawn_robot → JSB → DD/Swerve/Ackermann → nav2
         #    spawner 내부 bash retry loop가 controller_manager 대기 + 재시도 처리
+        #    실패 시 (exit code != 0) → Shutdown 이벤트 발생
         RegisterEventHandler(
             OnProcessExit(
                 target_action=spawn_robot,
@@ -620,11 +685,88 @@ rclpy.spin(TwistStamper())
                 ],
             )
         ),
+
+        # JSB spawner 실패 감지
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=jsb_spawner,
+                on_exit=_on_spawner_failure('joint_state_broadcaster'),
+            )
+        ),
     ]
+
+    # cleanup 명령: 모든 관련 프로세스 강제 종료
+    # trap '' TERM: launch의 Shutdown SIGTERM이 cleanup bash 자체를 죽이는 것 방지
+    _cleanup_cmd = (
+        'trap "" TERM; '
+        'pkill -9 -f "gz sim" 2>/dev/null; '
+        'pkill -9 -f "parameter_bridge" 2>/dev/null; '
+        'pkill -9 -f "twist_stamper" 2>/dev/null; '
+        'pkill -9 -f "swerve_kinematics_node" 2>/dev/null; '
+        'pkill -9 -f "odom_to_tf" 2>/dev/null; '
+        'pkill -9 -f "nav2_lifecycle_bringup" 2>/dev/null; '
+        'pkill -9 -f "robot_state_publisher" 2>/dev/null; '
+        'pkill -9 -f "map_server --ros" 2>/dev/null; '
+        'pkill -9 -f "amcl --ros" 2>/dev/null; '
+        'pkill -9 -f "controller_server --ros" 2>/dev/null; '
+        'pkill -9 -f "planner_server --ros" 2>/dev/null; '
+        'pkill -9 -f "behavior_server --ros" 2>/dev/null; '
+        'pkill -9 -f "bt_navigator --ros" 2>/dev/null; '
+        'pkill -9 -f "rviz2" 2>/dev/null; '
+        'pkill -9 -f "ros2 lifecycle" 2>/dev/null; '
+        'echo "[Shutdown] Cleanup complete"'
+    )
+
+    def _make_cleanup_action():
+        return ExecuteProcess(
+            cmd=['bash', '-c', _cleanup_cmd],
+            output='screen',
+            sigterm_timeout='2',
+            sigkill_timeout='2',
+        )
+
+    # Gazebo 종료 → cleanup + Shutdown (좀비 프로세스 방지)
+    nodes.append(
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=gz_sim,
+                on_exit=[
+                    LogInfo(msg='[Shutdown] Gazebo exited — cleaning up all nodes'),
+                    _make_cleanup_action(),
+                    EmitEvent(event=ShutdownEvent(reason='Gazebo process exited')),
+                ],
+            )
+        )
+    )
+
+    # Shutdown 시 남은 프로세스 강제 정리
+    nodes.append(
+        RegisterEventHandler(
+            OnShutdown(
+                on_shutdown=[
+                    LogInfo(msg='[Shutdown] Launch shutting down — cleaning up...'),
+                    _make_cleanup_action(),
+                ],
+            )
+        )
+    )
 
     # RVIZ 즉시 시작 (headless 제외) — 토픽 구독이므로 대기 불필요
     if not headless:
         nodes.append(rviz)
+        # RVIZ 종료 → cleanup + Shutdown
+        nodes.append(
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=rviz,
+                    on_exit=[
+                        LogInfo(msg='[Shutdown] RVIZ closed — cleaning up all nodes'),
+                        _make_cleanup_action(),
+                        EmitEvent(event=ShutdownEvent(reason='RVIZ closed')),
+                    ],
+                )
+            )
+        )
 
     if is_ackermann:
         nodes.extend([
@@ -632,6 +774,13 @@ rclpy.spin(TwistStamper())
                 OnProcessExit(
                     target_action=jsb_spawner,
                     on_exit=[ackermann_spawner],
+                )
+            ),
+            # Ackermann spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=ackermann_spawner,
+                    on_exit=_on_spawner_failure('ackermann_steering_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
@@ -653,10 +802,24 @@ rclpy.spin(TwistStamper())
                     on_exit=[steer_spawner],
                 )
             ),
+            # Steer spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=steer_spawner,
+                    on_exit=_on_spawner_failure('steer_position_controller'),
+                )
+            ),
             RegisterEventHandler(
                 OnProcessExit(
                     target_action=steer_spawner,
                     on_exit=[wheel_spawner],
+                )
+            ),
+            # Wheel spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=wheel_spawner,
+                    on_exit=_on_spawner_failure('wheel_velocity_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
@@ -676,6 +839,13 @@ rclpy.spin(TwistStamper())
                 OnProcessExit(
                     target_action=jsb_spawner,
                     on_exit=[dd_spawner],
+                )
+            ),
+            # DD spawner 실패 감지
+            RegisterEventHandler(
+                OnProcessExit(
+                    target_action=dd_spawner,
+                    on_exit=_on_spawner_failure('diff_drive_controller'),
                 )
             ),
             # 마지막 controller → nav2 전체 시작
@@ -708,15 +878,20 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'controller',
-            default_value='custom',
+            default_value='swerve',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "stress_test", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "adaptive_shield", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',
             default_value='false',
             description='Run in headless mode (no Gazebo GUI, no RVIZ)'
+        ),
+        DeclareLaunchArgument(
+            'nav2_stress',
+            default_value='false',
+            description='Use stress-test nav2 params (minimal inflation, slow planner)'
         ),
 
         # Environment variables

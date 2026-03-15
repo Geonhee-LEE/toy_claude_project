@@ -5,6 +5,7 @@
 #include "mpc_controller_ros2/ackermann_model.hpp"
 #include "mpc_controller_ros2/wheel_level_4d_model.hpp"
 #include "mpc_controller_ros2/residual_dynamics_model.hpp"
+#include "mpc_controller_ros2/ensemble_dynamics_model.hpp"
 #include "mpc_controller_ros2/eigen_mlp.hpp"
 #include <stdexcept>
 
@@ -69,6 +70,31 @@ std::unique_ptr<MotionModel> MotionModelFactory::createWithResidual(
   // ResidualDynamicsModel로 래핑
   return std::make_unique<ResidualDynamicsModel>(
     std::move(nominal), std::move(mlp), params.residual_alpha);
+}
+
+std::unique_ptr<MotionModel> MotionModelFactory::createWithEnsemble(
+  const std::string& model_type,
+  const MPPIParams& params)
+{
+  // 공칭 모델 생성
+  auto nominal = create(model_type, params);
+
+  // 앙상블 MLP 로드
+  if (params.ensemble_weights_dir.empty()) {
+    throw std::runtime_error(
+      "MotionModelFactory::createWithEnsemble: ensemble_weights_dir is empty");
+  }
+
+  std::vector<std::unique_ptr<EigenMLP>> ensemble;
+  ensemble.reserve(params.ensemble_size);
+
+  for (int i = 0; i < params.ensemble_size; ++i) {
+    std::string path = params.ensemble_weights_dir + "/model_" + std::to_string(i) + ".bin";
+    ensemble.push_back(EigenMLP::loadFromFile(path));
+  }
+
+  return std::make_unique<EnsembleDynamicsModel>(
+    std::move(nominal), std::move(ensemble), params.ensemble_alpha);
 }
 
 }  // namespace mpc_controller_ros2

@@ -3,6 +3,7 @@
 
 #include <Eigen/Dense>
 #include <vector>
+#include "mpc_controller_ros2/c3bf_barrier.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -84,14 +85,42 @@ public:
 
   const std::vector<CircleBarrier>& barriers() const { return barriers_; }
 
+  /**
+   * @brief 장애물 + 속도 설정 (C3BF용)
+   * @param obstacles [x, y, radius]
+   * @param velocities [vx, vy]
+   */
+  void setObstaclesWithVelocity(
+    const std::vector<Eigen::Vector3d>& obstacles,
+    const std::vector<Eigen::Vector2d>& velocities);
+
+  /**
+   * @brief 활성 C3BF barrier 반환
+   * @param state 현재 상태
+   * @return activation_distance 내의 C3BF barrier 포인터
+   */
+  std::vector<const C3BFBarrier*> getActiveC3BFBarriers(
+    const Eigen::VectorXd& state) const;
+
+  /** @brief C3BF barrier 목록 */
+  const std::vector<C3BFBarrier>& c3bfBarriers() const { return c3bf_barriers_; }
+
+  /** @brief alpha_safe setter (C3BF 콘 반각) */
+  void setAlphaSafe(double alpha_safe) { alpha_safe_ = alpha_safe; }
+
 private:
   double robot_radius_;
   double safety_margin_;
   double activation_distance_;
   std::vector<CircleBarrier> barriers_;
 
+  // C3BF barriers (속도 인식)
+  std::vector<C3BFBarrier> c3bf_barriers_;
+  double alpha_safe_{0.7854};  // π/4
+
   // 장애물 원본 저장 (마진 변경 시 재구축용)
   std::vector<Eigen::Vector3d> obstacles_raw_;
+  std::vector<Eigen::Vector2d> obstacle_velocities_;
 };
 
 }  // namespace mpc_controller_ros2

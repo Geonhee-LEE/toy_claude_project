@@ -1,0 +1,228 @@
+<?xml version="1.0" ?>
+<!--
+  Narrow Passage World (20m×20m)
+  통과폭 0.8m (로봇 폭 0.5m → 여유 0.15m씩)
+
+  레이아웃 (top-down):
+  ┌──────────────────────────────────────┐
+  │                                      │
+  │  ███████  0.8m  ███████████████████  │  y=5
+  │          ↕gap                        │
+  │  S(0,0)                              │
+  │  ███████████████████  0.8m  ███████  │  y=−2
+  │                      ↕gap            │
+  │  ███████  0.8m  ███████████████████  │  y=−5
+  │          ↕gap                  G(7,−7)│
+  └──────────────────────────────────────┘
+-->
+<sdf version="1.8">
+  <world name="narrow_passage_world">
+    <!-- Physics -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <!-- Light -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground Plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ==================== OUTER WALLS (20m×20m) ==================== -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>20.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>20.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>20.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>20.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static>
+      <pose>10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 20.0 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.2 20.0 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ==================== NARROW PASSAGE BARRIERS ==================== -->
+    <!--
+    3개의 수평 장벽, 각각 0.8m 간격으로 통과구멍
+    장벽 y 좌표: +5, -2, -5
+    스폰 (0,0)은 y=+5와 y=-2 사이 안전 영역
+    통과구멍 위치를 좌우 교대로 배치 (S자 경로 유도)
+    -->
+
+    <!-- Barrier 1 (y=5): 왼쪽 통과구멍 (x=-5) -->
+    <model name="barrier1_left">
+      <static>true</static>
+      <pose>-7.7 5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>4.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.7 0.3 0.2 1</ambient><diffuse>0.7 0.3 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- 오른쪽 벽: gap at x=-5.0, width=0.8 -->
+    <model name="barrier1_right">
+      <static>true</static>
+      <pose>2.7 5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>14.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.7 0.3 0.2 1</ambient><diffuse>0.7 0.3 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Barrier 2 (y=-2): 오른쪽 통과구멍 (x=5) -->
+    <model name="barrier2_left">
+      <static>true</static>
+      <pose>-2.7 -2 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>14.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.3 0.5 0.7 1</ambient><diffuse>0.3 0.5 0.7 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="barrier2_right">
+      <static>true</static>
+      <pose>7.7 -2 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>4.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.3 0.5 0.7 1</ambient><diffuse>0.3 0.5 0.7 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Barrier 3 (y=-5): 왼쪽 통과구멍 (x=-5) -->
+    <model name="barrier3_left">
+      <static>true</static>
+      <pose>-7.7 -5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>4.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>4.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.7 0.3 0.2 1</ambient><diffuse>0.7 0.3 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="barrier3_right">
+      <static>true</static>
+      <pose>2.7 -5 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>14.4 0.2 1.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>14.4 0.2 1.0</size></box></geometry>
+          <material><ambient>0.7 0.3 0.2 1</ambient><diffuse>0.7 0.3 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ==================== ADDITIONAL OBSTACLES ==================== -->
+    <!-- 통과구멍 부근 원기둥 장애물 (통과를 더 어렵게) -->
+    <model name="pillar_1">
+      <static>true</static>
+      <pose>-5 6.5 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry>
+          <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pillar_2">
+      <static>true</static>
+      <pose>5 -3.5 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry>
+          <material><ambient>0.2 0.8 0.2 1</ambient><diffuse>0.2 0.8 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="pillar_3">
+      <static>true</static>
+      <pose>-5 -3.5 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.2</radius><length>0.8</length></cylinder></geometry>
+          <material><ambient>0.2 0.2 0.8 1</ambient><diffuse>0.2 0.2 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

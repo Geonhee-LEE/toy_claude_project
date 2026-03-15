@@ -174,6 +174,43 @@ struct MPPIParams
   double residual_alpha{1.0};                      // 잔차 블렌딩 계수 (0=공칭, 1=전체)
 
   // ============================================================================
+  // Ensemble Dynamics (앙상블 MLP 불확실성 추정)
+  // ============================================================================
+  bool ensemble_enabled{false};                    // 앙상블 활성화
+  std::string ensemble_weights_dir{""};            // 앙상블 가중치 디렉토리 (model_0.bin ~ model_{M-1}.bin)
+  int ensemble_size{5};                            // 앙상블 MLP 개수 (M)
+  double ensemble_alpha{1.0};                      // 앙상블 잔차 블렌딩 계수
+  double uncertainty_cost_weight{0.0};             // 분산 비용 가중치 (0=비활성화)
+
+  // ============================================================================
+  // C3BF (Collision Cone CBF, 속도 인식 안전성)
+  // ============================================================================
+  bool c3bf_enabled{false};                        // C3BF 활성화
+  double c3bf_alpha_safe{0.7854};                  // 안전 콘 반각 (rad, π/4)
+  double c3bf_cost_weight{500.0};                  // C3BF 비용 가중치
+
+  // ============================================================================
+  // Adaptive Shield (거리/속도 적응형 CBF)
+  // ============================================================================
+  bool adaptive_shield_enabled{false};             // 적응형 Shield 활성화
+  double adaptive_shield_alpha_min{0.1};           // 최소 alpha
+  double adaptive_shield_alpha_max{1.0};           // 최대 alpha
+  double adaptive_shield_k_d{1.0};                 // 거리 감쇠 계수
+  double adaptive_shield_k_v{0.5};                 // 속도 증폭 계수
+
+  // ============================================================================
+  // Horizon-Weighted CBF (시간 할인)
+  // ============================================================================
+  double cbf_horizon_discount{1.0};                // 1.0=비활성화, <1.0=먼 미래 비용 감쇄
+
+  // ============================================================================
+  // Online Data Buffer (런타임 데이터 수집)
+  // ============================================================================
+  bool online_data_enabled{false};                 // 데이터 수집 활성화
+  int online_data_capacity{10000};                 // 링 버퍼 크기
+  std::string online_data_export_path{"/tmp/mppi_online_data.csv"};  // 내보내기 경로
+
+  // ============================================================================
   // Safety Enhancement 파라미터
   // ============================================================================
 
