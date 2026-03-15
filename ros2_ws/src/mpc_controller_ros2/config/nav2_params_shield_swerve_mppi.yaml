@@ -1,0 +1,141 @@
+# ============================================================
+# nav2 파라미터 - Shield-MPPI + Swerve Drive
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=shield_swerve
+#
+# Shield-MPPI (per-step CBF + BR-MPPI + Conformal) + Swerve 홀로노믹 구동
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+
+    progress_checker:
+      required_movement_radius: 0.1
+      movement_time_allowance: 60.0
+
+    goal_checker:
+      xy_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.5
+
+    # ---- Shield-MPPI Swerve Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::ShieldMPPIControllerPlugin"
+      motion_model: "swerve"
+
+      # Prediction horizon (2초)
+      N: 40
+      dt: 0.05
+
+      # Sampling
+      K: 256
+      lambda: 100.0
+
+      # Noise parameters (vx, vy, omega)
+      noise_sigma_v: 0.4
+      noise_sigma_vy: 0.3
+      noise_sigma_omega: 0.6
+
+      # Control limits
+      v_max: 1.5
+      v_min: -0.3
+      omega_max: 2.0
+      omega_min: -2.0
+      vy_max: 0.5
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 15.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 20.0
+
+      # Control effort weights (R)
+      R_v: 0.1
+      R_vy: 1.0
+      R_omega: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 0.3
+      R_rate_vy: 0.8
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 0.0
+      safety_distance: 0.4
+
+      # Costmap obstacle cost
+      use_costmap_cost: true
+      costmap_lethal_cost: 200.0
+      costmap_critical_cost: 50.0
+      lookahead_dist: 2.0
+      min_lookahead: 0.5
+      goal_slowdown_dist: 0.5
+      ref_theta_smooth_window: 5
+
+      # Velocity Tracking Cost
+      velocity_tracking_weight: 10.0
+      reference_velocity: 1.0
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+      prefer_forward_linear_ratio: 0.5
+      prefer_forward_velocity_incentive: 1.0
+
+      # Trajectory Stability
+      sg_filter_enabled: true
+      sg_half_window: 4
+      sg_poly_order: 5
+      it_alpha: 0.975
+      exploration_ratio: 0.1
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.3
+      adaptation_rate: 0.1
+      lambda_min: 1.0
+      lambda_max: 500.0
+
+      # CBF 안전 필터
+      cbf_enabled: true
+      cbf_gamma: 0.5
+      cbf_safety_margin: 0.2
+      cbf_robot_radius: 0.2
+      cbf_activation_distance: 1.5
+      cbf_use_safety_filter: false
+
+      # Shield-MPPI 전용
+      shield_cbf_stride: 5
+      shield_max_iterations: 5
+
+      # BR-MPPI (Barrier Rate Cost)
+      barrier_rate_cost_weight: 10.0
+
+      # Conformal Predictor
+      conformal_enabled: true
+      conformal_coverage: 0.90
+      conformal_window_size: 100
+      conformal_initial_margin: 0.1
+      conformal_min_margin: 0.05
+      conformal_max_margin: 0.3
+      conformal_decay_rate: 0.99
+
+      # Non-Coaxial (declare 필수)
+      noise_sigma_delta_dot: 0.3
+      R_delta_dot: 0.5
+      R_rate_delta_dot: 1.0
+      max_steering_rate: 2.0
+      max_steering_angle: 1.5707
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: false
+      max_visualized_samples: 20
