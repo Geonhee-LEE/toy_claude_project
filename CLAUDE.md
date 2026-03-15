@@ -14,7 +14,8 @@ P0: Ackermann MotionModel C++ ✅ (PR #138, Bicycle model θ̇=v·tan(δ)/L)
 P0: C++ MPPI 성능 프로파일링 + 최적화 ✅ (PR #132, K=512→1.88ms/532Hz)
 P0: Residual Dynamics + Safety Enhancement C++ ✅ (PR #140, EigenMLP + Shield-MPPI + BR-MPPI + ACP)
 P1: 최신 MPPI 변형 C++ (Covariance Steering ✅, π-MPPI ✅, MPPI-H ✅)
-P1: 추가 안전성 고도화 C++ (CLF-CBF-QP, 다중 CBF, QP 솔버)
+P1: 추가 안전성 고도화 C++ (CLF-CBF-QP ✅, 다중 CBF 합성 ✅, Predictive Safety ✅)
+P1: Online Residual Learning ✅ (핫 스왑, ModelReloader)
 ```
 
 ## 패키지 구조
@@ -76,6 +77,9 @@ mpc_controller/
 - CS-MPPI C++ (Covariance Steering, CoVO-MPC CoRL 2023): 완료 (PR #150)
 - π-MPPI C++ (ADMM QP 투영 필터, rate/accel hard bounds, RA-L 2025): 완료 (PR #152)
 - MPPI-H C++ (Hybrid Swerve, Low-D↔4D 전환, IROS 2024): 완료 (PR #153)
+- Learning MPPI + Advanced CBF (Ensemble, C3BF, AdaptiveShield): 완료 (PR #159)
+- CLF-CBF-QP 통합 안전 필터 (Ames 2019): 완료 (PR #161)
+- 다중 CBF 합성 + Online Learning + Predictive Safety: 완료 (PR #165)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
