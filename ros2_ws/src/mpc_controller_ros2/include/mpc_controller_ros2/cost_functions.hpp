@@ -279,8 +279,9 @@ private:
   double dt_;
 };
 
-// Forward declaration
+// Forward declarations
 class EnsembleDynamicsModel;
+class CLFFunction;
 
 /**
  * @brief 앙상블 불확실성 비용
@@ -339,6 +340,30 @@ private:
   std::vector<C3BFBarrier> barriers_;
   double robot_radius_{0.2};
   double safety_margin_{0.3};
+};
+
+/**
+ * @brief CLF (Control Lyapunov Function) Soft Cost
+ *
+ * cost = weight * Σ_t max(0, V̇(x_t) + c·V(x_t))²
+ *
+ * 참조 궤적의 각 스텝을 x_des로 사용하여 Lyapunov 감소 조건
+ * 위반을 소프트 페널티로 부과합니다.
+ */
+class CLFCost : public MPPICostFunction
+{
+public:
+  CLFCost(const CLFFunction* clf, double weight, double dt);
+  std::string name() const override { return "clf"; }
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  const CLFFunction* clf_;  // 비소유
+  double weight_;
+  double dt_;
 };
 
 /**

@@ -113,4 +113,12 @@
       Close+fast = strong CBF, far+slow = weak CBF. Inherits Shield-MPPI per-step projection.
     </description>
   </class>
+  <class type="mpc_controller_ros2::CLFCBFMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CLF-CBF-MPPI controller plugin for nav2.
+      Ames et al. (2019) CLF-CBF-QP unified safety filter.
+      CLF (convergence) + CBF (safety) in single QP, slack relaxation for safety priority.
+      Inherits Shield-MPPI per-step projection + CLF-CBF post-filter.
+    </description>
+  </class>
 </library>

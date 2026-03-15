@@ -1434,6 +1434,12 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "shield_cbf_stride", params_.shield_cbf_stride);
   node_->declare_parameter(prefix + "shield_max_iterations", params_.shield_max_iterations);
 
+  // CLF-CBF-QP
+  node_->declare_parameter(prefix + "clf_cbf_enabled", params_.clf_cbf_enabled);
+  node_->declare_parameter(prefix + "clf_decay_rate", params_.clf_decay_rate);
+  node_->declare_parameter(prefix + "clf_slack_penalty", params_.clf_slack_penalty);
+  node_->declare_parameter(prefix + "clf_P_scale", params_.clf_P_scale);
+
   // Covariance Steering MPPI (CS-MPPI)
   node_->declare_parameter(prefix + "cs_enabled", params_.cs_enabled);
   node_->declare_parameter(prefix + "cs_scale_min", params_.cs_scale_min);
@@ -1742,6 +1748,12 @@ void MPPIControllerPlugin::loadParameters()
   // Safety Enhancement: Shield-MPPI
   params_.shield_cbf_stride = node_->get_parameter(prefix + "shield_cbf_stride").as_int();
   params_.shield_max_iterations = node_->get_parameter(prefix + "shield_max_iterations").as_int();
+
+  // CLF-CBF-QP
+  params_.clf_cbf_enabled = node_->get_parameter(prefix + "clf_cbf_enabled").as_bool();
+  params_.clf_decay_rate = node_->get_parameter(prefix + "clf_decay_rate").as_double();
+  params_.clf_slack_penalty = node_->get_parameter(prefix + "clf_slack_penalty").as_double();
+  params_.clf_P_scale = node_->get_parameter(prefix + "clf_P_scale").as_double();
 
   // Covariance Steering MPPI (CS-MPPI)
   params_.cs_enabled = node_->get_parameter(prefix + "cs_enabled").as_bool();
