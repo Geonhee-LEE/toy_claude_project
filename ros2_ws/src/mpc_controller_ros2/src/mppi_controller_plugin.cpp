@@ -1418,6 +1418,10 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "online_data_capacity", params_.online_data_capacity);
   node_->declare_parameter(prefix + "online_data_export_path", params_.online_data_export_path);
 
+  // Online Learning (Model Reload)
+  node_->declare_parameter(prefix + "model_reload_enabled", params_.model_reload_enabled);
+  node_->declare_parameter(prefix + "model_reload_interval_sec", params_.model_reload_interval_sec);
+
   // Safety Enhancement: BR-MPPI
   node_->declare_parameter(prefix + "barrier_rate_cost_weight", params_.barrier_rate_cost_weight);
 
@@ -1439,6 +1443,17 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "clf_decay_rate", params_.clf_decay_rate);
   node_->declare_parameter(prefix + "clf_slack_penalty", params_.clf_slack_penalty);
   node_->declare_parameter(prefix + "clf_P_scale", params_.clf_P_scale);
+
+  // CBF 합성
+  node_->declare_parameter(prefix + "cbf_composition_enabled", params_.cbf_composition_enabled);
+  node_->declare_parameter(prefix + "cbf_composition_method", params_.cbf_composition_method);
+  node_->declare_parameter(prefix + "cbf_composition_alpha", params_.cbf_composition_alpha);
+
+  // Predictive Safety Filter
+  node_->declare_parameter(prefix + "predictive_safety_enabled", params_.predictive_safety_enabled);
+  node_->declare_parameter(prefix + "predictive_safety_horizon", params_.predictive_safety_horizon);
+  node_->declare_parameter(prefix + "predictive_safety_decay", params_.predictive_safety_decay);
+  node_->declare_parameter(prefix + "predictive_safety_max_iterations", params_.predictive_safety_max_iterations);
 
   // Covariance Steering MPPI (CS-MPPI)
   node_->declare_parameter(prefix + "cs_enabled", params_.cs_enabled);
@@ -1733,6 +1748,10 @@ void MPPIControllerPlugin::loadParameters()
   params_.online_data_capacity = node_->get_parameter(prefix + "online_data_capacity").as_int();
   params_.online_data_export_path = node_->get_parameter(prefix + "online_data_export_path").as_string();
 
+  // Online Learning (Model Reload)
+  params_.model_reload_enabled = node_->get_parameter(prefix + "model_reload_enabled").as_bool();
+  params_.model_reload_interval_sec = node_->get_parameter(prefix + "model_reload_interval_sec").as_double();
+
   // Safety Enhancement: BR-MPPI
   params_.barrier_rate_cost_weight = node_->get_parameter(prefix + "barrier_rate_cost_weight").as_double();
 
@@ -1754,6 +1773,17 @@ void MPPIControllerPlugin::loadParameters()
   params_.clf_decay_rate = node_->get_parameter(prefix + "clf_decay_rate").as_double();
   params_.clf_slack_penalty = node_->get_parameter(prefix + "clf_slack_penalty").as_double();
   params_.clf_P_scale = node_->get_parameter(prefix + "clf_P_scale").as_double();
+
+  // CBF 합성
+  params_.cbf_composition_enabled = node_->get_parameter(prefix + "cbf_composition_enabled").as_bool();
+  params_.cbf_composition_method = node_->get_parameter(prefix + "cbf_composition_method").as_int();
+  params_.cbf_composition_alpha = node_->get_parameter(prefix + "cbf_composition_alpha").as_double();
+
+  // Predictive Safety Filter
+  params_.predictive_safety_enabled = node_->get_parameter(prefix + "predictive_safety_enabled").as_bool();
+  params_.predictive_safety_horizon = node_->get_parameter(prefix + "predictive_safety_horizon").as_int();
+  params_.predictive_safety_decay = node_->get_parameter(prefix + "predictive_safety_decay").as_double();
+  params_.predictive_safety_max_iterations = node_->get_parameter(prefix + "predictive_safety_max_iterations").as_int();
 
   // Covariance Steering MPPI (CS-MPPI)
   params_.cs_enabled = node_->get_parameter(prefix + "cs_enabled").as_bool();

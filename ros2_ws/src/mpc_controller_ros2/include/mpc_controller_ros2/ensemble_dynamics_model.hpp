@@ -4,6 +4,7 @@
 #include "mpc_controller_ros2/motion_model.hpp"
 #include "mpc_controller_ros2/eigen_mlp.hpp"
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace mpc_controller_ros2
@@ -81,10 +82,23 @@ public:
   /** @brief 내부 공칭 모델 접근 */
   const MotionModel& nominal() const { return *nominal_; }
 
+  /**
+   * @brief 앙상블 MLP 핫스왑 (thread-safe)
+   *
+   * dynamicsBatch/predictWithUncertainty 실행 중에도 안전하게
+   * 앙상블을 교체합니다.
+   */
+  void updateEnsemble(std::vector<std::unique_ptr<EigenMLP>> new_ensemble);
+
+  /** @brief 모델 버전 (핫스왑 카운터) */
+  int modelVersion() const { return model_version_; }
+
 private:
   std::unique_ptr<MotionModel> nominal_;
   std::vector<std::unique_ptr<EigenMLP>> ensemble_;
   double alpha_;
+  mutable std::mutex ensemble_mutex_;  // 핫스왑 보호
+  int model_version_{0};
 
   /** @brief MLP 입력 특성 구성: [states | controls] */
   Eigen::MatrixXd buildFeatures(

@@ -118,6 +118,10 @@ add_library(mppi_controller_plugin SHARED
   src/clf_function.cpp
   src/clf_cbf_qp_solver.cpp
   src/clf_cbf_mppi_controller_plugin.cpp
+  src/online_data_collector.cpp
+  src/model_reloader.cpp
+  src/predictive_safety_filter.cpp
+  src/predictive_safety_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -371,6 +375,21 @@ if(BUILD_TESTING)
   ament_add_gtest(test_clf_cbf_qp test/unit/test_clf_cbf_qp.cpp)
   if(TARGET test_clf_cbf_qp)
     target_link_libraries(test_clf_cbf_qp mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cbf_composition test/unit/test_cbf_composition.cpp)
+  if(TARGET test_cbf_composition)
+    target_link_libraries(test_cbf_composition mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_online_learning test/unit/test_online_learning.cpp)
+  if(TARGET test_online_learning)
+    target_link_libraries(test_online_learning mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_predictive_safety test/unit/test_predictive_safety.cpp)
+  if(TARGET test_predictive_safety)
+    target_link_libraries(test_predictive_safety mppi_controller_plugin)
   endif()
 endif()
 

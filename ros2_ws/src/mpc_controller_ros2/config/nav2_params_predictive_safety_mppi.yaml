@@ -1,0 +1,124 @@
+# ============================================================
+# nav2 파라미터 - Predictive Safety MPPI (N-step CBF 투영)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py \
+#       controller:=predictive_safety
+#
+# 특징:
+#   - PredictiveSafetyMPPIControllerPlugin: ShieldMPPI 상속
+#   - N-step forward rollout + CBF 투영 → recursive feasibility
+#   - 보정 전파: step t에서의 보정이 step t+1..N에 영향
+#   - horizon_decay로 시간에 따른 CBF 강도 조절
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    progress_checker:
+      required_movement_radius: 0.1
+      movement_time_allowance: 60.0
+
+    goal_checker:
+      xy_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.5
+
+    # ---- Predictive Safety MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::PredictiveSafetyMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # 예측 지평선 (3초)
+      N: 30
+      dt: 0.1
+
+      # 샘플링
+      K: 256
+      lambda: 10.0
+
+      # 노이즈
+      noise_sigma_v: 0.4
+      noise_sigma_omega: 0.4
+
+      # 제어 제약
+      v_max: 0.5
+      v_min: -0.1
+      omega_max: 1.5
+      omega_min: -1.5
+
+      # 상태 추종 가중치
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # 터미널 비용
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # 제어 비용
+      R_v: 0.5
+      R_omega: 0.3
+
+      # 제어 변화율 비용
+      R_rate_v: 2.0
+      R_rate_omega: 1.0
+
+      # 장애물 회피
+      obstacle_weight: 100.0
+      safety_distance: 0.4
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 500.0
+      costmap_critical_cost: 50.0
+      lookahead_dist: 0.0
+      min_lookahead: 0.5
+      goal_slowdown_dist: 1.5
+
+      # Adaptive Temperature
+      adaptive_temperature: true
+      target_ess_ratio: 0.5
+
+      # ---- CBF 안전 필터 ----
+      cbf_enabled: true
+      cbf_gamma: 0.5
+      cbf_safety_margin: 0.3
+      cbf_robot_radius: 0.2
+      cbf_activation_distance: 2.0
+      cbf_use_safety_filter: false
+
+      # ---- Shield-MPPI (per-step) ----
+      shield_cbf_stride: 3
+      shield_max_iterations: 5
+
+      # ---- Predictive Safety Filter ----
+      predictive_safety_enabled: true
+      predictive_safety_horizon: 0        # 0 = 전체 horizon N
+      predictive_safety_decay: 0.95       # gamma 시간 감쇠
+      predictive_safety_max_iterations: 8 # 스텝당 최대 투영 반복
+
+      # ---- BR-MPPI ----
+      barrier_rate_cost_weight: 10.0
+
+      # ---- Conformal Predictor ----
+      conformal_enabled: true
+      conformal_coverage: 0.90
+      conformal_window_size: 100
+      conformal_initial_margin: 0.1
+      conformal_min_margin: 0.05
+      conformal_max_margin: 0.3
+
+      # 궤적 안정화
+      sg_filter_enabled: true
+      sg_half_window: 3
+      sg_poly_order: 3
+      it_alpha: 0.98
+      exploration_ratio: 0.05
+
+      # 시각화
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      max_visualized_samples: 20

@@ -145,4 +145,171 @@ std::vector<const C3BFBarrier*> BarrierFunctionSet::getActiveC3BFBarriers(
   return active;
 }
 
+// ============================================================================
+// CBF 합성 메서드
+// ============================================================================
+
+double BarrierFunctionSet::evaluateComposite(
+  const Eigen::VectorXd& state,
+  CBFCompositionMethod method,
+  double alpha) const
+{
+  auto active = getActiveBarriers(state);
+  if (active.empty()) {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  switch (method) {
+    case CBFCompositionMethod::MIN: {
+      double h_min = active[0]->evaluate(state);
+      for (size_t i = 1; i < active.size(); ++i) {
+        h_min = std::min(h_min, active[i]->evaluate(state));
+      }
+      return h_min;
+    }
+
+    case CBFCompositionMethod::SMOOTH_MIN: {
+      // h_c = -(1/α)·log(Σ exp(-α·h_i))
+      // 수치 안정성: max_val 빼기
+      double max_neg = -alpha * active[0]->evaluate(state);
+      for (size_t i = 1; i < active.size(); ++i) {
+        max_neg = std::max(max_neg, -alpha * active[i]->evaluate(state));
+      }
+      double sum_exp = 0.0;
+      for (const auto* b : active) {
+        sum_exp += std::exp(-alpha * b->evaluate(state) - max_neg);
+      }
+      return -(1.0 / alpha) * (std::log(sum_exp) + max_neg);
+    }
+
+    case CBFCompositionMethod::LOG_SUM_EXP: {
+      // α=1 특수 경우: h_c = -log(Σ exp(-h_i))
+      double max_neg = -active[0]->evaluate(state);
+      for (size_t i = 1; i < active.size(); ++i) {
+        max_neg = std::max(max_neg, -active[i]->evaluate(state));
+      }
+      double sum_exp = 0.0;
+      for (const auto* b : active) {
+        sum_exp += std::exp(-b->evaluate(state) - max_neg);
+      }
+      return -(std::log(sum_exp) + max_neg);
+    }
+
+    case CBFCompositionMethod::PRODUCT: {
+      // h_c = Π max(0, h_i)
+      double product = 1.0;
+      for (const auto* b : active) {
+        double h = b->evaluate(state);
+        product *= std::max(0.0, h);
+      }
+      return product;
+    }
+  }
+
+  return 0.0;  // 도달 불가
+}
+
+Eigen::VectorXd BarrierFunctionSet::compositeGradient(
+  const Eigen::VectorXd& state,
+  CBFCompositionMethod method,
+  double alpha) const
+{
+  int nx = state.size();
+  auto active = getActiveBarriers(state);
+  if (active.empty()) {
+    return Eigen::VectorXd::Zero(nx);
+  }
+
+  switch (method) {
+    case CBFCompositionMethod::MIN: {
+      // gradient of min = gradient of argmin barrier
+      int min_idx = 0;
+      double h_min = active[0]->evaluate(state);
+      for (size_t i = 1; i < active.size(); ++i) {
+        double h = active[i]->evaluate(state);
+        if (h < h_min) {
+          h_min = h;
+          min_idx = i;
+        }
+      }
+      return active[min_idx]->gradient(state);
+    }
+
+    case CBFCompositionMethod::SMOOTH_MIN: {
+      // ∇h_c = Σ w_i · ∇h_i, where w_i = exp(-α·h_i) / Σ exp(-α·h_j)
+      // 수치 안정성: max_neg 빼기
+      std::vector<double> h_vals(active.size());
+      double max_neg = -std::numeric_limits<double>::infinity();
+      for (size_t i = 0; i < active.size(); ++i) {
+        h_vals[i] = active[i]->evaluate(state);
+        max_neg = std::max(max_neg, -alpha * h_vals[i]);
+      }
+
+      std::vector<double> exp_vals(active.size());
+      double sum_exp = 0.0;
+      for (size_t i = 0; i < active.size(); ++i) {
+        exp_vals[i] = std::exp(-alpha * h_vals[i] - max_neg);
+        sum_exp += exp_vals[i];
+      }
+
+      Eigen::VectorXd grad = Eigen::VectorXd::Zero(nx);
+      for (size_t i = 0; i < active.size(); ++i) {
+        double w_i = exp_vals[i] / sum_exp;
+        grad += w_i * active[i]->gradient(state);
+      }
+      return grad;
+    }
+
+    case CBFCompositionMethod::LOG_SUM_EXP: {
+      // α=1 특수 경우
+      std::vector<double> h_vals(active.size());
+      double max_neg = -std::numeric_limits<double>::infinity();
+      for (size_t i = 0; i < active.size(); ++i) {
+        h_vals[i] = active[i]->evaluate(state);
+        max_neg = std::max(max_neg, -h_vals[i]);
+      }
+
+      std::vector<double> exp_vals(active.size());
+      double sum_exp = 0.0;
+      for (size_t i = 0; i < active.size(); ++i) {
+        exp_vals[i] = std::exp(-h_vals[i] - max_neg);
+        sum_exp += exp_vals[i];
+      }
+
+      Eigen::VectorXd grad = Eigen::VectorXd::Zero(nx);
+      for (size_t i = 0; i < active.size(); ++i) {
+        double w_i = exp_vals[i] / sum_exp;
+        grad += w_i * active[i]->gradient(state);
+      }
+      return grad;
+    }
+
+    case CBFCompositionMethod::PRODUCT: {
+      // h_c = Π max(0, h_i)
+      // ∇h_c = Σ_i (Π_{j≠i} max(0, h_j)) · ∇h_i
+      std::vector<double> h_vals(active.size());
+      for (size_t i = 0; i < active.size(); ++i) {
+        h_vals[i] = std::max(0.0, active[i]->evaluate(state));
+      }
+
+      Eigen::VectorXd grad = Eigen::VectorXd::Zero(nx);
+      for (size_t i = 0; i < active.size(); ++i) {
+        double prod_others = 1.0;
+        for (size_t j = 0; j < active.size(); ++j) {
+          if (j != i) {
+            prod_others *= h_vals[j];
+          }
+        }
+        // max(0, h_i) = 0 이면 gradient도 0
+        if (active[i]->evaluate(state) > 0.0) {
+          grad += prod_others * active[i]->gradient(state);
+        }
+      }
+      return grad;
+    }
+  }
+
+  return Eigen::VectorXd::Zero(nx);
+}
+
 }  // namespace mpc_controller_ros2

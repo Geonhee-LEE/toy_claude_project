@@ -1,6 +1,7 @@
 #include "mpc_controller_ros2/ensemble_dynamics_model.hpp"
 #include <stdexcept>
 #include <numeric>
+#include <mutex>
 
 namespace mpc_controller_ros2
 {
@@ -67,7 +68,8 @@ Eigen::MatrixXd EnsembleDynamicsModel::dynamicsBatch(
     return x_dot_nominal;
   }
 
-  // 앙상블 평균 잔차
+  // 앙상블 평균 잔차 (mutex 보호 — 핫스왑 안전)
+  std::lock_guard<std::mutex> lock(ensemble_mutex_);
   Eigen::MatrixXd features = buildFeatures(states, controls);
   int M_models = static_cast<int>(ensemble_.size());
 
@@ -84,6 +86,7 @@ EnsembleDynamicsModel::PredictionResult EnsembleDynamicsModel::predictWithUncert
   const Eigen::MatrixXd& states,
   const Eigen::MatrixXd& controls) const
 {
+  std::lock_guard<std::mutex> lock(ensemble_mutex_);
   Eigen::MatrixXd features = buildFeatures(states, controls);
   int M_models = static_cast<int>(ensemble_.size());
   int M_batch = features.rows();
@@ -111,6 +114,18 @@ EnsembleDynamicsModel::PredictionResult EnsembleDynamicsModel::predictWithUncert
   variance /= static_cast<double>(M_models);
 
   return {mean, variance};
+}
+
+void EnsembleDynamicsModel::updateEnsemble(
+  std::vector<std::unique_ptr<EigenMLP>> new_ensemble)
+{
+  if (new_ensemble.empty()) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(ensemble_mutex_);
+  ensemble_ = std::move(new_ensemble);
+  model_version_++;
 }
 
 Eigen::MatrixXd EnsembleDynamicsModel::clipControls(

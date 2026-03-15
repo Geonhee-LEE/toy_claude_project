@@ -215,6 +215,125 @@ CLFCBFQPResult CLFCBFQPSolver::solve(
   return result;
 }
 
+CLFCBFQPResult CLFCBFQPSolver::solveComposite(
+  const Eigen::VectorXd& state,
+  const Eigen::VectorXd& x_des,
+  const Eigen::VectorXd& u_ref,
+  const BatchDynamicsWrapper& dynamics,
+  CBFCompositionMethod method,
+  double composition_alpha) const
+{
+  CLFCBFQPResult result;
+  int nu = u_ref.size();
+
+  // CLF 값 계산
+  result.clf_value = clf_->evaluate(state, x_des);
+
+  // 활성 barrier 확인 — 없으면 CLF only로 대체
+  auto active_barriers = barrier_set_->getActiveBarriers(state);
+  if (active_barriers.empty()) {
+    return solveCLFOnly(state, x_des, u_ref, dynamics);
+  }
+
+  // 초기 해: u_ref
+  Eigen::VectorXd u = clipToBounds(u_ref);
+  double delta = 0.0;  // CLF slack
+
+  for (int iter = 0; iter < kMaxIterations; ++iter) {
+    result.iterations = iter + 1;
+
+    // 동역학 계산
+    Eigen::VectorXd x_dot = computeXdot(state, u, dynamics);
+    Eigen::MatrixXd B = computeB(state, u, x_dot, dynamics);
+
+    // === CLF 제약: V̇ + c·V ≤ δ ===
+    Eigen::VectorXd grad_V = clf_->gradient(state, x_des);
+    double V_dot = grad_V.dot(x_dot);
+    double clf_margin = V_dot + clf_->c() * result.clf_value - delta;
+    Eigen::VectorXd dVdot_du = B.transpose() * grad_V;
+
+    // === 합성 CBF 제약: ḣ_c + γ·h_c ≥ 0 ===
+    double h_c = barrier_set_->evaluateComposite(state, method, composition_alpha);
+    Eigen::VectorXd grad_h_c = barrier_set_->compositeGradient(state, method, composition_alpha);
+    double h_c_dot = grad_h_c.dot(x_dot);
+    double cbf_composite_margin = h_c_dot + gamma_ * h_c;
+
+    bool cbf_satisfied = (cbf_composite_margin >= -kTolerance);
+    bool clf_satisfied = (clf_margin <= kTolerance);
+
+    // === 통합 업데이트 ===
+    if (cbf_satisfied && clf_satisfied) {
+      // 모든 제약 만족 — 목적함수(u_ref에 가깝게) 방향 step
+      Eigen::VectorXd grad_obj = u - u_ref;
+      Eigen::VectorXd u_candidate = u - kStepSize * grad_obj;
+      double delta_candidate = delta * (1.0 - kStepSize);
+      u_candidate = clipToBounds(u_candidate);
+
+      // 제약 유지 확인
+      Eigen::VectorXd x_dot_cand = computeXdot(state, u_candidate, dynamics);
+      double V_dot_cand = grad_V.dot(x_dot_cand);
+      bool still_clf_ok = (V_dot_cand + clf_->c() * result.clf_value - delta_candidate <= kTolerance);
+
+      double h_c_dot_cand = grad_h_c.dot(x_dot_cand);
+      bool still_cbf_ok = (h_c_dot_cand + gamma_ * h_c >= -kTolerance);
+
+      if (still_clf_ok && still_cbf_ok) {
+        u = u_candidate;
+        delta = delta_candidate;
+      }
+      break;  // 수렴
+    }
+
+    // CBF 보정 우선 (안전 > 수렴)
+    if (!cbf_satisfied) {
+      Eigen::VectorXd dhdot_du = B.transpose() * grad_h_c.head(std::min((int)grad_h_c.size(), (int)B.rows()));
+      double norm_sq = dhdot_du.squaredNorm();
+      if (norm_sq > 1e-10) {
+        double correction_scale = (-cbf_composite_margin) / norm_sq;
+        u = u + correction_scale * dhdot_du;
+        u = clipToBounds(u);
+      }
+      // CLF-CBF 충돌 시 slack 증가
+      if (!clf_satisfied) {
+        delta += std::max(0.0, clf_margin);
+      }
+    } else if (!clf_satisfied) {
+      // CBF 만족, CLF만 위반 → CLF 보정
+      double norm_sq = dVdot_du.squaredNorm();
+      if (norm_sq > 1e-10) {
+        double scale = clf_margin / norm_sq;
+        u = u - scale * dVdot_du;
+        u = clipToBounds(u);
+      }
+    }
+  }
+
+  // 최종 결과
+  result.u_safe = u;
+  result.slack = delta;
+  result.feasible = true;
+
+  // 최종 제약 확인
+  Eigen::VectorXd final_xdot = computeXdot(state, u, dynamics);
+  Eigen::VectorXd final_grad_V = clf_->gradient(state, x_des);
+  result.clf_constraint = final_grad_V.dot(final_xdot) +
+    clf_->c() * result.clf_value - delta;
+
+  // 합성 CBF 마진 (단일 값)
+  double final_h_c = barrier_set_->evaluateComposite(state, method, composition_alpha);
+  Eigen::VectorXd final_grad_h_c = barrier_set_->compositeGradient(state, method, composition_alpha);
+  double final_h_c_dot = final_grad_h_c.dot(final_xdot);
+  result.cbf_margins.clear();
+  result.cbf_margins.push_back(final_h_c_dot + gamma_ * final_h_c);
+
+  // feasibility 확인
+  if (result.cbf_margins[0] < -kTolerance * 10) {
+    result.feasible = false;
+  }
+
+  return result;
+}
+
 CLFCBFQPResult CLFCBFQPSolver::solveCLFOnly(
   const Eigen::VectorXd& state,
   const Eigen::VectorXd& x_des,
