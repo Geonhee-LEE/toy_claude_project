@@ -22,6 +22,7 @@ from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped, Twist, TwistStamped
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
 import argparse
 import math
 import time
@@ -65,6 +66,12 @@ class E2EMetrics:
     num_stalls: int = 0                # 속도 < 0.01m/s 구간 수
     stall_ratio: float = 0.0           # 정체 비율 (0~1)
 
+    # 장애물 회피 메트릭
+    min_obstacle_dist: float = float('inf')   # 최소 장애물 거리 (m)
+    mean_obstacle_dist: float = 0.0           # 평균 최소 장애물 거리 (m)
+    num_near_misses: int = 0                  # 근접 위험 횟수 (< 0.3m)
+    num_collisions: int = 0                   # 충돌 횟수 (< 0.15m, ~로봇 반경)
+
     num_samples: int = 0
 
 
@@ -100,6 +107,13 @@ class SwerveE2ETest(Node):
         self.gz_odom_sub = self.create_subscription(
             Odometry, '/model/swerve_robot/odometry', self.odom_callback, 10)
 
+        # LaserScan 구독 (장애물 거리 추적)
+        self.scan_sub = self.create_subscription(
+            LaserScan, '/scan', self.scan_callback, 10)
+        self.min_scan_distances: List[float] = []  # 매 스캔의 최소 거리 기록
+        self.collision_threshold = 0.15   # 충돌 판정 (m, ~로봇 반경)
+        self.near_miss_threshold = 0.3    # 근접 위험 판정 (m)
+
         # nav2 action client
         if not args.record_only:
             self._action_client = ActionClient(
@@ -107,6 +121,14 @@ class SwerveE2ETest(Node):
 
         self.get_logger().info(
             f'Swerve E2E Test 초기화 (goal: x={args.x}, y={args.y}, timeout={args.timeout}s)')
+
+    def scan_callback(self, msg):
+        """LaserScan에서 최소 장애물 거리 추적"""
+        valid_ranges = [r for r in msg.ranges
+                        if msg.range_min < r < msg.range_max]
+        if valid_ranges:
+            min_dist = min(valid_ranges)
+            self.min_scan_distances.append(min_dist)
 
     def odom_callback(self, msg):
         self.last_odom_x = msg.pose.pose.position.x
@@ -261,6 +283,18 @@ class SwerveE2ETest(Node):
         m.num_stalls = stall_count
         m.stall_ratio = stall_count / n if n > 0 else 0.0
 
+        # 장애물 회피 메트릭 (LaserScan 기반)
+        if self.min_scan_distances:
+            m.min_obstacle_dist = min(self.min_scan_distances)
+            m.mean_obstacle_dist = (sum(self.min_scan_distances)
+                                    / len(self.min_scan_distances))
+            m.num_near_misses = sum(
+                1 for d in self.min_scan_distances
+                if d < self.near_miss_threshold)
+            m.num_collisions = sum(
+                1 for d in self.min_scan_distances
+                if d < self.collision_threshold)
+
         return m
 
     def print_report(self, metrics: E2EMetrics):
@@ -289,6 +323,12 @@ class SwerveE2ETest(Node):
         print('  Stall detection')
         print(f'    Stall samples  : {metrics.num_stalls} / {metrics.num_samples}')
         print(f'    Stall ratio    : {metrics.stall_ratio:.1%}')
+        print('-' * 60)
+        print('  Obstacle avoidance')
+        print(f'    Min distance   : {metrics.min_obstacle_dist:.3f} m')
+        print(f'    Mean min dist  : {metrics.mean_obstacle_dist:.3f} m')
+        print(f'    Near misses    : {metrics.num_near_misses} (<0.3m)')
+        print(f'    Collisions     : {metrics.num_collisions} (<0.15m)')
         print('=' * 60)
         print()
 
