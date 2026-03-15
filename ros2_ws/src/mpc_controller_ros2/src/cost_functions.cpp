@@ -1,4 +1,5 @@
 #include "mpc_controller_ros2/cost_functions.hpp"
+#include "mpc_controller_ros2/ensemble_dynamics_model.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <omp.h>
 #include <utility>
@@ -487,8 +488,9 @@ Eigen::MatrixXd CostmapObstacleCost::computePerPoint(
 // ============================================================================
 
 CBFCost::CBFCost(BarrierFunctionSet* barrier_set, double weight,
-                 double gamma, double dt)
-: barrier_set_(barrier_set), weight_(weight)
+                 double gamma, double dt, double horizon_discount)
+: barrier_set_(barrier_set), weight_(weight),
+  horizon_discount_(std::clamp(horizon_discount, 0.0, 1.0))
 {
   decay_ = 1.0 - gamma * dt;
 }
@@ -519,6 +521,7 @@ Eigen::VectorXd CBFCost::compute(
       Eigen::VectorXd h_all = barrier.evaluateBatch(traj);
 
       double cost_k = 0.0;
+      double discount = 1.0;
       for (int t = 0; t < N; ++t) {
         double h_t = h_all(t);
         double h_t1 = h_all(t + 1);
@@ -526,8 +529,9 @@ Eigen::VectorXd CBFCost::compute(
         // DCBF 위반: (1-γdt)·h(x_t) - h(x_{t+1}) > 0
         double violation = decay_ * h_t - h_t1;
         if (violation > 0.0) {
-          cost_k += weight_ * violation * violation;
+          cost_k += weight_ * discount * violation * violation;
         }
+        discount *= horizon_discount_;
       }
       costs(k) += cost_k;
     }
@@ -698,6 +702,125 @@ CostBreakdown CompositeMPPICost::computeDetailed(
   }
 
   return breakdown;
+}
+
+// ============================================================================
+// UncertaintyAwareCost
+// ============================================================================
+
+UncertaintyAwareCost::UncertaintyAwareCost(
+  EnsembleDynamicsModel* ensemble_model, double weight, double dt)
+: ensemble_model_(ensemble_model), weight_(weight), dt_(dt)
+{
+}
+
+Eigen::VectorXd UncertaintyAwareCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)reference;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (!ensemble_model_ || weight_ <= 0.0) {
+    return costs;
+  }
+
+  for (int k = 0; k < K; ++k) {
+    const auto& traj = trajectories[k];
+    const auto& ctrl = controls[k];
+    int N = ctrl.rows();
+    double cost_k = 0.0;
+
+    for (int t = 0; t < N; ++t) {
+      Eigen::MatrixXd state_mat = traj.row(t);
+      Eigen::MatrixXd ctrl_mat = ctrl.row(t);
+
+      auto result = ensemble_model_->predictWithUncertainty(state_mat, ctrl_mat);
+      cost_k += result.variance.sum();
+    }
+
+    costs(k) = weight_ * cost_k;
+  }
+
+  return costs;
+}
+
+// ============================================================================
+// C3BFCost
+// ============================================================================
+
+C3BFCost::C3BFCost(double weight, double dt, double alpha_safe)
+: weight_(weight), dt_(dt), alpha_safe_(alpha_safe)
+{
+}
+
+void C3BFCost::setObstacles(const std::vector<Eigen::Vector3d>& obstacles,
+                             const std::vector<Eigen::Vector2d>& velocities)
+{
+  barriers_.clear();
+  barriers_.reserve(obstacles.size());
+  for (size_t i = 0; i < obstacles.size(); ++i) {
+    C3BFBarrier b(obstacles[i](0), obstacles[i](1), obstacles[i](2),
+                  robot_radius_, safety_margin_, alpha_safe_);
+    if (i < velocities.size()) {
+      b.updateObstacleVelocity(velocities[i](0), velocities[i](1));
+    }
+    barriers_.push_back(std::move(b));
+  }
+}
+
+void C3BFCost::setObstacles(const std::vector<Eigen::Vector3d>& obstacles)
+{
+  std::vector<Eigen::Vector2d> zero_vels(obstacles.size(), Eigen::Vector2d::Zero());
+  setObstacles(obstacles, zero_vels);
+}
+
+Eigen::VectorXd C3BFCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference
+) const
+{
+  (void)controls;
+  (void)reference;
+
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (barriers_.empty()) {
+    return costs;
+  }
+
+  #pragma omp parallel for schedule(static) if(K > 4096)
+  for (int k = 0; k < K; ++k) {
+    const auto& traj = trajectories[k];
+    int N = traj.rows() - 1;
+    double cost_k = 0.0;
+
+    for (int t = 0; t < N; ++t) {
+      // 궤적에서 로봇 속도 추정: v = (x_{t+1} - x_t) / dt
+      double robot_vx = (traj(t + 1, 0) - traj(t, 0)) / dt_;
+      double robot_vy = (traj(t + 1, 1) - traj(t, 1)) / dt_;
+
+      for (const auto& barrier : barriers_) {
+        Eigen::VectorXd state = traj.row(t).transpose();
+        double h = barrier.evaluate(state, robot_vx, robot_vy);
+
+        // 음의 h = 위험 → 페널티
+        if (h < 0.0) {
+          cost_k += weight_ * h * h;
+        }
+      }
+    }
+
+    costs(k) = cost_k;
+  }
+
+  return costs;
 }
 
 }  // namespace mpc_controller_ros2

@@ -107,4 +107,42 @@ Eigen::VectorXd BarrierFunctionSet::evaluateAll(const Eigen::VectorXd& state) co
   return values;
 }
 
+void BarrierFunctionSet::setObstaclesWithVelocity(
+  const std::vector<Eigen::Vector3d>& obstacles,
+  const std::vector<Eigen::Vector2d>& velocities)
+{
+  // 기존 CircleBarrier 설정 (하위호환)
+  setObstacles(obstacles);
+
+  // 속도 저장
+  obstacle_velocities_ = velocities;
+
+  // C3BF barriers 구축
+  c3bf_barriers_.clear();
+  c3bf_barriers_.reserve(obstacles.size());
+  for (size_t i = 0; i < obstacles.size(); ++i) {
+    C3BFBarrier b(obstacles[i](0), obstacles[i](1), obstacles[i](2),
+                  robot_radius_, safety_margin_, alpha_safe_);
+    if (i < velocities.size()) {
+      b.updateObstacleVelocity(velocities[i](0), velocities[i](1));
+    }
+    c3bf_barriers_.push_back(std::move(b));
+  }
+}
+
+std::vector<const C3BFBarrier*> BarrierFunctionSet::getActiveC3BFBarriers(
+  const Eigen::VectorXd& state) const
+{
+  std::vector<const C3BFBarrier*> active;
+  for (const auto& barrier : c3bf_barriers_) {
+    double dx = state(0) - barrier.obsX();
+    double dy = state(1) - barrier.obsY();
+    double dist = std::sqrt(dx * dx + dy * dy);
+    if (dist <= activation_distance_) {
+      active.push_back(&barrier);
+    }
+  }
+  return active;
+}
+
 }  // namespace mpc_controller_ros2

@@ -104,6 +104,7 @@ def launch_setup(context, *args, **kwargs):
     # Resolve arguments
     controller_type = LaunchConfiguration('controller').perform(context)
     headless = LaunchConfiguration('headless').perform(context).lower() == 'true'
+    nav2_stress = LaunchConfiguration('nav2_stress').perform(context).lower() == 'true'
 
     # 컨트롤러별 파라미터 파일 선택
     controller_map = {
@@ -153,6 +154,26 @@ def launch_setup(context, *args, **kwargs):
                           'MPPI-H Hybrid Swerve (IROS 2024, Low-D↔4D)'),
         'hybrid_non_coaxial': ('nav2_params_hybrid_non_coaxial_mppi.yaml',
                                'MPPI-H Hybrid Non-Coaxial (IROS 2024, Low-D↔4D)'),
+        'log_swerve': ('nav2_params_log_swerve_mppi.yaml',
+                       'Log-MPPI Swerve (log-space weights + swerve)'),
+        'tsallis_swerve': ('nav2_params_tsallis_swerve_mppi.yaml',
+                           'Tsallis-MPPI Swerve (q-exponential + swerve)'),
+        'smooth_swerve': ('nav2_params_smooth_swerve_mppi.yaml',
+                          'Smooth-MPPI Swerve (Δu space + jerk + swerve)'),
+        'biased_swerve': ('nav2_params_biased_swerve_mppi.yaml',
+                          'Biased-MPPI Swerve (ancillary + swerve, RA-L 2024)'),
+        'shield_swerve': ('nav2_params_shield_swerve_mppi.yaml',
+                          'Shield-MPPI Swerve (CBF + BR-MPPI + swerve)'),
+        'cs_swerve': ('nav2_params_cs_swerve_mppi.yaml',
+                      'CS-MPPI Swerve (Covariance Steering + swerve)'),
+        'pi_swerve': ('nav2_params_pi_swerve_mppi.yaml',
+                      'pi-MPPI Swerve (ADMM QP projection + swerve)'),
+        'svg_swerve': ('nav2_params_svg_swerve_mppi.yaml',
+                       'SVG-MPPI Swerve (Guide SVGD + swerve)'),
+        'ilqr_swerve': ('nav2_params_ilqr_swerve_mppi.yaml',
+                        'iLQR-MPPI Swerve (iLQR warm-start + swerve)'),
+        'adaptive_shield': ('nav2_params_adaptive_shield_mppi.yaml',
+                            'Adaptive Shield-MPPI (distance/velocity adaptive CBF)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -167,6 +188,9 @@ def launch_setup(context, *args, **kwargs):
         'swerve', 'non_coaxial', 'non_coaxial_60deg',
         'dial_swerve', 'dial_non_coaxial',
         'hybrid_swerve', 'hybrid_non_coaxial',
+        'log_swerve', 'tsallis_swerve', 'smooth_swerve',
+        'biased_swerve', 'shield_swerve', 'cs_swerve',
+        'pi_swerve', 'svg_swerve', 'ilqr_swerve',
     ]
 
     # Ackermann 판별
@@ -182,7 +206,8 @@ def launch_setup(context, *args, **kwargs):
     elif is_swerve:
         urdf_file = os.path.join(pkg_dir, 'urdf', 'swerve_robot.urdf')
         controller_config = os.path.join(pkg_dir, 'config', 'swerve_drive_controller.yaml')
-        nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2_params_swerve.yaml')
+        swerve_nav2 = 'nav2_params_swerve_stress.yaml' if nav2_stress else 'nav2_params_swerve.yaml'
+        nav2_params_file = os.path.join(pkg_dir, 'config', swerve_nav2)
         robot_name = 'swerve_robot'
         spawn_z = '0.20'
     else:
@@ -853,15 +878,20 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'controller',
-            default_value='custom',
+            default_value='swerve',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "stress_test", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "adaptive_shield", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',
             default_value='false',
             description='Run in headless mode (no Gazebo GUI, no RVIZ)'
+        ),
+        DeclareLaunchArgument(
+            'nav2_stress',
+            default_value='false',
+            description='Use stress-test nav2 params (minimal inflation, slow planner)'
         ),
 
         # Environment variables

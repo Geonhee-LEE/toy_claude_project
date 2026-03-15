@@ -10,6 +10,7 @@
 #include <nav2_costmap_2d/cost_values.hpp>
 #include "mpc_controller_ros2/mppi_params.hpp"
 #include "mpc_controller_ros2/barrier_function.hpp"
+#include "mpc_controller_ros2/c3bf_barrier.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -211,7 +212,8 @@ private:
 class CBFCost : public MPPICostFunction
 {
 public:
-  CBFCost(BarrierFunctionSet* barrier_set, double weight, double gamma, double dt);
+  CBFCost(BarrierFunctionSet* barrier_set, double weight, double gamma, double dt,
+          double horizon_discount = 1.0);
   std::string name() const override { return "cbf"; }
 
   Eigen::VectorXd compute(
@@ -224,6 +226,7 @@ private:
   BarrierFunctionSet* barrier_set_;
   double weight_;
   double decay_;  // 1 - γ·dt
+  double horizon_discount_;  // γ^t 감쇄 (1.0=비활성화)
 };
 
 /**
@@ -274,6 +277,68 @@ private:
   double weight_;
   double reference_velocity_;
   double dt_;
+};
+
+// Forward declaration
+class EnsembleDynamicsModel;
+
+/**
+ * @brief 앙상블 불확실성 비용
+ *
+ * cost = weight * Σ_t variance(x_t, u_t).sum()
+ *
+ * 앙상블 MLP의 예측 분산을 비용으로 사용하여
+ * 모델 불확실성이 높은 영역을 회피합니다.
+ */
+class UncertaintyAwareCost : public MPPICostFunction
+{
+public:
+  UncertaintyAwareCost(EnsembleDynamicsModel* ensemble_model, double weight, double dt);
+  std::string name() const override { return "uncertainty"; }
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  EnsembleDynamicsModel* ensemble_model_;  // 비소유
+  double weight_;
+  double dt_;
+};
+
+/**
+ * @brief C3BF (Collision Cone CBF) Soft Cost
+ *
+ * cost = weight * Σ_t max(0, -h_c3bf(x_t, v_t))²
+ *
+ * 궤적의 속도를 유한차분으로 추정하여 C3BF를 평가합니다.
+ * 접근 방향에서만 페널티를 부여합니다.
+ */
+class C3BFCost : public MPPICostFunction
+{
+public:
+  C3BFCost(double weight, double dt, double alpha_safe = 0.7854);
+  std::string name() const override { return "c3bf"; }
+
+  /** @brief 장애물 설정 (위치 + 속도) */
+  void setObstacles(const std::vector<Eigen::Vector3d>& obstacles,
+                    const std::vector<Eigen::Vector2d>& velocities);
+
+  /** @brief 장애물 설정 (위치만, 속도 0) */
+  void setObstacles(const std::vector<Eigen::Vector3d>& obstacles);
+
+  Eigen::VectorXd compute(
+    const std::vector<Eigen::MatrixXd>& trajectories,
+    const std::vector<Eigen::MatrixXd>& controls,
+    const Eigen::MatrixXd& reference
+  ) const override;
+private:
+  double weight_;
+  double dt_;
+  double alpha_safe_;
+  std::vector<C3BFBarrier> barriers_;
+  double robot_radius_{0.2};
+  double safety_margin_{0.3};
 };
 
 /**

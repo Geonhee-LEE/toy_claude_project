@@ -247,11 +247,23 @@ def main():
                         help='더미 모델 입력 차원')
     parser.add_argument('--out-dim', type=int, default=3,
                         help='더미 모델 출력 차원')
+    parser.add_argument('--ensemble', type=int, default=0,
+                        help='앙상블 크기 (M>0: M개 bootstrap 모델 학습)')
     args = parser.parse_args()
 
     if args.generate_dummy:
-        generate_dummy_model(args.output, args.in_dim, args.out_dim,
-                             args.hidden, args.n_hidden)
+        if args.ensemble > 0:
+            # 앙상블 더미 모델 생성
+            out_dir = Path(args.output)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for i in range(args.ensemble):
+                model_path = out_dir / f"model_{i}.bin"
+                generate_dummy_model(str(model_path), args.in_dim, args.out_dim,
+                                     args.hidden, args.n_hidden)
+            print(f"Generated {args.ensemble} dummy ensemble models in {out_dir}")
+        else:
+            generate_dummy_model(args.output, args.in_dim, args.out_dim,
+                                 args.hidden, args.n_hidden)
         return
 
     if not args.data:
@@ -267,16 +279,40 @@ def main():
     print(f"  Residual mean: {residuals.mean(axis=0)}")
     print(f"  Residual std:  {residuals.std(axis=0)}")
 
-    print("Training MLP...")
-    layers, norm = train_model(
-        states, controls, residuals,
-        hidden=args.hidden, n_hidden=args.n_hidden,
-        epochs=args.epochs, lr=args.lr, batch_size=args.batch_size
-    )
+    if args.ensemble > 0:
+        # 앙상블 학습: M개 bootstrap 샘플 → M개 모델
+        out_dir = Path(args.output)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        n = len(states)
+        for i in range(args.ensemble):
+            print(f"\n=== Ensemble model {i+1}/{args.ensemble} ===")
+            # Bootstrap 샘플링 (복원 추출)
+            idx = np.random.choice(n, n, replace=True)
+            boot_states = states[idx]
+            boot_controls = controls[idx]
+            boot_residuals = residuals[idx]
 
-    print(f"Saving to {args.output}...")
-    save_eigen_mlp_binary(args.output, layers, norm)
-    print("Done!")
+            layers, norm = train_model(
+                boot_states, boot_controls, boot_residuals,
+                hidden=args.hidden, n_hidden=args.n_hidden,
+                epochs=args.epochs, lr=args.lr, batch_size=args.batch_size
+            )
+
+            model_path = out_dir / f"model_{i}.bin"
+            save_eigen_mlp_binary(str(model_path), layers, norm)
+            print(f"  Saved to {model_path}")
+        print(f"\nDone! {args.ensemble} ensemble models saved to {out_dir}")
+    else:
+        print("Training MLP...")
+        layers, norm = train_model(
+            states, controls, residuals,
+            hidden=args.hidden, n_hidden=args.n_hidden,
+            epochs=args.epochs, lr=args.lr, batch_size=args.batch_size
+        )
+
+        print(f"Saving to {args.output}...")
+        save_eigen_mlp_binary(args.output, layers, norm)
+        print("Done!")
 
 
 if __name__ == '__main__':

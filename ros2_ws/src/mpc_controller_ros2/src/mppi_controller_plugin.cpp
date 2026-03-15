@@ -38,9 +38,14 @@ void MPPIControllerPlugin::configure(
   declareParameters();
   loadParameters();
 
-  // Initialize components (MotionModel 기반 + Residual Dynamics 래핑)
+  // Initialize components (MotionModel 기반 + Residual/Ensemble Dynamics 래핑)
   std::unique_ptr<MotionModel> model;
-  if (params_.residual_enabled && !params_.residual_weights_path.empty()) {
+  if (params_.ensemble_enabled && !params_.ensemble_weights_dir.empty()) {
+    model = MotionModelFactory::createWithEnsemble(params_.motion_model, params_);
+    RCLCPP_INFO(node_->get_logger(),
+      "Ensemble Dynamics enabled (M=%d, alpha=%.2f, dir=%s)",
+      params_.ensemble_size, params_.ensemble_alpha, params_.ensemble_weights_dir.c_str());
+  } else if (params_.residual_enabled && !params_.residual_weights_path.empty()) {
     model = MotionModelFactory::createWithResidual(params_.motion_model, params_);
     RCLCPP_INFO(node_->get_logger(),
       "Residual Dynamics enabled (alpha=%.2f, path=%s)",
@@ -114,9 +119,10 @@ void MPPIControllerPlugin::configure(
       params_.cbf_robot_radius, params_.cbf_safety_margin,
       params_.cbf_activation_distance);
 
-    // CBFCost를 비용 함수에 추가 (soft 유도)
+    // CBFCost를 비용 함수에 추가 (soft 유도, horizon_discount 지원)
     cost_function_->addCost(std::make_unique<CBFCost>(
-      &barrier_set_, params_.cbf_cost_weight, params_.cbf_gamma, params_.dt));
+      &barrier_set_, params_.cbf_cost_weight, params_.cbf_gamma, params_.dt,
+      params_.cbf_horizon_discount));
 
     // CBF Safety Filter 초기화 (hard 보장)
     if (params_.cbf_use_safety_filter) {
@@ -1385,6 +1391,33 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "residual_weights_path", params_.residual_weights_path);
   node_->declare_parameter(prefix + "residual_alpha", params_.residual_alpha);
 
+  // Ensemble Dynamics
+  node_->declare_parameter(prefix + "ensemble_enabled", params_.ensemble_enabled);
+  node_->declare_parameter(prefix + "ensemble_weights_dir", params_.ensemble_weights_dir);
+  node_->declare_parameter(prefix + "ensemble_size", params_.ensemble_size);
+  node_->declare_parameter(prefix + "ensemble_alpha", params_.ensemble_alpha);
+  node_->declare_parameter(prefix + "uncertainty_cost_weight", params_.uncertainty_cost_weight);
+
+  // C3BF
+  node_->declare_parameter(prefix + "c3bf_enabled", params_.c3bf_enabled);
+  node_->declare_parameter(prefix + "c3bf_alpha_safe", params_.c3bf_alpha_safe);
+  node_->declare_parameter(prefix + "c3bf_cost_weight", params_.c3bf_cost_weight);
+
+  // Adaptive Shield
+  node_->declare_parameter(prefix + "adaptive_shield_enabled", params_.adaptive_shield_enabled);
+  node_->declare_parameter(prefix + "adaptive_shield_alpha_min", params_.adaptive_shield_alpha_min);
+  node_->declare_parameter(prefix + "adaptive_shield_alpha_max", params_.adaptive_shield_alpha_max);
+  node_->declare_parameter(prefix + "adaptive_shield_k_d", params_.adaptive_shield_k_d);
+  node_->declare_parameter(prefix + "adaptive_shield_k_v", params_.adaptive_shield_k_v);
+
+  // Horizon-Weighted CBF
+  node_->declare_parameter(prefix + "cbf_horizon_discount", params_.cbf_horizon_discount);
+
+  // Online Data Buffer
+  node_->declare_parameter(prefix + "online_data_enabled", params_.online_data_enabled);
+  node_->declare_parameter(prefix + "online_data_capacity", params_.online_data_capacity);
+  node_->declare_parameter(prefix + "online_data_export_path", params_.online_data_export_path);
+
   // Safety Enhancement: BR-MPPI
   node_->declare_parameter(prefix + "barrier_rate_cost_weight", params_.barrier_rate_cost_weight);
 
@@ -1666,6 +1699,33 @@ void MPPIControllerPlugin::loadParameters()
   params_.residual_enabled = node_->get_parameter(prefix + "residual_enabled").as_bool();
   params_.residual_weights_path = node_->get_parameter(prefix + "residual_weights_path").as_string();
   params_.residual_alpha = node_->get_parameter(prefix + "residual_alpha").as_double();
+
+  // Ensemble Dynamics
+  params_.ensemble_enabled = node_->get_parameter(prefix + "ensemble_enabled").as_bool();
+  params_.ensemble_weights_dir = node_->get_parameter(prefix + "ensemble_weights_dir").as_string();
+  params_.ensemble_size = node_->get_parameter(prefix + "ensemble_size").as_int();
+  params_.ensemble_alpha = node_->get_parameter(prefix + "ensemble_alpha").as_double();
+  params_.uncertainty_cost_weight = node_->get_parameter(prefix + "uncertainty_cost_weight").as_double();
+
+  // C3BF
+  params_.c3bf_enabled = node_->get_parameter(prefix + "c3bf_enabled").as_bool();
+  params_.c3bf_alpha_safe = node_->get_parameter(prefix + "c3bf_alpha_safe").as_double();
+  params_.c3bf_cost_weight = node_->get_parameter(prefix + "c3bf_cost_weight").as_double();
+
+  // Adaptive Shield
+  params_.adaptive_shield_enabled = node_->get_parameter(prefix + "adaptive_shield_enabled").as_bool();
+  params_.adaptive_shield_alpha_min = node_->get_parameter(prefix + "adaptive_shield_alpha_min").as_double();
+  params_.adaptive_shield_alpha_max = node_->get_parameter(prefix + "adaptive_shield_alpha_max").as_double();
+  params_.adaptive_shield_k_d = node_->get_parameter(prefix + "adaptive_shield_k_d").as_double();
+  params_.adaptive_shield_k_v = node_->get_parameter(prefix + "adaptive_shield_k_v").as_double();
+
+  // Horizon-Weighted CBF
+  params_.cbf_horizon_discount = node_->get_parameter(prefix + "cbf_horizon_discount").as_double();
+
+  // Online Data Buffer
+  params_.online_data_enabled = node_->get_parameter(prefix + "online_data_enabled").as_bool();
+  params_.online_data_capacity = node_->get_parameter(prefix + "online_data_capacity").as_int();
+  params_.online_data_export_path = node_->get_parameter(prefix + "online_data_export_path").as_string();
 
   // Safety Enhancement: BR-MPPI
   params_.barrier_rate_cost_weight = node_->get_parameter(prefix + "barrier_rate_cost_weight").as_double();

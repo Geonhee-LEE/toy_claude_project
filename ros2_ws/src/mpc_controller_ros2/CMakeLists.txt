@@ -111,6 +111,10 @@ add_library(mppi_controller_plugin SHARED
   src/pi_mppi_controller_plugin.cpp
   src/wheel_level_4d_model.cpp
   src/hybrid_swerve_mppi_controller_plugin.cpp
+  src/ensemble_dynamics_model.cpp
+  src/online_data_buffer.cpp
+  src/c3bf_barrier.cpp
+  src/adaptive_shield_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -349,6 +353,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_hybrid_swerve_mppi test/unit/test_hybrid_swerve_mppi.cpp)
   if(TARGET test_hybrid_swerve_mppi)
     target_link_libraries(test_hybrid_swerve_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_ensemble_dynamics test/unit/test_ensemble_dynamics.cpp)
+  if(TARGET test_ensemble_dynamics)
+    target_link_libraries(test_ensemble_dynamics mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_advanced_cbf test/unit/test_advanced_cbf.cpp)
+  if(TARGET test_advanced_cbf)
+    target_link_libraries(test_advanced_cbf mppi_controller_plugin)
   endif()
 endif()
 
