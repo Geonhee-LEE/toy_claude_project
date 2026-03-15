@@ -211,6 +211,12 @@ struct MPPIParams
   std::string online_data_export_path{"/tmp/mppi_online_data.csv"};  // 내보내기 경로
 
   // ============================================================================
+  // Online Learning (런타임 모델 리로드)
+  // ============================================================================
+  bool model_reload_enabled{false};                // 모델 리로드 체크 활성화
+  double model_reload_interval_sec{30.0};          // 모델 리로드 체크 간격 (초)
+
+  // ============================================================================
   // Safety Enhancement 파라미터
   // ============================================================================
 
@@ -238,6 +244,22 @@ struct MPPIParams
   double clf_decay_rate{1.0};                      // CLF decay rate c (V̇ + c·V ≤ δ)
   double clf_slack_penalty{100.0};                 // slack 페널티 p (min p·δ²)
   double clf_P_scale{1.0};                         // P = scale · Q (Lyapunov 가중치)
+
+  // ============================================================================
+  // CBF 합성 파라미터 (다중 CBF → 단일 합성 CBF)
+  // ============================================================================
+  bool cbf_composition_enabled{false};       // 합성 CBF 활성화
+  int cbf_composition_method{1};             // 0=MIN, 1=SMOOTH_MIN, 2=LOG_SUM_EXP, 3=PRODUCT
+  double cbf_composition_alpha{10.0};        // smooth-min 파라미터 (클수록 min에 가까움)
+
+  // ============================================================================
+  // Predictive Safety Filter 파라미터 (N-step CBF 투영)
+  // ShieldMPPI의 단일 스텝 투영을 전체 horizon으로 확장
+  // ============================================================================
+  bool predictive_safety_enabled{false};     // 예측 안전 필터 활성화
+  int predictive_safety_horizon{0};          // 투영 horizon (0=전체 N)
+  double predictive_safety_decay{1.0};       // gamma 시간 감쇠 (1.0=균일)
+  int predictive_safety_max_iterations{10};  // 스텝당 최대 투영 반복
 
   // ============================================================================
   // Covariance Steering MPPI (CS-MPPI) 파라미터

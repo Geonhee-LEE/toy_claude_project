@@ -72,6 +72,28 @@ public:
     const BatchDynamicsWrapper& dynamics) const;
 
   /**
+   * @brief 합성 CBF 단일 제약으로 CLF-CBF-QP 해결
+   *
+   * 다중 CBF를 합성하여 단일 제약으로 QP를 해결합니다.
+   * 제약 수 감소 + 미분 가능성 보장 → QP 수렴 개선.
+   *
+   * @param state 현재 상태 (nx,)
+   * @param x_des 목표 상태 (nx,)
+   * @param u_ref MPPI 참조 제어 (nu,)
+   * @param dynamics 동역학 래퍼
+   * @param method CBF 합성 방법
+   * @param composition_alpha smooth-min 파라미터
+   * @return QP 결과 (cbf_margins는 합성 CBF 단일 마진)
+   */
+  CLFCBFQPResult solveComposite(
+    const Eigen::VectorXd& state,
+    const Eigen::VectorXd& x_des,
+    const Eigen::VectorXd& u_ref,
+    const BatchDynamicsWrapper& dynamics,
+    CBFCompositionMethod method = CBFCompositionMethod::SMOOTH_MIN,
+    double composition_alpha = 10.0) const;
+
+  /**
    * @brief CLF만으로 QP 해결 (CBF 제약 없음)
    */
   CLFCBFQPResult solveCLFOnly(

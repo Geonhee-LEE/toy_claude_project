@@ -9,6 +9,19 @@ namespace mpc_controller_ros2
 {
 
 /**
+ * @brief CBF 합성 전략
+ *
+ * 다중 CBF를 하나의 합성 CBF로 결합하여 제약 수를 줄이고
+ * QP 수렴을 개선합니다.
+ */
+enum class CBFCompositionMethod {
+  MIN,           ///< h_c = min(h_1, ..., h_n) — 가장 보수적, 비미분
+  SMOOTH_MIN,    ///< h_c = -1/α · log(Σ exp(-α·h_i)) — 미분 가능 근사
+  LOG_SUM_EXP,   ///< h_c = -log(Σ exp(-h_i)) — smooth min 특수 경우 (α=1)
+  PRODUCT        ///< h_c = Π h_i — 모든 배리어 동시 반영
+};
+
+/**
  * @brief 원형 장애물 CBF (Control Barrier Function)
  *
  * h(x) = ||p - p_obs||² - d_safe²
@@ -107,6 +120,36 @@ public:
 
   /** @brief alpha_safe setter (C3BF 콘 반각) */
   void setAlphaSafe(double alpha_safe) { alpha_safe_ = alpha_safe; }
+
+  // =========================================================================
+  // CBF 합성 메서드 (다중 CBF → 단일 합성 CBF)
+  // =========================================================================
+
+  /**
+   * @brief 합성 CBF 값: h_c(x)
+   *
+   * 활성 barrier들을 합성하여 단일 CBF 값을 반환합니다.
+   * @param state 현재 상태 (nx,)
+   * @param method 합성 방법
+   * @param alpha smooth-min 파라미터 (클수록 min에 가까움)
+   * @return 합성 CBF 값 h_c(x)
+   */
+  double evaluateComposite(const Eigen::VectorXd& state,
+                           CBFCompositionMethod method = CBFCompositionMethod::SMOOTH_MIN,
+                           double alpha = 10.0) const;
+
+  /**
+   * @brief 합성 CBF gradient: ∇h_c(x)
+   *
+   * 활성 barrier들의 합성 gradient를 반환합니다.
+   * @param state 현재 상태 (nx,)
+   * @param method 합성 방법
+   * @param alpha smooth-min 파라미터
+   * @return ∇h_c(x) (nx,)
+   */
+  Eigen::VectorXd compositeGradient(const Eigen::VectorXd& state,
+                                     CBFCompositionMethod method = CBFCompositionMethod::SMOOTH_MIN,
+                                     double alpha = 10.0) const;
 
 private:
   double robot_radius_;

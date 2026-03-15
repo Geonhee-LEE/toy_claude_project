@@ -121,4 +121,11 @@
       Inherits Shield-MPPI per-step projection + CLF-CBF post-filter.
     </description>
   </class>
+  <class type="mpc_controller_ros2::PredictiveSafetyMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Predictive Safety MPPI controller plugin for nav2.
+      N-step forward rollout CBF projection for recursive feasibility.
+      Extends Shield-MPPI per-step projection to full horizon safety guarantee.
+    </description>
+  </class>
 </library>
