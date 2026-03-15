@@ -231,6 +231,15 @@ struct MPPIParams
   int shield_max_iterations{10};                   // 투영 최대 반복
 
   // ============================================================================
+  // CLF-CBF-QP 통합 안전 필터 파라미터
+  // Ames et al. (2019): CLF 수렴 + CBF 안전 보장, slack으로 안전 우선
+  // ============================================================================
+  bool clf_cbf_enabled{false};                     // CLF-CBF-QP 활성화
+  double clf_decay_rate{1.0};                      // CLF decay rate c (V̇ + c·V ≤ δ)
+  double clf_slack_penalty{100.0};                 // slack 페널티 p (min p·δ²)
+  double clf_P_scale{1.0};                         // P = scale · Q (Lyapunov 가중치)
+
+  // ============================================================================
   // Covariance Steering MPPI (CS-MPPI) 파라미터
   // CoVO-MPC (CoRL 2023): 동역학 Jacobian B_t 감도 기반 노이즈 공분산 적응
   // ============================================================================

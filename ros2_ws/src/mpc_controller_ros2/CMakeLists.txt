@@ -115,6 +115,9 @@ add_library(mppi_controller_plugin SHARED
   src/online_data_buffer.cpp
   src/c3bf_barrier.cpp
   src/adaptive_shield_mppi_controller_plugin.cpp
+  src/clf_function.cpp
+  src/clf_cbf_qp_solver.cpp
+  src/clf_cbf_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -363,6 +366,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_advanced_cbf test/unit/test_advanced_cbf.cpp)
   if(TARGET test_advanced_cbf)
     target_link_libraries(test_advanced_cbf mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_clf_cbf_qp test/unit/test_clf_cbf_qp.cpp)
+  if(TARGET test_clf_cbf_qp)
+    target_link_libraries(test_clf_cbf_qp mppi_controller_plugin)
   endif()
 endif()
 

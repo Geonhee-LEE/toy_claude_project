@@ -174,6 +174,8 @@ def launch_setup(context, *args, **kwargs):
                         'iLQR-MPPI Swerve (iLQR warm-start + swerve)'),
         'adaptive_shield': ('nav2_params_adaptive_shield_mppi.yaml',
                             'Adaptive Shield-MPPI (distance/velocity adaptive CBF)'),
+        'clf_cbf': ('nav2_params_clf_cbf_mppi.yaml',
+                    'CLF-CBF-MPPI (unified CLF+CBF QP safety filter)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
@@ -881,7 +883,7 @@ def generate_launch_description():
             default_value='swerve',
             description='MPPI controller type: "custom", "log", "tsallis", "risk_aware", '
                         '"svmpc", "smooth", "spline", "svg", "biased", "swerve", '
-                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "adaptive_shield", "stress_test", or "nav2"'
+                        '"non_coaxial", "non_coaxial_60deg", "ackermann", "shield", "adaptive_shield", "clf_cbf", "stress_test", or "nav2"'
         ),
         DeclareLaunchArgument(
             'headless',

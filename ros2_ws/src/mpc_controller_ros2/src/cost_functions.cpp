@@ -1,5 +1,6 @@
 #include "mpc_controller_ros2/cost_functions.hpp"
 #include "mpc_controller_ros2/ensemble_dynamics_model.hpp"
+#include "mpc_controller_ros2/clf_function.hpp"
 #include "mpc_controller_ros2/utils.hpp"
 #include <omp.h>
 #include <utility>
@@ -818,6 +819,61 @@ Eigen::VectorXd C3BFCost::compute(
     }
 
     costs(k) = cost_k;
+  }
+
+  return costs;
+}
+
+// ============================================================================
+// CLFCost
+// ============================================================================
+
+CLFCost::CLFCost(const CLFFunction* clf, double weight, double dt)
+: clf_(clf), weight_(weight), dt_(dt)
+{
+}
+
+Eigen::VectorXd CLFCost::compute(
+  const std::vector<Eigen::MatrixXd>& trajectories,
+  const std::vector<Eigen::MatrixXd>& controls,
+  const Eigen::MatrixXd& reference) const
+{
+  (void)controls;
+  int K = trajectories.size();
+  Eigen::VectorXd costs = Eigen::VectorXd::Zero(K);
+
+  if (!clf_ || weight_ <= 0.0) return costs;
+
+  int N = trajectories[0].rows() - 1;
+  int nx = clf_->stateDim();
+
+  #pragma omp parallel for schedule(static)
+  for (int k = 0; k < K; ++k) {
+    double cost_k = 0.0;
+    for (int t = 0; t < N; ++t) {
+      // x_des = reference[t+1] (다음 스텝 목표)
+      int ref_row = std::min(t + 1, (int)reference.rows() - 1);
+      Eigen::VectorXd x_des = Eigen::VectorXd::Zero(nx);
+      int cols = std::min((int)reference.cols(), nx);
+      x_des.head(cols) = reference.row(ref_row).head(cols).transpose();
+
+      Eigen::VectorXd x_t = trajectories[k].row(t).head(nx).transpose();
+      Eigen::VectorXd x_next = trajectories[k].row(t + 1).head(nx).transpose();
+
+      // V(x_t), V(x_{t+1})
+      double V_t = clf_->evaluate(x_t, x_des);
+      double V_next = clf_->evaluate(x_next, x_des);
+
+      // V̇ ≈ (V_{t+1} - V_t) / dt
+      double V_dot = (V_next - V_t) / dt_;
+
+      // CLF 조건 위반: V̇ + c·V > 0 → 페널티
+      double violation = V_dot + clf_->c() * V_t;
+      if (violation > 0.0) {
+        cost_k += violation * violation;
+      }
+    }
+    costs(k) = weight_ * cost_k;
   }
 
   return costs;
