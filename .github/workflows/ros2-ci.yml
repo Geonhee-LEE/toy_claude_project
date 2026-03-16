@@ -90,6 +90,15 @@ jobs:
             grep -E "K=|mean|median|Hz" /tmp/bench_result.txt || true
           fi
 
+      - name: Validate E2E test scripts
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          source install/setup.bash
+          python3 -c "import ast; ast.parse(open('src/mpc_controller_ros2/scripts/nav2_e2e_test.py').read())"
+          python3 -c "import ast; ast.parse(open('src/mpc_controller_ros2/scripts/stress_test.py').read())"
+          echo "E2E test scripts: syntax OK"
+
       - name: Show test results
         if: always()
         run: |
