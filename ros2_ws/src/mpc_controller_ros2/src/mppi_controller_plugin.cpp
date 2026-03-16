@@ -182,6 +182,19 @@ void MPPIControllerPlugin::configure(
     }
   }
 
+  // Dynamic Obstacle Tracker 초기화
+  if (params_.dynamic_obstacle_tracking_enabled) {
+    obstacle_tracker_ = std::make_unique<DynamicObstacleTracker>(
+      params_.obstacle_cluster_distance,
+      params_.obstacle_min_cluster_size,
+      params_.obstacle_velocity_ema_alpha,
+      params_.obstacle_max_association_distance,
+      params_.obstacle_track_timeout);
+    RCLCPP_INFO(node_->get_logger(),
+      "DynamicObstacleTracker enabled (cluster_dist=%.2f, ema_alpha=%.2f)",
+      params_.obstacle_cluster_distance, params_.obstacle_velocity_ema_alpha);
+  }
+
   // VelocityTrackingCost 등록 (경로 방향 속도 추적)
   if (params_.velocity_tracking_weight > 0.0) {
     cost_function_->addCost(std::make_unique<VelocityTrackingCost>(
@@ -996,7 +1009,19 @@ void MPPIControllerPlugin::updateCBFObstacles()
     }
   }
 
-  barrier_set_.setObstacles(obstacles);
+  // Dynamic Obstacle Tracker로 속도 추정 → C3BF 자동 활성화
+  if (params_.dynamic_obstacle_tracking_enabled && obstacle_tracker_) {
+    std::vector<Eigen::Vector2d> lethal_cells;
+    lethal_cells.reserve(obstacles.size());
+    for (const auto& obs : obstacles) {
+      lethal_cells.emplace_back(obs(0), obs(1));
+    }
+    auto [tracked_obs, tracked_vels] = obstacle_tracker_->process(
+      lethal_cells, resolution * 0.5, node_->now().seconds());
+    barrier_set_.setObstaclesWithVelocity(tracked_obs, tracked_vels);
+  } else {
+    barrier_set_.setObstacles(obstacles);
+  }
 }
 
 void MPPIControllerPlugin::publishVisualization(
@@ -1334,6 +1359,7 @@ void MPPIControllerPlugin::declareParameters()
   // Phase 3: Tube-MPPI
   node_->declare_parameter(prefix + "tube_enabled", params_.tube_enabled);
   node_->declare_parameter(prefix + "tube_width", params_.tube_width);
+  node_->declare_parameter(prefix + "tube_nominal_reset_threshold", params_.tube_nominal_reset_threshold);
   node_->declare_parameter(prefix + "k_forward", params_.k_forward);
   node_->declare_parameter(prefix + "k_lateral", params_.k_lateral);
   node_->declare_parameter(prefix + "k_angle", params_.k_angle);
@@ -1433,6 +1459,14 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "conformal_min_margin", params_.conformal_min_margin);
   node_->declare_parameter(prefix + "conformal_max_margin", params_.conformal_max_margin);
   node_->declare_parameter(prefix + "conformal_decay_rate", params_.conformal_decay_rate);
+
+  // Dynamic Obstacle Tracker
+  node_->declare_parameter(prefix + "dynamic_obstacle_tracking_enabled", params_.dynamic_obstacle_tracking_enabled);
+  node_->declare_parameter(prefix + "obstacle_cluster_distance", params_.obstacle_cluster_distance);
+  node_->declare_parameter(prefix + "obstacle_min_cluster_size", params_.obstacle_min_cluster_size);
+  node_->declare_parameter(prefix + "obstacle_velocity_ema_alpha", params_.obstacle_velocity_ema_alpha);
+  node_->declare_parameter(prefix + "obstacle_max_association_distance", params_.obstacle_max_association_distance);
+  node_->declare_parameter(prefix + "obstacle_track_timeout", params_.obstacle_track_timeout);
 
   // Safety Enhancement: Shield-MPPI
   node_->declare_parameter(prefix + "shield_cbf_stride", params_.shield_cbf_stride);
@@ -1664,6 +1698,7 @@ void MPPIControllerPlugin::loadParameters()
   // Phase 3: Tube-MPPI
   params_.tube_enabled = node_->get_parameter(prefix + "tube_enabled").as_bool();
   params_.tube_width = node_->get_parameter(prefix + "tube_width").as_double();
+  params_.tube_nominal_reset_threshold = node_->get_parameter(prefix + "tube_nominal_reset_threshold").as_double();
   params_.k_forward = node_->get_parameter(prefix + "k_forward").as_double();
   params_.k_lateral = node_->get_parameter(prefix + "k_lateral").as_double();
   params_.k_angle = node_->get_parameter(prefix + "k_angle").as_double();
@@ -1763,6 +1798,14 @@ void MPPIControllerPlugin::loadParameters()
   params_.conformal_min_margin = node_->get_parameter(prefix + "conformal_min_margin").as_double();
   params_.conformal_max_margin = node_->get_parameter(prefix + "conformal_max_margin").as_double();
   params_.conformal_decay_rate = node_->get_parameter(prefix + "conformal_decay_rate").as_double();
+
+  // Dynamic Obstacle Tracker
+  params_.dynamic_obstacle_tracking_enabled = node_->get_parameter(prefix + "dynamic_obstacle_tracking_enabled").as_bool();
+  params_.obstacle_cluster_distance = node_->get_parameter(prefix + "obstacle_cluster_distance").as_double();
+  params_.obstacle_min_cluster_size = node_->get_parameter(prefix + "obstacle_min_cluster_size").as_int();
+  params_.obstacle_velocity_ema_alpha = node_->get_parameter(prefix + "obstacle_velocity_ema_alpha").as_double();
+  params_.obstacle_max_association_distance = node_->get_parameter(prefix + "obstacle_max_association_distance").as_double();
+  params_.obstacle_track_timeout = node_->get_parameter(prefix + "obstacle_track_timeout").as_double();
 
   // Safety Enhancement: Shield-MPPI
   params_.shield_cbf_stride = node_->get_parameter(prefix + "shield_cbf_stride").as_int();

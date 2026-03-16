@@ -93,6 +93,7 @@ struct MPPIParams
 
   bool tube_enabled{false};      // Tube-MPPI 활성화 여부
   double tube_width{0.5};        // Tube 폭 (m)
+  double tube_nominal_reset_threshold{1.0};  // Nominal 리셋 편차 임계 (m)
 
   // Ancillary controller 피드백 게인 (nu x nx 행렬)
   // DiffDrive 기본:
@@ -339,6 +340,16 @@ struct MPPIParams
   double cbf_activation_distance{3.0};     // 장애물 활성화 거리 (m)
   double cbf_cost_weight{500.0};           // CBFCost soft cost 가중치
   bool cbf_use_safety_filter{true};        // Post-hoc QP safety filter 사용
+
+  // ============================================================================
+  // Dynamic Obstacle Tracker 파라미터
+  // ============================================================================
+  bool dynamic_obstacle_tracking_enabled{false};    // 동적 장애물 추적 활성화
+  double obstacle_cluster_distance{0.15};            // 클러스터링 거리 (m)
+  int obstacle_min_cluster_size{3};                  // 최소 클러스터 크기
+  double obstacle_velocity_ema_alpha{0.3};           // 속도 EMA 계수 (0~1)
+  double obstacle_max_association_distance{0.5};     // 최대 매칭 거리 (m)
+  double obstacle_track_timeout{2.0};                // 트랙 타임아웃 (초)
 
   // ============================================================================
   // 성능 최적화 파라미터

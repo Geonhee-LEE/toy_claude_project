@@ -31,7 +31,7 @@ amcl:
     save_pose_rate: 0.5
     sigma_hit: 0.2                    # 0.1→0.2 (시뮬레이션 허용)
     tf_broadcast: true
-    transform_tolerance: 1.0
+    transform_tolerance: 5.0
     update_min_a: 0.05                # 0.1→0.05 (더 자주 업데이트)
     update_min_d: 0.05                # 0.1→0.05
     z_hit: 0.8                        # 0.7→0.8 (벽 매칭 신뢰)
@@ -51,6 +51,7 @@ bt_navigator:
     global_frame: map
     robot_base_frame: base_link
     odom_topic: /diff_drive_controller/odom
+    transform_tolerance: 5.0
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
@@ -74,7 +75,7 @@ controller_server:
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.5
-    transform_tolerance: 1.0
+    transform_tolerance: 5.0
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -103,7 +104,7 @@ local_costmap:
       width: 10
       height: 10
       resolution: 0.05
-      robot_radius: 0.3
+      robot_radius: 0.22
       plugins: ["obstacle_layer", "inflation_layer"]
 
       obstacle_layer:
@@ -124,8 +125,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 5.0
-        inflation_radius: 1.0
+        cost_scaling_factor: 10.0
+        inflation_radius: 0.4
 
       always_send_full_costmap: true
 
@@ -142,7 +143,7 @@ global_costmap:
       width: 50
       height: 50
       resolution: 0.05
-      robot_radius: 0.3
+      robot_radius: 0.22
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
@@ -167,8 +168,8 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.8
+        cost_scaling_factor: 10.0
+        inflation_radius: 0.4
 
       always_send_full_costmap: true
 
@@ -179,8 +180,8 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
-      use_astar: false
+      tolerance: 1.0
+      use_astar: true
       allow_unknown: true
 
 behavior_server:
@@ -201,7 +202,7 @@ behavior_server:
     local_frame: odom
     global_frame: map
     robot_base_frame: base_link
-    transform_tolerance: 1.0
+    transform_tolerance: 5.0
 
 velocity_smoother:
   ros__parameters:

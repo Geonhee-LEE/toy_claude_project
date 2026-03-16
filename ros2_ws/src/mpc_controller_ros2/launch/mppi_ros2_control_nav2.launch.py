@@ -178,6 +178,8 @@ def launch_setup(context, *args, **kwargs):
                     'CLF-CBF-MPPI (unified CLF+CBF QP safety filter)'),
         'predictive_safety': ('nav2_params_predictive_safety_mppi.yaml',
                               'Predictive Safety MPPI (N-step CBF projection)'),
+        'tube_mppi': ('nav2_params_tube_mppi.yaml',
+                      'Tube-MPPI (nominal state MPPI + body frame feedback)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

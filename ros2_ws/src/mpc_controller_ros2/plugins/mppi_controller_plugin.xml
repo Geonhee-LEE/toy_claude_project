@@ -128,4 +128,11 @@
       Extends Shield-MPPI per-step projection to full horizon safety guarantee.
     </description>
   </class>
+  <class type="mpc_controller_ros2::TubeMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Tube-MPPI controller plugin for nav2.
+      Runs MPPI on nominal state and applies body frame feedback correction.
+      Robust to disturbances via tube invariant set with ancillary feedback K_fb.
+    </description>
+  </class>
 </library>

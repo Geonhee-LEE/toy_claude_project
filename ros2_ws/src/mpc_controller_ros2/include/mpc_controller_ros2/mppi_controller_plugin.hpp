@@ -25,6 +25,7 @@
 #include "mpc_controller_ros2/non_coaxial_swerve_model.hpp"
 #include "mpc_controller_ros2/savitzky_golay_filter.hpp"
 #include "mpc_controller_ros2/conformal_predictor.hpp"
+#include "mpc_controller_ros2/dynamic_obstacle_tracker.hpp"
 
 namespace mpc_controller_ros2
 {
@@ -180,6 +181,9 @@ private:
   std::unique_ptr<ConformalPredictor> conformal_predictor_;
   Eigen::VectorXd prev_predicted_state_;
   bool prev_predicted_state_valid_{false};
+
+  // Dynamic Obstacle Tracker
+  std::unique_ptr<DynamicObstacleTracker> obstacle_tracker_;
 
   // Tube 시각화
   void publishTubeVisualization(
