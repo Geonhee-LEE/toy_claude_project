@@ -122,6 +122,8 @@ add_library(mppi_controller_plugin SHARED
   src/model_reloader.cpp
   src/predictive_safety_filter.cpp
   src/predictive_safety_mppi_controller_plugin.cpp
+  src/tube_mppi_controller_plugin.cpp
+  src/dynamic_obstacle_tracker.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -392,6 +394,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_predictive_safety test/unit/test_predictive_safety.cpp)
   if(TARGET test_predictive_safety)
     target_link_libraries(test_predictive_safety mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_tube_mppi_plugin test/unit/test_tube_mppi_plugin.cpp)
+  if(TARGET test_tube_mppi_plugin)
+    target_link_libraries(test_tube_mppi_plugin mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_dynamic_obstacle_tracker test/unit/test_dynamic_obstacle_tracker.cpp)
+  if(TARGET test_dynamic_obstacle_tracker)
+    target_link_libraries(test_dynamic_obstacle_tracker mppi_controller_plugin)
   endif()
 endif()
 
