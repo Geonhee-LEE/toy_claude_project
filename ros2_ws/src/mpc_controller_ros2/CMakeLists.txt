@@ -405,6 +405,11 @@ if(BUILD_TESTING)
   if(TARGET test_dynamic_obstacle_tracker)
     target_link_libraries(test_dynamic_obstacle_tracker mppi_controller_plugin)
   endif()
+
+  ament_add_gtest(test_tube_tracker_integration test/unit/test_tube_tracker_integration.cpp)
+  if(TARGET test_tube_tracker_integration)
+    target_link_libraries(test_tube_tracker_integration mppi_controller_plugin)
+  endif()
 endif()
 
 # Benchmark executable (항상 빌드 가능 — ROS2 의존성 없음)
