@@ -80,6 +80,7 @@ mpc_controller/
 - Learning MPPI + Advanced CBF (Ensemble, C3BF, AdaptiveShield): 완료 (PR #159)
 - CLF-CBF-QP 통합 안전 필터 (Ames 2019): 완료 (PR #161)
 - 다중 CBF 합성 + Online Learning + Predictive Safety: 완료 (PR #165)
+- Tube-MPPI Plugin + Dynamic Obstacle Tracker: 완료 (PR #173)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

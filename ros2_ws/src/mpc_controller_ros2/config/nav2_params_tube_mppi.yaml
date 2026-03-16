@@ -19,8 +19,8 @@ controller_server:
       N: 30
       dt: 0.1
 
-      # Sampling
-      K: 512
+      # Sampling (custom과 동일)
+      K: 1024
       lambda: 10.0
 
       # Noise parameters [v, omega]
@@ -43,9 +43,9 @@ controller_server:
       Qf_y: 20.0
       Qf_theta: 2.0
 
-      # Control effort weights (R)
-      R_v: 0.1
-      R_omega: 0.1
+      # Control effort weights (R) — custom과 동일
+      R_v: 0.5
+      R_omega: 0.3
 
       # Control rate weights (R_rate)
       R_rate_v: 1.0
@@ -64,7 +64,7 @@ controller_server:
       goal_slowdown_dist: 1.0
 
       # Forward preference
-      prefer_forward_weight: 5.0
+      prefer_forward_weight: 10.0
       prefer_forward_linear_ratio: 0.5
 
       # Adaptive Temperature
@@ -76,8 +76,8 @@ controller_server:
 
       # ---- Tube-MPPI ----
       tube_enabled: true
-      tube_width: 0.5
-      tube_nominal_reset_threshold: 1.0
+      tube_width: 0.3
+      tube_nominal_reset_threshold: 0.5
       k_forward: 0.8
       k_lateral: 0.5
       k_angle: 1.0

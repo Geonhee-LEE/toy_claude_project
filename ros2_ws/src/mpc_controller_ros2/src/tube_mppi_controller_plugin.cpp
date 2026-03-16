@@ -109,6 +109,34 @@ std::pair<Eigen::VectorXd, MPPIInfo> TubeMPPIControllerPlugin::computeControl(
   info.tube_info.applied_control = u_applied;
   info.tube_info.tube_width = params_.tube_width;
 
+  // 7.5. 시각화 정렬: nominal→actual offset 적용
+  // publishVisualization()은 current_state(actual)를 기준으로 마커를 그리지만,
+  // info 내 궤적은 nominal 기준이므로 offset을 적용하여 actual 중심으로 맞춤
+  double offset_x = current_state(0) - nominal_state_(0) + u_nominal(0) * params_.dt * std::cos(nominal_state_(2));
+  double offset_y = current_state(1) - nominal_state_(1) + u_nominal(0) * params_.dt * std::sin(nominal_state_(2));
+  // nominal_state_는 이미 전파되었으므로, 전파 전 nominal에서의 offset 사용
+  // (nominal은 step 6에서 이미 전파됨)
+  offset_x = current_state(0) - (nominal_state_(0) - u_nominal(0) * params_.dt * std::cos(current_state(2)));
+  offset_y = current_state(1) - (nominal_state_(1) - u_nominal(0) * params_.dt * std::sin(current_state(2)));
+
+  // 간단한 방식: actual - old_nominal (전파 전)
+  // old_nominal은 이미 사라졌으므로, body_error에서 역산
+  offset_x = dx;  // current - old_nominal (이미 계산됨)
+  offset_y = dy;
+
+  auto shiftTrajectory = [&](Eigen::MatrixXd& traj) {
+    if (traj.rows() > 0 && traj.cols() >= 2) {
+      traj.col(0).array() += offset_x;
+      traj.col(1).array() += offset_y;
+    }
+  };
+
+  shiftTrajectory(info.weighted_avg_trajectory);
+  shiftTrajectory(info.best_trajectory);
+  for (auto& traj : info.sample_trajectories) {
+    shiftTrajectory(traj);
+  }
+
   // Tube 경계 계산 (시각화용)
   if (info.weighted_avg_trajectory.rows() > 1) {
     double tw = params_.tube_width;
