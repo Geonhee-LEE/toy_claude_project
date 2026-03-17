@@ -6,12 +6,12 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
-2. **MPPI sampling-based control** - 21종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 21종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
+2. **MPPI sampling-based control** - 22종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
+3. **ROS2 nav2 integration** - 22종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
 4. **Paper-Ready Benchmarking** - 다중 시행 통계 분석 + LaTeX 테이블 + 파레토 분석
 5. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
-## C++ MPPI 플러그인 (21종)
+## C++ MPPI 플러그인 (22종)
 
 ### 플러그인 계층 구조
 
@@ -26,6 +26,7 @@ MPPIControllerPlugin (base, virtual computeControl)
 │  제어 공간(control space) 변환 변형:
 ├── SmoothMPPIControllerPlugin      ── Δu space + jerk cost
 ├── SplineMPPIControllerPlugin      ── B-spline basis 보간 (P << N)
+├── LPMPPIControllerPlugin          ── 1차 IIR Low-Pass 필터 (주파수 도메인)
 │
 │  샘플링(sampling) 개선 변형:
 ├── BiasedMPPIControllerPlugin      ── Ancillary biased sampling (RA-L 2024)
@@ -63,21 +64,22 @@ MPPIControllerPlugin (base, virtual computeControl)
 | 4 | Risk-Aware (CVaR) | alpha 기반 worst-case | All |
 | 5 | Smooth-MPPI | Kim et al. (2021), Δu space | All |
 | 6 | Spline-MPPI | B-spline 보간 (ICRA 2024) | All |
-| 7 | Biased-MPPI | Ancillary biased sampling (RA-L 2024) | All |
-| 8 | DIAL-MPPI | Diffusion Annealing (ICRA 2025) | All |
-| 9 | iLQR-MPPI | iLQR warm-start + MPPI | DiffDrive, Ackermann |
-| 10 | CS-MPPI | Covariance Steering (CoVO-MPC, CoRL 2023) | All |
-| 11 | π-MPPI | ADMM QP 투영 (RA-L 2025) | All |
-| 12 | SVMPC | Stein Variational MPC | All |
-| 13 | SVG-MPPI | Guide SVGD + follower (ICRA 2024) | All |
-| 14 | Tube-MPPI | Nominal/actual 분리 + 피드백 | DiffDrive |
-| 15 | Shield-MPPI | per-step CBF 투영 | All |
-| 16 | Adaptive Shield | 거리/속도 적응 α | All |
-| 17 | CLF-CBF-QP | Ames (2019) 통합 안전 필터 | All |
-| 18 | Predictive Safety | N-step CBF 투영 | All |
-| 19 | MPPI-H | Hybrid Swerve (IROS 2024) | Swerve |
-| 20 | Ensemble + C3BF | Collision Cone CBF + 불확실성 | All |
-| 21 | BR-MPPI | Barrier Rate Cost + ACP | All |
+| 7 | LP-MPPI | 1차 IIR Low-Pass 필터 (2025) | All |
+| 8 | Biased-MPPI | Ancillary biased sampling (RA-L 2024) | All |
+| 9 | DIAL-MPPI | Diffusion Annealing (ICRA 2025) | All |
+| 10 | iLQR-MPPI | iLQR warm-start + MPPI | DiffDrive, Ackermann |
+| 11 | CS-MPPI | Covariance Steering (CoVO-MPC, CoRL 2023) | All |
+| 12 | π-MPPI | ADMM QP 투영 (RA-L 2025) | All |
+| 13 | SVMPC | Stein Variational MPC | All |
+| 14 | SVG-MPPI | Guide SVGD + follower (ICRA 2024) | All |
+| 15 | Tube-MPPI | Nominal/actual 분리 + 피드백 | DiffDrive |
+| 16 | Shield-MPPI | per-step CBF 투영 | All |
+| 17 | Adaptive Shield | 거리/속도 적응 α | All |
+| 18 | CLF-CBF-QP | Ames (2019) 통합 안전 필터 | All |
+| 19 | Predictive Safety | N-step CBF 투영 | All |
+| 20 | MPPI-H | Hybrid Swerve (IROS 2024) | Swerve |
+| 21 | Ensemble + C3BF | Collision Cone CBF + 불확실성 | All |
+| 22 | BR-MPPI | Barrier Rate Cost + ACP | All |
 
 ### 4종 모션 모델
 
@@ -122,6 +124,7 @@ colcon build --packages-select mpc_controller_ros2
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=custom
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=smooth
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=lp
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=shield
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tube_mppi
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=pi_mppi
@@ -179,7 +182,7 @@ python3 scripts/paper_benchmark_analysis.py \
 ### 컨트롤러 벤치마크 (단일 시행)
 
 ```bash
-# 21종 자동 비교
+# 22종 자동 비교
 python3 scripts/controller_benchmark.py --group all
 
 # C++ 파이프라인 마이크로벤치마크
@@ -202,7 +205,7 @@ Pipeline: 1.88ms mean (532 Hz)
 
 ## Testing
 
-### C++ (527+ gtest, 29 스위트)
+### C++ (542+ gtest, 31 스위트)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
@@ -225,6 +228,7 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_m35_plugins | 18 | Smooth/Spline/SVG |
 | test_biased_mppi | 15 | Biased-MPPI |
 | test_dial_mppi | 17 | DIAL-MPPI |
+| test_lp_mppi | 15 | LP-MPPI |
 | test_ilqr_solver + ilqr_mppi | 20 | iLQR-MPPI |
 | test_cs_mppi | 16 | CS-MPPI |
 | test_pi_mppi | 16 | π-MPPI |
@@ -239,6 +243,7 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_ensemble_dynamics | 14 | Ensemble 불확실성 |
 | test_online_learning | 12 | Online Learning |
 | test_trajectory_stability | 25 | SG Filter + IT |
+| test_tube_tracker_integration | 3 | Tube+Tracker 통합 |
 
 ### Python
 
@@ -333,6 +338,7 @@ mpc_controller/                      # Python 패키지
 | 다중 CBF + Predictive | 완료 | CBF 합성 + N-step 투영 | #165 |
 | 벤치마크 대시보드 | 완료 | 21종 자동 비교 + 리포트 | #171 |
 | Tube-MPPI Plugin | 완료 | Nominal state MPPI + DynObs Tracker | #173 |
+| LP-MPPI | 완료 | Low-Pass filtering (IIR, 2025) | #181 |
 | 시뮬레이션 인프라 | 완료 | World physics 통일 + E2E 테스트 | #175 |
 | Paper 벤치마크 | 완료 | 다중 시행 + 통계 + LaTeX | #177 |
 
@@ -348,7 +354,7 @@ mpc_controller/                      # Python 패키지
 ┌──────────────────────────────────────────────────────┐
 │  GitHub Issue → feature branch → 구현 → PR → merge  │
 │                                                      │
-│  해결 이슈: #63~#178 (27개)                          │
+│  해결 이슈: #63~#178 (28개)                          │
 │  CI: .github/workflows/ros2-ci.yml                   │
 │      (ros:jazzy Docker, colcon build+test)            │
 └──────────────────────────────────────────────────────┘

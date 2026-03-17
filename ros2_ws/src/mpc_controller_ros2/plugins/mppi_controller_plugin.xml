@@ -128,6 +128,13 @@
       Extends Shield-MPPI per-step projection to full horizon safety guarantee.
     </description>
   </class>
+  <class type="mpc_controller_ros2::LPMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      LP-MPPI (Low-Pass Filtering MPPI) controller plugin for nav2.
+      1st-order IIR low-pass filter on control sequences for high-frequency chattering removal.
+      Complementary to Smooth-MPPI: Smooth=time domain (delta-u), LP=frequency domain (IIR).
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TubeMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Tube-MPPI controller plugin for nav2.
