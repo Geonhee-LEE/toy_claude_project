@@ -1,0 +1,153 @@
+# ============================================================
+# Paper-Ready Benchmark Scenarios
+# ============================================================
+# 논문용 벤치마크 시나리오 정의.
+# paper_benchmark.py가 이 파일을 읽어 자동 실행.
+#
+# 사용법:
+#   python3 scripts/paper_benchmark.py --config config/benchmark_scenarios.yaml
+# ============================================================
+
+# 글로벌 설정
+global:
+  num_trials: 3            # 시나리오당 반복 횟수 (논문용: 5-10 권장)
+  warmup_trials: 1         # 워밍업 (결과 제외)
+  timeout_per_goal: 90     # goal당 타임아웃 (s)
+  launch_stabilize_sec: 35 # launch 후 안정화 대기
+  nav2_activate_sec: 30    # nav2 lifecycle 활성화 대기
+  output_dir: "~/paper_benchmark_results"
+
+# 시나리오 정의
+scenarios:
+  # === 기본 포인트 네비게이션 (난이도: 하) ===
+  simple_nav:
+    description: "Open arena point navigation"
+    world: "mppi_test_simple.world"
+    map: "test_arena_map.yaml"
+    goals: [[2.0, 0.0], [-2.0, 2.0], [0.0, -2.0]]
+
+  # === 미로 통과 (난이도: 중) ===
+  maze_nav:
+    description: "Maze environment with narrow corridors"
+    world: "maze_world.world"
+    map: "maze_map.yaml"
+    goals: [[3.0, 0.0]]
+
+  # === 좁은 통로 (난이도: 상) ===
+  narrow_passage:
+    description: "Narrow passage (0.8m gap, robot 0.5m)"
+    world: "narrow_passage_world.world"
+    map: "narrow_passage_map.yaml"
+    goals: [[5.0, -3.5]]
+
+  # === 랜덤 포레스트 장애물 (난이도: 중) ===
+  random_forest:
+    description: "Random cylinder obstacles (12 obstacles)"
+    world: "random_forest_world.world"
+    map: "random_forest_map.yaml"
+    goals: [[3.0, 3.0], [-3.0, -3.0]]
+
+  # === 복도 통과 (난이도: 중) ===
+  corridor:
+    description: "Corridor navigation"
+    world: "corridor_world.world"
+    map: "corridor_map.yaml"
+    goals: [[5.0, 0.0], [-5.0, 5.0]]
+
+# 컨트롤러 그룹 정의
+controller_groups:
+  # 논문 핵심 비교 (10종)
+  paper_core:
+    - custom          # Vanilla MPPI (baseline)
+    - log             # Log-MPPI
+    - smooth          # Smooth-MPPI (Δu space)
+    - spline          # Spline-MPPI (B-spline)
+    - biased          # Biased-MPPI (RA-L 2024)
+    - dial            # DIAL-MPPI (ICRA 2025)
+    - cs_mppi         # CS-MPPI (CoVO-MPC, CoRL 2023)
+    - pi_mppi         # π-MPPI (RA-L 2025)
+    - ilqr_mppi       # iLQR-MPPI
+    - tube_mppi       # Tube-MPPI
+
+  # 안전성 비교 (5종)
+  safety:
+    - custom          # baseline (no CBF)
+    - shield          # Shield-MPPI
+    - adaptive_shield # Adaptive Shield
+    - clf_cbf         # CLF-CBF-QP
+    - predictive_safety # Predictive Safety
+
+  # 가중치 변형 비교 (4종)
+  weight_variants:
+    - custom          # Vanilla (softmax)
+    - log             # Log-sum-exp
+    - tsallis         # Tsallis q-exponential
+    - risk_aware      # CVaR risk-aware
+
+  # 전체 DiffDrive (17종)
+  all_diff_drive:
+    - custom
+    - log
+    - tsallis
+    - risk_aware
+    - svmpc
+    - smooth
+    - spline
+    - svg
+    - biased
+    - dial
+    - shield
+    - adaptive_shield
+    - clf_cbf
+    - predictive_safety
+    - ilqr_mppi
+    - cs_mppi
+    - pi_mppi
+
+  # 빠른 검증 (3종)
+  quick:
+    - custom
+    - smooth
+    - dial
+
+# 논문 테이블/차트 정의
+paper_outputs:
+  # Table 1: 핵심 성능 비교
+  table_performance:
+    title: "Table 1: Navigation Performance Comparison"
+    controllers: "paper_core"
+    scenario: "maze_nav"
+    metrics:
+      - goal_reached
+      - travel_time
+      - position_error
+      - rms_jerk
+      - min_obstacle_dist
+      - collisions
+
+  # Table 2: 안전성 비교
+  table_safety:
+    title: "Table 2: Safety-Augmented Controllers"
+    controllers: "safety"
+    scenario: "narrow_passage"
+    metrics:
+      - goal_reached
+      - travel_time
+      - min_obstacle_dist
+      - mean_obstacle_dist
+      - near_misses
+      - collisions
+
+  # Figure: 성능-안전 파레토
+  figure_pareto:
+    title: "Performance-Safety Pareto Frontier"
+    controllers: "paper_core"
+    scenario: "maze_nav"
+    x_metric: "travel_time"
+    y_metric: "min_obstacle_dist"
+
+  # Figure: K 스케일링
+  figure_k_scaling:
+    title: "Sample Count (K) Scaling"
+    k_values: [64, 128, 256, 512, 1024]
+    controllers: ["custom", "smooth", "dial"]
