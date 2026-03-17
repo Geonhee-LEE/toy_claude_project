@@ -1460,6 +1460,11 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "conformal_max_margin", params_.conformal_max_margin);
   node_->declare_parameter(prefix + "conformal_decay_rate", params_.conformal_decay_rate);
 
+  // LP-MPPI (Low-Pass Filtering)
+  node_->declare_parameter(prefix + "lp_enabled", params_.lp_enabled);
+  node_->declare_parameter(prefix + "lp_cutoff_frequency", params_.lp_cutoff_frequency);
+  node_->declare_parameter(prefix + "lp_filter_all_samples", params_.lp_filter_all_samples);
+
   // Dynamic Obstacle Tracker
   node_->declare_parameter(prefix + "dynamic_obstacle_tracking_enabled", params_.dynamic_obstacle_tracking_enabled);
   node_->declare_parameter(prefix + "obstacle_cluster_distance", params_.obstacle_cluster_distance);
@@ -1798,6 +1803,11 @@ void MPPIControllerPlugin::loadParameters()
   params_.conformal_min_margin = node_->get_parameter(prefix + "conformal_min_margin").as_double();
   params_.conformal_max_margin = node_->get_parameter(prefix + "conformal_max_margin").as_double();
   params_.conformal_decay_rate = node_->get_parameter(prefix + "conformal_decay_rate").as_double();
+
+  // LP-MPPI (Low-Pass Filtering)
+  params_.lp_enabled = node_->get_parameter(prefix + "lp_enabled").as_bool();
+  params_.lp_cutoff_frequency = node_->get_parameter(prefix + "lp_cutoff_frequency").as_double();
+  params_.lp_filter_all_samples = node_->get_parameter(prefix + "lp_filter_all_samples").as_bool();
 
   // Dynamic Obstacle Tracker
   params_.dynamic_obstacle_tracking_enabled = node_->get_parameter(prefix + "dynamic_obstacle_tracking_enabled").as_bool();
