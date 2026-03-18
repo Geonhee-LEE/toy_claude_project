@@ -186,6 +186,10 @@ def launch_setup(context, *args, **kwargs):
                      'Feedback-MPPI (Riccati time-varying feedback gains)'),
         'tube_mppi': ('nav2_params_tube_mppi.yaml',
                       'Tube-MPPI (nominal state MPPI + body frame feedback)'),
+        'multi_agent': ('nav2_params_multi_agent.yaml',
+                        'Multi-Agent MPPI (trajectory sharing + inter-agent cost)'),
+        'cuda': ('nav2_params_cuda_mppi.yaml',
+                 'CUDA MPPI (GPU-accelerated rollout + CPU fallback)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

@@ -1,0 +1,136 @@
+# ============================================================
+# nav2 파라미터 - CUDA MPPI (GPU Accelerated MPPI)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cuda
+#
+# CUDA GPU 가속으로 대규모 샘플(K=2048)을 실시간 병렬 롤아웃.
+# GPU 미사용 환경에서는 자동 CPU 폴백 (isAvailable()=false).
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- CUDA MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::CudaMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling — GPU 대규모 샘플링
+      K: 2048
+      lambda: 10.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.5
+      R_omega: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 0.5
+
+      # CUDA 파라미터
+      cuda_enabled: true
+      cuda_device_id: 0
+      cuda_download_trajectories: false
+      cuda_max_obstacles: 128
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_inscribed_cost: 500.0
+
+      # CBF (기본 비활성화)
+      cbf_enabled: false
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 6.0
+      height: 6.0
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+planner_server:
+  ros__parameters:
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 5.0
