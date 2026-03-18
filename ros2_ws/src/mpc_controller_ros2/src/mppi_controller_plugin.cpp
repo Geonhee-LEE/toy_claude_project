@@ -1465,6 +1465,17 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "lp_cutoff_frequency", params_.lp_cutoff_frequency);
   node_->declare_parameter(prefix + "lp_filter_all_samples", params_.lp_filter_all_samples);
 
+  // Halton-MPPI (Halton low-discrepancy sequence)
+  node_->declare_parameter(prefix + "halton_enabled", params_.halton_enabled);
+  node_->declare_parameter(prefix + "halton_beta", params_.halton_beta);
+  node_->declare_parameter(prefix + "halton_sequence_offset", params_.halton_sequence_offset);
+
+  // Feedback-MPPI (F-MPPI, Riccati feedback gains)
+  node_->declare_parameter(prefix + "feedback_mppi_enabled", params_.feedback_mppi_enabled);
+  node_->declare_parameter(prefix + "feedback_gain_scale", params_.feedback_gain_scale);
+  node_->declare_parameter(prefix + "feedback_recompute_interval", params_.feedback_recompute_interval);
+  node_->declare_parameter(prefix + "feedback_regularization", params_.feedback_regularization);
+
   // Dynamic Obstacle Tracker
   node_->declare_parameter(prefix + "dynamic_obstacle_tracking_enabled", params_.dynamic_obstacle_tracking_enabled);
   node_->declare_parameter(prefix + "obstacle_cluster_distance", params_.obstacle_cluster_distance);
@@ -1808,6 +1819,17 @@ void MPPIControllerPlugin::loadParameters()
   params_.lp_enabled = node_->get_parameter(prefix + "lp_enabled").as_bool();
   params_.lp_cutoff_frequency = node_->get_parameter(prefix + "lp_cutoff_frequency").as_double();
   params_.lp_filter_all_samples = node_->get_parameter(prefix + "lp_filter_all_samples").as_bool();
+
+  // Halton-MPPI (Halton low-discrepancy sequence)
+  params_.halton_enabled = node_->get_parameter(prefix + "halton_enabled").as_bool();
+  params_.halton_beta = node_->get_parameter(prefix + "halton_beta").as_double();
+  params_.halton_sequence_offset = node_->get_parameter(prefix + "halton_sequence_offset").as_int();
+
+  // Feedback-MPPI (F-MPPI, Riccati feedback gains)
+  params_.feedback_mppi_enabled = node_->get_parameter(prefix + "feedback_mppi_enabled").as_bool();
+  params_.feedback_gain_scale = node_->get_parameter(prefix + "feedback_gain_scale").as_double();
+  params_.feedback_recompute_interval = node_->get_parameter(prefix + "feedback_recompute_interval").as_int();
+  params_.feedback_regularization = node_->get_parameter(prefix + "feedback_regularization").as_double();
 
   // Dynamic Obstacle Tracker
   params_.dynamic_obstacle_tracking_enabled = node_->get_parameter(prefix + "dynamic_obstacle_tracking_enabled").as_bool();

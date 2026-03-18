@@ -1,0 +1,137 @@
+# ============================================================
+# nav2 파라미터 - Feedback-MPPI (F-MPPI, RA-L 2026)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=feedback
+#
+# MPPI 최적 롤아웃에서 Riccati 역방향 패스로 시변 피드백 게인 K_t를 계산하고,
+# 사이클 간 선형 피드백 보정을 적용하여 추적 정밀도를 향상.
+# Tube-MPPI 대비 nominal state 유지 불필요, 시변 게인으로 더 정밀한 보정.
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- Feedback-MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::FeedbackMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 10.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.5
+      R_omega: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 0.5
+
+      # Feedback-MPPI 파라미터
+      feedback_mppi_enabled: true
+      feedback_gain_scale: 1.0               # 피드백 게인 스케일 (0=비활성, 1=전체)
+      feedback_recompute_interval: 1          # 게인 재계산 주기 (cycles, 1=매 사이클)
+      feedback_regularization: 1.0e-4         # Q_uu 정규화 (수치 안정성)
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_inscribed_cost: 500.0
+
+      # CBF (기본 비활성화)
+      cbf_enabled: false
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 6.0
+      height: 6.0
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+planner_server:
+  ros__parameters:
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 5.0

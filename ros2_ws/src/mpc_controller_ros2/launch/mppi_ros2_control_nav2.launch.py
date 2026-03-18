@@ -180,6 +180,10 @@ def launch_setup(context, *args, **kwargs):
                               'Predictive Safety MPPI (N-step CBF projection)'),
         'lp': ('nav2_params_lp_mppi.yaml',
                'LP-MPPI (Low-Pass filtering for smooth control)'),
+        'halton': ('nav2_params_halton_mppi.yaml',
+                   'Halton-MPPI (low-discrepancy sequence sampling)'),
+        'feedback': ('nav2_params_feedback_mppi.yaml',
+                     'Feedback-MPPI (Riccati time-varying feedback gains)'),
         'tube_mppi': ('nav2_params_tube_mppi.yaml',
                       'Tube-MPPI (nominal state MPPI + body frame feedback)'),
     }

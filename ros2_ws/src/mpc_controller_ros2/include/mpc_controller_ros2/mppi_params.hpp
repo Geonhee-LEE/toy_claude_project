@@ -150,6 +150,23 @@ struct MPPIParams
   bool lp_filter_all_samples{true};         // 전체 K 샘플에 필터 적용 (false: 최종만)
 
   // ============================================================================
+  // Halton-MPPI (MDPI Drones 2026) 파라미터
+  // Halton 저불일치 시퀀스로 제어 공간 균일 커버리지 → 적은 K로 빠른 수렴
+  // ============================================================================
+  bool halton_enabled{true};                    // Halton 샘플러 활성화
+  double halton_beta{2.0};                      // OU 시간 상관 계수 (0=상관, inf=독립)
+  int halton_sequence_offset{100};              // 시퀀스 시작 오프셋 (burn-in)
+
+  // ============================================================================
+  // Feedback-MPPI (F-MPPI, RA-L 2026) 파라미터
+  // MPPI 롤아웃 Jacobian → Riccati 시변 피드백 게인 K_t → 사이클 간 보정
+  // ============================================================================
+  bool feedback_mppi_enabled{true};             // F-MPPI 피드백 보정 활성화
+  double feedback_gain_scale{1.0};              // 피드백 게인 스케일 (0=비활성, 1=전체)
+  int feedback_recompute_interval{1};           // 게인 재계산 주기 (cycles)
+  double feedback_regularization{1e-4};         // Q_uu 정규화 (수치 안정성)
+
+  // ============================================================================
   // Biased-MPPI (Trevisan & Alonso-Mora, RA-L 2024) 파라미터
   // ============================================================================
   bool biased_enabled{true};                   // ancillary 주입 활성화

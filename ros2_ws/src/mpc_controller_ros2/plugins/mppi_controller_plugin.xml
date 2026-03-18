@@ -135,6 +135,20 @@
       Complementary to Smooth-MPPI: Smooth=time domain (delta-u), LP=frequency domain (IIR).
     </description>
   </class>
+  <class type="mpc_controller_ros2::HaltonMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Halton-MPPI controller plugin for nav2.
+      MDPI Drones 2026. Halton low-discrepancy sequence replaces Gaussian noise.
+      Uniform control space coverage with fewer samples (K) for faster convergence.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::FeedbackMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Feedback-MPPI (F-MPPI) controller plugin for nav2.
+      RA-L 2026. Time-varying Riccati feedback gains K_t from MPPI rollout Jacobians.
+      Inter-cycle linear feedback correction: u = u* + K_t·(x - x*).
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TubeMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Tube-MPPI controller plugin for nav2.
