@@ -129,6 +129,11 @@ add_library(mppi_controller_plugin SHARED
   src/feedback_mppi_controller_plugin.cpp
   src/tube_mppi_controller_plugin.cpp
   src/dynamic_obstacle_tracker.cpp
+  src/agent_trajectory_manager.cpp
+  src/inter_agent_cost.cpp
+  src/multi_agent_mppi_controller_plugin.cpp
+  src/cuda_rollout_engine_cpu.cpp
+  src/cuda_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -429,6 +434,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_tube_tracker_integration test/unit/test_tube_tracker_integration.cpp)
   if(TARGET test_tube_tracker_integration)
     target_link_libraries(test_tube_tracker_integration mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_multi_agent_mppi test/unit/test_multi_agent_mppi.cpp)
+  if(TARGET test_multi_agent_mppi)
+    target_link_libraries(test_multi_agent_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_cuda_mppi test/unit/test_cuda_mppi.cpp)
+  if(TARGET test_cuda_mppi)
+    target_link_libraries(test_cuda_mppi mppi_controller_plugin)
   endif()
 endif()
 

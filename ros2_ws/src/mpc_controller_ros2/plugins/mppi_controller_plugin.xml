@@ -156,4 +156,18 @@
       Robust to disturbances via tube invariant set with ancillary feedback K_fb.
     </description>
   </class>
+  <class type="mpc_controller_ros2::MultiAgentMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Multi-Agent MPPI controller plugin for nav2.
+      ROS2 pub/sub trajectory sharing via nav_msgs::msg::Path.
+      InterAgentCost penalizes proximity to other agents' predicted trajectories.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::CudaMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CUDA GPU-Accelerated MPPI controller plugin for nav2.
+      CudaRolloutEngine for parallel K×N rollout + cost on GPU.
+      CPU fallback when CUDA unavailable (isAvailable()=false).
+    </description>
+  </class>
 </library>
