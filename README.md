@@ -6,12 +6,12 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
-2. **MPPI sampling-based control** - 26종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 26종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
+2. **MPPI sampling-based control** - 27종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
+3. **ROS2 nav2 integration** - 27종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
 4. **Paper-Ready Benchmarking** - 다중 시행 통계 분석 + LaTeX 테이블 + 파레토 분석
 5. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
-## C++ MPPI 플러그인 (26종)
+## C++ MPPI 플러그인 (27종)
 
 ### 플러그인 계층 구조
 
@@ -55,6 +55,9 @@ MPPIControllerPlugin (base, virtual computeControl)
 │  하이브리드 변형:
 ├── MPPIHControllerPlugin           ── Hybrid Swerve Low-D↔4D 전환 (IROS 2024)
 │
+│  적응형(adaptive) 변형:
+├── RHMPPIControllerPlugin         ── Receding Horizon 동적 N 적응 (EMA 스무딩)
+│
 │  다중 에이전트/GPU 가속:
 ├── MultiAgentMPPIControllerPlugin ── ROS2 궤적 공유 + InterAgentCost
 └── CudaMPPIControllerPlugin       ── GPU 병렬 롤아웃 (CPU 폴백)
@@ -90,6 +93,7 @@ MPPIControllerPlugin (base, virtual computeControl)
 | 24 | BR-MPPI | Barrier Rate Cost + ACP | All |
 | 25 | Multi-Agent MPPI | ROS2 pub/sub 궤적 공유 + 충돌 회피 | All |
 | 26 | CUDA MPPI | GPU 병렬 K×N 롤아웃 (CPU 폴백) | DiffDrive, Swerve |
+| 27 | RH-MPPI | Receding Horizon 동적 N 적응 (EMA 스무딩) | All |
 
 ### 4종 모션 모델
 
@@ -142,6 +146,7 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tub
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=pi_mppi
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=multi_agent
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cuda
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=rh_mppi
 
 # 모션 모델 분기
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
@@ -196,7 +201,7 @@ python3 scripts/paper_benchmark_analysis.py \
 ### 컨트롤러 벤치마크 (단일 시행)
 
 ```bash
-# 26종 자동 비교
+# 27종 자동 비교
 python3 scripts/controller_benchmark.py --group all
 
 # C++ 파이프라인 마이크로벤치마크
@@ -219,7 +224,7 @@ Pipeline: 1.88ms mean (532 Hz)
 
 ## Testing
 
-### C++ (602+ gtest, 35 스위트)
+### C++ (617+ gtest, 36 스위트)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
@@ -262,6 +267,7 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_tube_tracker_integration | 3 | Tube+Tracker 통합 |
 | test_multi_agent_mppi | 15 | Multi-Agent MPPI |
 | test_cuda_mppi | 15 | CUDA GPU MPPI |
+| test_rh_mppi | 15 | RH-MPPI (Receding Horizon) |
 
 ### Python
 
@@ -303,7 +309,7 @@ ros2_ws/src/mpc_controller_ros2/     # ROS2 C++ 패키지
 │   ├── motion_model.hpp             #   4종 모션 모델
 │   ├── tube_mppi_controller_plugin.hpp
 │   ├── dynamic_obstacle_tracker.hpp
-│   └── ...                          #   26종 플러그인 헤더
+│   └── ...                          #   27종 플러그인 헤더
 ├── src/                             # C++ 구현
 ├── config/                          # 39개 nav2 파라미터 YAML
 ├── worlds/                          # 7개 Gazebo World
@@ -316,7 +322,7 @@ ros2_ws/src/mpc_controller_ros2/     # ROS2 C++ 패키지
 │   ├── paper_benchmark_analysis.py  #   통계 분석 + LaTeX
 │   ├── stress_test.py               #   동적 장애물 스트레스
 │   └── nav2_e2e_test.py             #   E2E 네비게이션 테스트
-├── test/                            # 572+ gtest + Python 테스트
+├── test/                            # 617+ gtest + Python 테스트
 └── plugins/                         # Plugin XML 등록
 
 mpc_controller/                      # Python 패키지
@@ -359,6 +365,7 @@ mpc_controller/                      # Python 패키지
 | LP-MPPI | 완료 | Low-Pass filtering (IIR, 2025) | #181 |
 | Halton-MPPI + Feedback-MPPI | 완료 | 저불일치 샘플링 + Riccati 피드백 | #183 |
 | Multi-Agent + CUDA MPPI | 완료 | 다중 에이전트 궤적 공유 + GPU 가속 | #185 |
+| RH-MPPI | 완료 | Receding Horizon 동적 N 적응 (EMA 스무딩) | #187 |
 | 시뮬레이션 인프라 | 완료 | World physics 통일 + E2E 테스트 | #175 |
 | Paper 벤치마크 | 완료 | 다중 시행 + 통계 + LaTeX | #177 |
 
@@ -374,7 +381,7 @@ mpc_controller/                      # Python 패키지
 ┌──────────────────────────────────────────────────────┐
 │  GitHub Issue → feature branch → 구현 → PR → merge  │
 │                                                      │
-│  해결 이슈: #63~#182 (33개)                           │
+│  해결 이슈: #63~#186 (34개)                           │
 │  CI: .github/workflows/ros2-ci.yml                   │
 │      (ros:jazzy Docker, colcon build+test)            │
 └──────────────────────────────────────────────────────┘
