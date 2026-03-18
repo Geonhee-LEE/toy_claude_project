@@ -123,6 +123,10 @@ add_library(mppi_controller_plugin SHARED
   src/predictive_safety_filter.cpp
   src/predictive_safety_mppi_controller_plugin.cpp
   src/lp_mppi_controller_plugin.cpp
+  src/halton_sampler.cpp
+  src/halton_mppi_controller_plugin.cpp
+  src/feedback_gain_computer.cpp
+  src/feedback_mppi_controller_plugin.cpp
   src/tube_mppi_controller_plugin.cpp
   src/dynamic_obstacle_tracker.cpp
 )
@@ -400,6 +404,16 @@ if(BUILD_TESTING)
   ament_add_gtest(test_lp_mppi test/unit/test_lp_mppi.cpp)
   if(TARGET test_lp_mppi)
     target_link_libraries(test_lp_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_halton_mppi test/unit/test_halton_mppi.cpp)
+  if(TARGET test_halton_mppi)
+    target_link_libraries(test_halton_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_feedback_mppi test/unit/test_feedback_mppi.cpp)
+  if(TARGET test_feedback_mppi)
+    target_link_libraries(test_feedback_mppi mppi_controller_plugin)
   endif()
 
   ament_add_gtest(test_tube_mppi_plugin test/unit/test_tube_mppi_plugin.cpp)
