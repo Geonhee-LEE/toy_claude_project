@@ -16,6 +16,7 @@ P0: Residual Dynamics + Safety Enhancement C++ ✅ (PR #140, EigenMLP + Shield-M
 P1: 최신 MPPI 변형 C++ (Covariance Steering ✅, π-MPPI ✅, MPPI-H ✅)
 P1: 추가 안전성 고도화 C++ (CLF-CBF-QP ✅, 다중 CBF 합성 ✅, Predictive Safety ✅)
 P1: Online Residual Learning ✅ (핫 스왑, ModelReloader)
+P1: 최신 MPPI 변형 C++ (Halton-MPPI ✅, Feedback-MPPI ✅)
 ```
 
 ## 패키지 구조
@@ -81,6 +82,8 @@ mpc_controller/
 - CLF-CBF-QP 통합 안전 필터 (Ames 2019): 완료 (PR #161)
 - 다중 CBF 합성 + Online Learning + Predictive Safety: 완료 (PR #165)
 - Tube-MPPI Plugin + Dynamic Obstacle Tracker: 완료 (PR #173)
+- LP-MPPI (Low-Pass Filtering MPPI): 완료 (PR #181)
+- Halton-MPPI (저불일치 시퀀스, MDPI Drones 2026) + Feedback-MPPI (Riccati 피드백, RA-L 2026): 완료 (PR #183)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수
