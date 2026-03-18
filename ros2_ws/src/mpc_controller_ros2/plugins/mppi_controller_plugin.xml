@@ -170,4 +170,11 @@
       CPU fallback when CUDA unavailable (isAvailable()=false).
     </description>
   </class>
+  <class type="mpc_controller_ros2::RHMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      RH-MPPI (Receding Horizon MPPI) controller plugin for nav2.
+      Dynamic prediction horizon N adaptation based on speed, obstacle proximity,
+      and tracking error. EMA smoothing prevents jitter. N_min to N_max range.
+    </description>
+  </class>
 </library>

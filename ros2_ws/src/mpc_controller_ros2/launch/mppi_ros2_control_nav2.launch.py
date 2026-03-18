@@ -190,6 +190,8 @@ def launch_setup(context, *args, **kwargs):
                         'Multi-Agent MPPI (trajectory sharing + inter-agent cost)'),
         'cuda': ('nav2_params_cuda_mppi.yaml',
                  'CUDA MPPI (GPU-accelerated rollout + CPU fallback)'),
+        'rh_mppi': ('nav2_params_rh_mppi.yaml',
+                    'RH-MPPI (Receding Horizon adaptive N)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

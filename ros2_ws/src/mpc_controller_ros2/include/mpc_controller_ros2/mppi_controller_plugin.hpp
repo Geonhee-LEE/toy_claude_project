@@ -65,6 +65,9 @@ struct MPPIInfo
 
   // Collision debug (debug_collision_viz=true일 때만 채워짐)
   CostBreakdown cost_breakdown;
+
+  // RH-MPPI: 실제 사용된 effective horizon
+  int effective_horizon{0};
 };
 
 /**
