@@ -1551,6 +1551,17 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "ilqr_line_search_steps", params_.ilqr_line_search_steps);
   node_->declare_parameter(prefix + "ilqr_cost_tolerance", params_.ilqr_cost_tolerance);
 
+  // Receding Horizon MPPI (RH-MPPI)
+  node_->declare_parameter(prefix + "rh_mppi_enabled", params_.rh_mppi_enabled);
+  node_->declare_parameter(prefix + "rh_N_min", params_.rh_N_min);
+  node_->declare_parameter(prefix + "rh_N_max", params_.rh_N_max);
+  node_->declare_parameter(prefix + "rh_speed_weight", params_.rh_speed_weight);
+  node_->declare_parameter(prefix + "rh_obstacle_weight", params_.rh_obstacle_weight);
+  node_->declare_parameter(prefix + "rh_error_weight", params_.rh_error_weight);
+  node_->declare_parameter(prefix + "rh_obs_dist_threshold", params_.rh_obs_dist_threshold);
+  node_->declare_parameter(prefix + "rh_error_threshold", params_.rh_error_threshold);
+  node_->declare_parameter(prefix + "rh_smoothing_alpha", params_.rh_smoothing_alpha);
+
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
   node_->declare_parameter(prefix + "costmap_eval_stride", params_.costmap_eval_stride);
@@ -1905,6 +1916,17 @@ void MPPIControllerPlugin::loadParameters()
   params_.ilqr_regularization = node_->get_parameter(prefix + "ilqr_regularization").as_double();
   params_.ilqr_line_search_steps = node_->get_parameter(prefix + "ilqr_line_search_steps").as_int();
   params_.ilqr_cost_tolerance = node_->get_parameter(prefix + "ilqr_cost_tolerance").as_double();
+
+  // Receding Horizon MPPI (RH-MPPI)
+  params_.rh_mppi_enabled = node_->get_parameter(prefix + "rh_mppi_enabled").as_bool();
+  params_.rh_N_min = node_->get_parameter(prefix + "rh_N_min").as_int();
+  params_.rh_N_max = node_->get_parameter(prefix + "rh_N_max").as_int();
+  params_.rh_speed_weight = node_->get_parameter(prefix + "rh_speed_weight").as_double();
+  params_.rh_obstacle_weight = node_->get_parameter(prefix + "rh_obstacle_weight").as_double();
+  params_.rh_error_weight = node_->get_parameter(prefix + "rh_error_weight").as_double();
+  params_.rh_obs_dist_threshold = node_->get_parameter(prefix + "rh_obs_dist_threshold").as_double();
+  params_.rh_error_threshold = node_->get_parameter(prefix + "rh_error_threshold").as_double();
+  params_.rh_smoothing_alpha = node_->get_parameter(prefix + "rh_smoothing_alpha").as_double();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();

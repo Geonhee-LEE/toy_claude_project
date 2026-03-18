@@ -382,6 +382,21 @@ struct MPPIParams
   double obstacle_track_timeout{2.0};                // 트랙 타임아웃 (초)
 
   // ============================================================================
+  // Receding Horizon MPPI (RH-MPPI) 파라미터
+  // 동적 예측 horizon N 조정: 속도/장애물 근접도/추적 오차에 따라 N 적응
+  // 고속 → 긴 horizon, 저속/장애물 근접/큰 오차 → 짧은 horizon
+  // ============================================================================
+  bool rh_mppi_enabled{true};             // RH-MPPI 동적 horizon 활성화
+  int rh_N_min{10};                       // 최소 horizon 스텝
+  int rh_N_max{50};                       // 최대 horizon 스텝
+  double rh_speed_weight{1.0};            // 속도 팩터 가중치
+  double rh_obstacle_weight{1.0};         // 장애물 근접도 팩터 가중치
+  double rh_error_weight{0.5};            // 추적 오차 팩터 가중치
+  double rh_obs_dist_threshold{2.0};      // 장애물 거리 임계값 (m)
+  double rh_error_threshold{1.0};         // 추적 오차 임계값 (m)
+  double rh_smoothing_alpha{0.3};         // EMA 스무딩 계수 (0=이전유지, 1=즉시)
+
+  // ============================================================================
   // 성능 최적화 파라미터
   // ============================================================================
   int num_threads{0};              // OpenMP 스레드 수 (0=auto, OMP_NUM_THREADS 사용)

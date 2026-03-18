@@ -134,6 +134,8 @@ add_library(mppi_controller_plugin SHARED
   src/multi_agent_mppi_controller_plugin.cpp
   src/cuda_rollout_engine_cpu.cpp
   src/cuda_mppi_controller_plugin.cpp
+  src/adaptive_horizon_manager.cpp
+  src/rh_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -444,6 +446,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_cuda_mppi test/unit/test_cuda_mppi.cpp)
   if(TARGET test_cuda_mppi)
     target_link_libraries(test_cuda_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_rh_mppi test/unit/test_rh_mppi.cpp)
+  if(TARGET test_rh_mppi)
+    target_link_libraries(test_rh_mppi mppi_controller_plugin)
   endif()
 endif()
 
