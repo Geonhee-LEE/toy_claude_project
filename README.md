@@ -6,12 +6,12 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
-2. **MPPI sampling-based control** - 24종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 24종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
+2. **MPPI sampling-based control** - 26종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
+3. **ROS2 nav2 integration** - 26종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
 4. **Paper-Ready Benchmarking** - 다중 시행 통계 분석 + LaTeX 테이블 + 파레토 분석
 5. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
-## C++ MPPI 플러그인 (24종)
+## C++ MPPI 플러그인 (26종)
 
 ### 플러그인 계층 구조
 
@@ -53,7 +53,11 @@ MPPIControllerPlugin (base, virtual computeControl)
 │   └── PredictiveSafetyMPPIControllerPlugin ── N-step CBF 투영
 │
 │  하이브리드 변형:
-└── MPPIHControllerPlugin           ── Hybrid Swerve Low-D↔4D 전환 (IROS 2024)
+├── MPPIHControllerPlugin           ── Hybrid Swerve Low-D↔4D 전환 (IROS 2024)
+│
+│  다중 에이전트/GPU 가속:
+├── MultiAgentMPPIControllerPlugin ── ROS2 궤적 공유 + InterAgentCost
+└── CudaMPPIControllerPlugin       ── GPU 병렬 롤아웃 (CPU 폴백)
 ```
 
 ### 플러그인 상세
@@ -84,6 +88,8 @@ MPPIControllerPlugin (base, virtual computeControl)
 | 22 | MPPI-H | Hybrid Swerve (IROS 2024) | Swerve |
 | 23 | Ensemble + C3BF | Collision Cone CBF + 불확실성 | All |
 | 24 | BR-MPPI | Barrier Rate Cost + ACP | All |
+| 25 | Multi-Agent MPPI | ROS2 pub/sub 궤적 공유 + 충돌 회피 | All |
+| 26 | CUDA MPPI | GPU 병렬 K×N 롤아웃 (CPU 폴백) | DiffDrive, Swerve |
 
 ### 4종 모션 모델
 
@@ -124,7 +130,7 @@ MotionModelFactory::create(string, params)
 cd ros2_ws && source /opt/ros/jazzy/setup.bash
 colcon build --packages-select mpc_controller_ros2
 
-# Gazebo + nav2 실행 (24종 컨트롤러 전환)
+# Gazebo + nav2 실행 (26종 컨트롤러 전환)
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=custom
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=smooth
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=dial
@@ -134,6 +140,8 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=fee
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=shield
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=tube_mppi
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=pi_mppi
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=multi_agent
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cuda
 
 # 모션 모델 분기
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
@@ -188,7 +196,7 @@ python3 scripts/paper_benchmark_analysis.py \
 ### 컨트롤러 벤치마크 (단일 시행)
 
 ```bash
-# 24종 자동 비교
+# 26종 자동 비교
 python3 scripts/controller_benchmark.py --group all
 
 # C++ 파이프라인 마이크로벤치마크
@@ -211,7 +219,7 @@ Pipeline: 1.88ms mean (532 Hz)
 
 ## Testing
 
-### C++ (572+ gtest, 33 스위트)
+### C++ (602+ gtest, 35 스위트)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
@@ -252,6 +260,8 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_online_learning | 12 | Online Learning |
 | test_trajectory_stability | 25 | SG Filter + IT |
 | test_tube_tracker_integration | 3 | Tube+Tracker 통합 |
+| test_multi_agent_mppi | 15 | Multi-Agent MPPI |
+| test_cuda_mppi | 15 | CUDA GPU MPPI |
 
 ### Python
 
@@ -293,14 +303,14 @@ ros2_ws/src/mpc_controller_ros2/     # ROS2 C++ 패키지
 │   ├── motion_model.hpp             #   4종 모션 모델
 │   ├── tube_mppi_controller_plugin.hpp
 │   ├── dynamic_obstacle_tracker.hpp
-│   └── ...                          #   24종 플러그인 헤더
+│   └── ...                          #   26종 플러그인 헤더
 ├── src/                             # C++ 구현
 ├── config/                          # 39개 nav2 파라미터 YAML
 ├── worlds/                          # 7개 Gazebo World
 ├── maps/                            # 맵 파일
 ├── launch/                          # Launch 파일
 ├── scripts/                         # 벤치마크 + E2E 테스트
-│   ├── controller_benchmark.py      #   24종 자동 비교
+│   ├── controller_benchmark.py      #   26종 자동 비교
 │   ├── benchmark_report.py          #   리포트 생성
 │   ├── paper_benchmark.py           #   논문용 다중 시행
 │   ├── paper_benchmark_analysis.py  #   통계 분석 + LaTeX
@@ -348,6 +358,7 @@ mpc_controller/                      # Python 패키지
 | Tube-MPPI Plugin | 완료 | Nominal state MPPI + DynObs Tracker | #173 |
 | LP-MPPI | 완료 | Low-Pass filtering (IIR, 2025) | #181 |
 | Halton-MPPI + Feedback-MPPI | 완료 | 저불일치 샘플링 + Riccati 피드백 | #183 |
+| Multi-Agent + CUDA MPPI | 완료 | 다중 에이전트 궤적 공유 + GPU 가속 | #185 |
 | 시뮬레이션 인프라 | 완료 | World physics 통일 + E2E 테스트 | #175 |
 | Paper 벤치마크 | 완료 | 다중 시행 + 통계 + LaTeX | #177 |
 
