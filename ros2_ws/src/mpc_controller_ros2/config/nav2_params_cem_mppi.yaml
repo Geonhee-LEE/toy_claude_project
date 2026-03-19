@@ -1,0 +1,86 @@
+# ============================================================
+# nav2 파라미터 - CEM-MPPI
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cem
+#
+# Cross-Entropy Method + MPPI 하이브리드:
+#   CEM 반복으로 샘플링 분포(μ,σ) 정제 → 마지막 반복 MPPI 가중 업데이트.
+#   적은 K로도 빠른 수렴 달성 (분포 정제 효과).
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- CEM-MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::CemMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 50.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.1
+      R_omega: 0.1
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+
+      # CEM-MPPI 파라미터
+      cem_enabled: true
+      cem_iterations: 3
+      cem_elite_ratio: 0.1
+      cem_momentum: 0.0
+      cem_sigma_min: 0.01
+      cem_sigma_decay: 0.8
+      cem_adaptive_enabled: false
+      cem_adaptive_cost_tol: 0.01
+      cem_adaptive_min_iter: 2
+      cem_adaptive_max_iter: 8
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

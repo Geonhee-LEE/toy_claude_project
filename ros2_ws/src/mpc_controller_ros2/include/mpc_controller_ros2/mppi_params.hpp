@@ -198,6 +198,22 @@ struct MPPIParams
   int dial_adaptive_max_iter{10};                // 최대 반복 횟수
 
   // ============================================================================
+  // CEM-MPPI (Cross-Entropy Method + MPPI) 파라미터
+  // Pinneri et al. (2021) "Sample-Efficient CEM for MPC"
+  // CEM 반복으로 샘플링 분포를 정제 → 마지막 반복에서 MPPI 가중 업데이트
+  // ============================================================================
+  bool cem_enabled{true};                    // CEM 반복 활성화
+  int cem_iterations{3};                     // CEM 반복 횟수 (1=단일, 3 권장)
+  double cem_elite_ratio{0.1};               // elite 선택 비율 (top 10%)
+  double cem_momentum{0.0};                  // μ 블렌딩 모멘텀 (0=즉시 교체)
+  double cem_sigma_min{0.01};                // σ 하한 (수치 안정성)
+  double cem_sigma_decay{1.0};               // σ 감쇠 계수 (1.0=감쇠 없음)
+  bool cem_adaptive_enabled{false};          // 적응형 반복 (비용 수렴 시 조기 종료)
+  double cem_adaptive_cost_tol{0.01};        // 비용 개선 임계값 (상대)
+  int cem_adaptive_min_iter{2};              // 최소 반복 횟수
+  int cem_adaptive_max_iter{8};              // 최대 반복 횟수
+
+  // ============================================================================
   // Trajectory Library MPPI 파라미터
   // 사전 계산된 제어 시퀀스 프리미티브 라이브러리를 결정적 샘플로 주입
   // ============================================================================

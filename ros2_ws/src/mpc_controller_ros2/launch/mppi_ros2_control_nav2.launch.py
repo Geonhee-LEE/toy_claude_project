@@ -196,6 +196,8 @@ def launch_setup(context, *args, **kwargs):
                           'Auto-Selector MPPI (context-aware strategy switching)'),
         'traj_library': ('nav2_params_traj_library_mppi.yaml',
                          'Trajectory Library MPPI (primitive-based warm-start)'),
+        'cem': ('nav2_params_cem_mppi.yaml',
+                'CEM-MPPI (Cross-Entropy Method + MPPI hybrid)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]
