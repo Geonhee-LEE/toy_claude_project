@@ -1560,6 +1560,18 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "auto_selector_hysteresis", params_.auto_selector_hysteresis);
   node_->declare_parameter(prefix + "auto_selector_smoothing_alpha", params_.auto_selector_smoothing_alpha);
 
+  // CEM-MPPI
+  node_->declare_parameter(prefix + "cem_enabled", params_.cem_enabled);
+  node_->declare_parameter(prefix + "cem_iterations", params_.cem_iterations);
+  node_->declare_parameter(prefix + "cem_elite_ratio", params_.cem_elite_ratio);
+  node_->declare_parameter(prefix + "cem_momentum", params_.cem_momentum);
+  node_->declare_parameter(prefix + "cem_sigma_min", params_.cem_sigma_min);
+  node_->declare_parameter(prefix + "cem_sigma_decay", params_.cem_sigma_decay);
+  node_->declare_parameter(prefix + "cem_adaptive_enabled", params_.cem_adaptive_enabled);
+  node_->declare_parameter(prefix + "cem_adaptive_cost_tol", params_.cem_adaptive_cost_tol);
+  node_->declare_parameter(prefix + "cem_adaptive_min_iter", params_.cem_adaptive_min_iter);
+  node_->declare_parameter(prefix + "cem_adaptive_max_iter", params_.cem_adaptive_max_iter);
+
   // Trajectory Library MPPI
   node_->declare_parameter(prefix + "traj_library_enabled", params_.traj_library_enabled);
   node_->declare_parameter(prefix + "traj_library_ratio", params_.traj_library_ratio);
@@ -1941,6 +1953,18 @@ void MPPIControllerPlugin::loadParameters()
   params_.auto_selector_precision_dist = node_->get_parameter(prefix + "auto_selector_precision_dist").as_double();
   params_.auto_selector_hysteresis = node_->get_parameter(prefix + "auto_selector_hysteresis").as_int();
   params_.auto_selector_smoothing_alpha = node_->get_parameter(prefix + "auto_selector_smoothing_alpha").as_double();
+
+  // CEM-MPPI
+  params_.cem_enabled = node_->get_parameter(prefix + "cem_enabled").as_bool();
+  params_.cem_iterations = node_->get_parameter(prefix + "cem_iterations").as_int();
+  params_.cem_elite_ratio = node_->get_parameter(prefix + "cem_elite_ratio").as_double();
+  params_.cem_momentum = node_->get_parameter(prefix + "cem_momentum").as_double();
+  params_.cem_sigma_min = node_->get_parameter(prefix + "cem_sigma_min").as_double();
+  params_.cem_sigma_decay = node_->get_parameter(prefix + "cem_sigma_decay").as_double();
+  params_.cem_adaptive_enabled = node_->get_parameter(prefix + "cem_adaptive_enabled").as_bool();
+  params_.cem_adaptive_cost_tol = node_->get_parameter(prefix + "cem_adaptive_cost_tol").as_double();
+  params_.cem_adaptive_min_iter = node_->get_parameter(prefix + "cem_adaptive_min_iter").as_int();
+  params_.cem_adaptive_max_iter = node_->get_parameter(prefix + "cem_adaptive_max_iter").as_int();
 
   // Trajectory Library MPPI
   params_.traj_library_enabled = node_->get_parameter(prefix + "traj_library_enabled").as_bool();

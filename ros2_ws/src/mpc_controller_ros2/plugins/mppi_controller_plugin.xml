@@ -184,6 +184,13 @@
       EMA smoothing + hysteresis for jitter-free transitions. Params profile swap pattern.
     </description>
   </class>
+  <class type="mpc_controller_ros2::CemMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CEM-MPPI controller plugin for nav2.
+      Pinneri et al. (2021) Cross-Entropy Method + MPPI hybrid.
+      Iterative distribution refinement via elite selection + refit for fast convergence.
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Trajectory Library MPPI controller plugin for nav2.

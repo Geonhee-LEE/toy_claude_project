@@ -74,6 +74,10 @@ struct MPPIInfo
 
   // Trajectory Library: 최저비용 프리미티브 이름
   std::string library_best_primitive;
+
+  // CEM-MPPI: 반복 정보
+  int cem_iterations_used{0};
+  double cem_elite_mean_cost{0.0};
 };
 
 /**
