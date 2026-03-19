@@ -1,0 +1,85 @@
+# ============================================================
+# nav2 파라미터 - Trajectory Library MPPI
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=traj_library
+#
+# 7종 사전 계산된 제어 시퀀스 프리미티브 라이브러리를
+# 결정적 샘플로 MPPI 샘플 풀에 주입.
+# warm-start 다양성과 수렴 속도 향상.
+#
+# 프리미티브:
+#   STRAIGHT, TURN_LEFT, TURN_RIGHT, S_CURVE_LEFT,
+#   S_CURVE_RIGHT, STOP, REVERSE(*), PREVIOUS_SOLUTION
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- Trajectory Library MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 10.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.1
+      R_omega: 0.1
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+
+      # Trajectory Library 파라미터
+      traj_library_enabled: true
+      traj_library_ratio: 0.15
+      traj_library_perturbation: 0.1
+      traj_library_adaptive: false
+      traj_library_num_per_primitive: 0
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

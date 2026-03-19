@@ -71,6 +71,9 @@ struct MPPIInfo
 
   // Auto-Selector: 현재 활성 전략 이름
   std::string active_strategy;
+
+  // Trajectory Library: 최저비용 프리미티브 이름
+  std::string library_best_primitive;
 };
 
 /**

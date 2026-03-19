@@ -138,6 +138,8 @@ add_library(mppi_controller_plugin SHARED
   src/rh_mppi_controller_plugin.cpp
   src/strategy_selector.cpp
   src/auto_selector_mppi_controller_plugin.cpp
+  src/trajectory_library.cpp
+  src/trajectory_library_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -458,6 +460,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_auto_selector_mppi test/unit/test_auto_selector_mppi.cpp)
   if(TARGET test_auto_selector_mppi)
     target_link_libraries(test_auto_selector_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_trajectory_library_mppi test/unit/test_trajectory_library_mppi.cpp)
+  if(TARGET test_trajectory_library_mppi)
+    target_link_libraries(test_trajectory_library_mppi mppi_controller_plugin)
   endif()
 endif()
 
