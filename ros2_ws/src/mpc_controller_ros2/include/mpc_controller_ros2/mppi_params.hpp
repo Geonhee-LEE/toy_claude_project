@@ -435,6 +435,39 @@ struct MPPIParams
   double rh_smoothing_alpha{0.3};         // EMA 스무딩 계수 (0=이전유지, 1=즉시)
 
   // ============================================================================
+  // Robust MPPI (Distributionally Robust) 파라미터
+  // Minimax 최적화: worst-case 기대 비용 최소화 (CVaR + 분산 페널티 + Wasserstein)
+  // ============================================================================
+  bool robust_enabled{true};                    // Robust 처리 활성화
+  double robust_alpha{0.2};                     // worst-case 분율 (0.2 = worst 20%)
+  double robust_penalty{1.0};                   // 분산 페널티 가중치
+  double robust_wasserstein_radius{0.0};        // Wasserstein ball 반경 (0=비활성)
+  bool robust_adaptive_alpha{false};            // 적응형 alpha (비용 스프레드 기반)
+
+  // ============================================================================
+  // IT-MPPI (Information-Theoretic MPPI) 파라미터
+  // 정보이론적 비용항으로 탐색-활용 균형 제어
+  // ============================================================================
+  bool it_mppi_enabled{true};                  // IT-MPPI 활성화
+  double it_exploration_weight{0.1};           // 탐색 보너스 가중치
+  double it_kl_weight{0.01};                   // KL divergence 정규화 가중치
+  double it_diversity_threshold{0.5};          // 최소 궤적 다양성 임계값
+  bool it_adaptive_exploration{false};         // 적응형 탐색 (시간에 따른 감쇠)
+  double it_exploration_decay{0.99};           // 탐색 가중치 감쇠율 (호출당)
+
+  // ============================================================================
+  // Constrained MPPI (Augmented Lagrangian) 파라미터
+  // 속도/가속도/클리어런스 hard constraints를 Lagrange multiplier + penalty로 처리
+  // ============================================================================
+  bool constrained_enabled{true};               // Augmented Lagrangian 활성화
+  double constrained_mu_init{1.0};              // 초기 penalty 파라미터
+  double constrained_mu_growth{1.5};            // penalty 성장률
+  double constrained_mu_max{1000.0};            // 최대 penalty
+  double constrained_accel_max_v{2.0};          // 최대 선가속도 (m/s²)
+  double constrained_accel_max_omega{3.0};      // 최대 각가속도 (rad/s²)
+  double constrained_clearance_min{0.3};        // 최소 장애물 클리어런스 (m)
+
+  // ============================================================================
   // 성능 최적화 파라미터
   // ============================================================================
   int num_threads{0};              // OpenMP 스레드 수 (0=auto, OMP_NUM_THREADS 사용)

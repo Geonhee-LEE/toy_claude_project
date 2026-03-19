@@ -198,6 +198,12 @@ def launch_setup(context, *args, **kwargs):
                          'Trajectory Library MPPI (primitive-based warm-start)'),
         'cem': ('nav2_params_cem_mppi.yaml',
                 'CEM-MPPI (Cross-Entropy Method + MPPI hybrid)'),
+        'robust': ('nav2_params_robust_mppi.yaml',
+                   'Robust MPPI (Distributionally Robust worst-case)'),
+        'it_mppi': ('nav2_params_it_mppi.yaml',
+                    'IT-MPPI (Information-Theoretic exploration-exploitation balance)'),
+        'constrained': ('nav2_params_constrained_mppi.yaml',
+                        'Constrained MPPI (Augmented Lagrangian constraints)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

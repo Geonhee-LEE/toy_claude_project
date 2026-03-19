@@ -191,6 +191,27 @@
       Iterative distribution refinement via elite selection + refit for fast convergence.
     </description>
   </class>
+  <class type="mpc_controller_ros2::RobustMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Robust MPPI (Distributionally Robust) controller plugin for nav2.
+      Minimax worst-case cost minimization under distributional uncertainty.
+      CVaR-like worst-alpha estimation + variance penalty + Wasserstein ball robustness.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::ITMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      IT-MPPI (Information-Theoretic MPPI) controller plugin for nav2.
+      Exploration-exploitation balance via trajectory diversity bonus and KL regularization.
+      Adaptive exploration weight decay for progressive convergence.
+    </description>
+  </class>
+  <class type="mpc_controller_ros2::ConstrainedMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Constrained MPPI controller plugin for nav2.
+      Augmented Lagrangian method for explicit hard constraint handling.
+      Velocity, acceleration, and obstacle clearance constraints with dual variable updates.
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Trajectory Library MPPI controller plugin for nav2.

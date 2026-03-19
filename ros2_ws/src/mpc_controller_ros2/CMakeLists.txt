@@ -139,6 +139,9 @@ add_library(mppi_controller_plugin SHARED
   src/strategy_selector.cpp
   src/auto_selector_mppi_controller_plugin.cpp
   src/cem_mppi_controller_plugin.cpp
+  src/robust_mppi_controller_plugin.cpp
+  src/it_mppi_controller_plugin.cpp
+  src/constrained_mppi_controller_plugin.cpp
   src/trajectory_library.cpp
   src/trajectory_library_mppi_controller_plugin.cpp
 )
@@ -471,6 +474,21 @@ if(BUILD_TESTING)
   ament_add_gtest(test_cem_mppi test/unit/test_cem_mppi.cpp)
   if(TARGET test_cem_mppi)
     target_link_libraries(test_cem_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_robust_mppi test/unit/test_robust_mppi.cpp)
+  if(TARGET test_robust_mppi)
+    target_link_libraries(test_robust_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_it_mppi test/unit/test_it_mppi.cpp)
+  if(TARGET test_it_mppi)
+    target_link_libraries(test_it_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_constrained_mppi test/unit/test_constrained_mppi.cpp)
+  if(TARGET test_constrained_mppi)
+    target_link_libraries(test_constrained_mppi mppi_controller_plugin)
   endif()
 endif()
 
