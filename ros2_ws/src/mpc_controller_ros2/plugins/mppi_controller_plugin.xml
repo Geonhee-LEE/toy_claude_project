@@ -177,4 +177,11 @@
       and tracking error. EMA smoothing prevents jitter. N_min to N_max range.
     </description>
   </class>
+  <class type="mpc_controller_ros2::AutoSelectorMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Auto-Selector MPPI controller plugin for nav2.
+      Runtime context-aware strategy switching: CRUISE, PRECISE, AGGRESSIVE, RECOVERY, SAFE.
+      EMA smoothing + hysteresis for jitter-free transitions. Params profile swap pattern.
+    </description>
+  </class>
 </library>

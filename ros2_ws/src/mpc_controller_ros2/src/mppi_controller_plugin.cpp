@@ -1551,6 +1551,15 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "ilqr_line_search_steps", params_.ilqr_line_search_steps);
   node_->declare_parameter(prefix + "ilqr_cost_tolerance", params_.ilqr_cost_tolerance);
 
+  // Auto-Selector MPPI
+  node_->declare_parameter(prefix + "auto_selector_enabled", params_.auto_selector_enabled);
+  node_->declare_parameter(prefix + "auto_selector_safety_threshold", params_.auto_selector_safety_threshold);
+  node_->declare_parameter(prefix + "auto_selector_recovery_threshold", params_.auto_selector_recovery_threshold);
+  node_->declare_parameter(prefix + "auto_selector_fast_threshold", params_.auto_selector_fast_threshold);
+  node_->declare_parameter(prefix + "auto_selector_precision_dist", params_.auto_selector_precision_dist);
+  node_->declare_parameter(prefix + "auto_selector_hysteresis", params_.auto_selector_hysteresis);
+  node_->declare_parameter(prefix + "auto_selector_smoothing_alpha", params_.auto_selector_smoothing_alpha);
+
   // Receding Horizon MPPI (RH-MPPI)
   node_->declare_parameter(prefix + "rh_mppi_enabled", params_.rh_mppi_enabled);
   node_->declare_parameter(prefix + "rh_N_min", params_.rh_N_min);
@@ -1916,6 +1925,15 @@ void MPPIControllerPlugin::loadParameters()
   params_.ilqr_regularization = node_->get_parameter(prefix + "ilqr_regularization").as_double();
   params_.ilqr_line_search_steps = node_->get_parameter(prefix + "ilqr_line_search_steps").as_int();
   params_.ilqr_cost_tolerance = node_->get_parameter(prefix + "ilqr_cost_tolerance").as_double();
+
+  // Auto-Selector MPPI
+  params_.auto_selector_enabled = node_->get_parameter(prefix + "auto_selector_enabled").as_bool();
+  params_.auto_selector_safety_threshold = node_->get_parameter(prefix + "auto_selector_safety_threshold").as_double();
+  params_.auto_selector_recovery_threshold = node_->get_parameter(prefix + "auto_selector_recovery_threshold").as_double();
+  params_.auto_selector_fast_threshold = node_->get_parameter(prefix + "auto_selector_fast_threshold").as_double();
+  params_.auto_selector_precision_dist = node_->get_parameter(prefix + "auto_selector_precision_dist").as_double();
+  params_.auto_selector_hysteresis = node_->get_parameter(prefix + "auto_selector_hysteresis").as_int();
+  params_.auto_selector_smoothing_alpha = node_->get_parameter(prefix + "auto_selector_smoothing_alpha").as_double();
 
   // Receding Horizon MPPI (RH-MPPI)
   params_.rh_mppi_enabled = node_->get_parameter(prefix + "rh_mppi_enabled").as_bool();

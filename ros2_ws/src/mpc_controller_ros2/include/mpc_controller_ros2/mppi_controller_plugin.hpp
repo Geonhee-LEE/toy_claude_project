@@ -68,6 +68,9 @@ struct MPPIInfo
 
   // RH-MPPI: 실제 사용된 effective horizon
   int effective_horizon{0};
+
+  // Auto-Selector: 현재 활성 전략 이름
+  std::string active_strategy;
 };
 
 /**

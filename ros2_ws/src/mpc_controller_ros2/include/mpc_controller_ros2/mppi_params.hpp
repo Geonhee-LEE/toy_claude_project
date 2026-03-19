@@ -382,6 +382,18 @@ struct MPPIParams
   double obstacle_track_timeout{2.0};                // 트랙 타임아웃 (초)
 
   // ============================================================================
+  // Auto-Selector MPPI 파라미터
+  // 런타임 컨텍스트 기반 전략 자동 전환 (CRUISE/PRECISE/AGGRESSIVE/RECOVERY/SAFE)
+  // ============================================================================
+  bool auto_selector_enabled{true};              // 자동 전략 선택 활성화
+  double auto_selector_safety_threshold{0.5};    // SAFE 전환 장애물 거리 (m)
+  double auto_selector_recovery_threshold{1.0};  // RECOVERY 전환 추적 오차 (m)
+  double auto_selector_fast_threshold{0.7};      // AGGRESSIVE 속도 비율 (v/v_max)
+  double auto_selector_precision_dist{1.5};      // PRECISE 목표 근접 거리 (m)
+  int auto_selector_hysteresis{3};               // 전환 히스테리시스 (cycles)
+  double auto_selector_smoothing_alpha{0.3};     // 컨텍스트 메트릭 EMA 계수
+
+  // ============================================================================
   // Receding Horizon MPPI (RH-MPPI) 파라미터
   // 동적 예측 horizon N 조정: 속도/장애물 근접도/추적 오차에 따라 N 적응
   // 고속 → 긴 horizon, 저속/장애물 근접/큰 오차 → 짧은 horizon

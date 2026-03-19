@@ -192,6 +192,8 @@ def launch_setup(context, *args, **kwargs):
                  'CUDA MPPI (GPU-accelerated rollout + CPU fallback)'),
         'rh_mppi': ('nav2_params_rh_mppi.yaml',
                     'RH-MPPI (Receding Horizon adaptive N)'),
+        'auto_selector': ('nav2_params_auto_selector.yaml',
+                          'Auto-Selector MPPI (context-aware strategy switching)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

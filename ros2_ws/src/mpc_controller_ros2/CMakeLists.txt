@@ -136,6 +136,8 @@ add_library(mppi_controller_plugin SHARED
   src/cuda_mppi_controller_plugin.cpp
   src/adaptive_horizon_manager.cpp
   src/rh_mppi_controller_plugin.cpp
+  src/strategy_selector.cpp
+  src/auto_selector_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -451,6 +453,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_rh_mppi test/unit/test_rh_mppi.cpp)
   if(TARGET test_rh_mppi)
     target_link_libraries(test_rh_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_auto_selector_mppi test/unit/test_auto_selector_mppi.cpp)
+  if(TARGET test_auto_selector_mppi)
+    target_link_libraries(test_auto_selector_mppi mppi_controller_plugin)
   endif()
 endif()
 
