@@ -1,0 +1,157 @@
+# ============================================================
+# nav2 파라미터 - Auto-Selector MPPI
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=auto_selector
+#
+# 런타임 컨텍스트 기반 전략 자동 전환:
+#   CRUISE     — 기본 (특수 기능 비활성)
+#   PRECISE    — 목표 근접 (feedback + Q*1.5)
+#   AGGRESSIVE — 고속 주행 (LP 필터)
+#   RECOVERY   — 큰 추적 오차 (탐색 강화, N 축소)
+#   SAFE       — 장애물 근접 (CBF 활성화, 최우선)
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- Auto-Selector MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::AutoSelectorMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 10.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.5
+      R_omega: 0.3
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 0.5
+
+      # ── Auto-Selector 파라미터 ──
+      auto_selector_enabled: true
+      auto_selector_safety_threshold: 0.5    # SAFE 전환 장애물 거리 (m)
+      auto_selector_recovery_threshold: 1.0  # RECOVERY 전환 추적 오차 (m)
+      auto_selector_fast_threshold: 0.7      # AGGRESSIVE 속도 비율 (v/v_max)
+      auto_selector_precision_dist: 1.5      # PRECISE 목표 근접 거리 (m)
+      auto_selector_hysteresis: 3            # 전환 히스테리시스 (cycles)
+      auto_selector_smoothing_alpha: 0.3     # EMA 스무딩 계수
+
+      # CBF (SAFE 전략에서 자동 활성화)
+      cbf_enabled: false
+      cbf_gamma: 1.0
+      cbf_safety_margin: 0.3
+      cbf_robot_radius: 0.2
+
+      # Feedback-MPPI (PRECISE 전략에서 자동 활성화)
+      feedback_mppi_enabled: false
+      feedback_gain_scale: 1.0
+
+      # LP-MPPI (AGGRESSIVE 전략에서 자동 활성화)
+      lp_enabled: false
+      lp_cutoff_frequency: 10.0
+
+      # Predictive Safety (SAFE 전략에서 자동 활성화)
+      predictive_safety_enabled: false
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 6.0
+      height: 6.0
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      transform_tolerance: 5.0
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+planner_server:
+  ros__parameters:
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 5.0
