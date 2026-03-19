@@ -6,12 +6,12 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
-2. **MPPI sampling-based control** - 30종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 30종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
+2. **MPPI sampling-based control** - 33종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
+3. **ROS2 nav2 integration** - 33종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
 4. **Paper-Ready Benchmarking** - 다중 시행 통계 분석 + LaTeX 테이블 + 파레토 분석
 5. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
-## C++ MPPI 플러그인 (30종)
+## C++ MPPI 플러그인 (33종)
 
 ### 플러그인 계층 구조
 
@@ -63,6 +63,11 @@ MPPIControllerPlugin (base, virtual computeControl)
 ├── TrajectoryLibraryMPPIControllerPlugin ── 7종 프리미티브 라이브러리
 ├── CemMPPIControllerPlugin        ── CEM + MPPI 하이브리드 (Pinneri 2021)
 │
+│  강건/정보이론/제약 변형:
+├── RobustMPPIControllerPlugin     ── Distributionally Robust (worst-case CVaR)
+├── ITMPPIControllerPlugin         ── Information-Theoretic (탐색-활용 균형)
+├── ConstrainedMPPIControllerPlugin ── Augmented Lagrangian (hard constraints)
+│
 │  다중 에이전트/GPU 가속:
 ├── MultiAgentMPPIControllerPlugin ── ROS2 궤적 공유 + InterAgentCost
 └── CudaMPPIControllerPlugin       ── GPU 병렬 롤아웃 (CPU 폴백)
@@ -102,6 +107,9 @@ MPPIControllerPlugin (base, virtual computeControl)
 | 28 | Auto-Selector MPPI | 런타임 컨텍스트 전략 자동 전환 (5전략) | All |
 | 29 | Trajectory Library MPPI | 7종 프리미티브 라이브러리 warm-start | All |
 | 30 | CEM-MPPI | Cross-Entropy Method + MPPI 하이브리드 (Pinneri 2021) | All |
+| 31 | Robust MPPI | Distributionally Robust worst-case (CVaR + Wasserstein) | All |
+| 32 | IT-MPPI | Information-Theoretic 탐색-활용 균형 (KL + diversity) | All |
+| 33 | Constrained MPPI | Augmented Lagrangian hard constraints (dual update) | All |
 
 ### 4종 모션 모델
 
@@ -158,6 +166,9 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=rh_
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=auto_selector
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=traj_library
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cem
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=robust
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=it_mppi
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=constrained
 
 # 모션 모델 분기
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
@@ -212,7 +223,7 @@ python3 scripts/paper_benchmark_analysis.py \
 ### 컨트롤러 벤치마크 (단일 시행)
 
 ```bash
-# 30종 자동 비교
+# 33종 자동 비교
 python3 scripts/controller_benchmark.py --group all
 
 # C++ 파이프라인 마이크로벤치마크
@@ -235,7 +246,7 @@ Pipeline: 1.88ms mean (532 Hz)
 
 ## Testing
 
-### C++ (662+ gtest, 39 스위트)
+### C++ (707+ gtest, 42 스위트)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
@@ -282,6 +293,9 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_auto_selector_mppi | 15 | Auto-Selector MPPI (전략 전환) |
 | test_trajectory_library_mppi | 15 | Trajectory Library MPPI (프리미티브) |
 | test_cem_mppi | 15 | CEM-MPPI (Cross-Entropy Method) |
+| test_robust_mppi | 15 | Robust MPPI (Distributionally Robust) |
+| test_it_mppi | 15 | IT-MPPI (Information-Theoretic) |
+| test_constrained_mppi | 15 | Constrained MPPI (Augmented Lagrangian) |
 
 ### Python
 
