@@ -184,4 +184,11 @@
       EMA smoothing + hysteresis for jitter-free transitions. Params profile swap pattern.
     </description>
   </class>
+  <class type="mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Trajectory Library MPPI controller plugin for nav2.
+      7 pre-computed control sequence primitives (straight, turns, S-curves, stop, reverse)
+      injected as deterministic samples for improved warm-start diversity and convergence.
+    </description>
+  </class>
 </library>

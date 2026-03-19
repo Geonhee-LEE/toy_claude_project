@@ -194,6 +194,8 @@ def launch_setup(context, *args, **kwargs):
                     'RH-MPPI (Receding Horizon adaptive N)'),
         'auto_selector': ('nav2_params_auto_selector.yaml',
                           'Auto-Selector MPPI (context-aware strategy switching)'),
+        'traj_library': ('nav2_params_traj_library_mppi.yaml',
+                         'Trajectory Library MPPI (primitive-based warm-start)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

@@ -1560,6 +1560,13 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "auto_selector_hysteresis", params_.auto_selector_hysteresis);
   node_->declare_parameter(prefix + "auto_selector_smoothing_alpha", params_.auto_selector_smoothing_alpha);
 
+  // Trajectory Library MPPI
+  node_->declare_parameter(prefix + "traj_library_enabled", params_.traj_library_enabled);
+  node_->declare_parameter(prefix + "traj_library_ratio", params_.traj_library_ratio);
+  node_->declare_parameter(prefix + "traj_library_perturbation", params_.traj_library_perturbation);
+  node_->declare_parameter(prefix + "traj_library_adaptive", params_.traj_library_adaptive);
+  node_->declare_parameter(prefix + "traj_library_num_per_primitive", params_.traj_library_num_per_primitive);
+
   // Receding Horizon MPPI (RH-MPPI)
   node_->declare_parameter(prefix + "rh_mppi_enabled", params_.rh_mppi_enabled);
   node_->declare_parameter(prefix + "rh_N_min", params_.rh_N_min);
@@ -1934,6 +1941,13 @@ void MPPIControllerPlugin::loadParameters()
   params_.auto_selector_precision_dist = node_->get_parameter(prefix + "auto_selector_precision_dist").as_double();
   params_.auto_selector_hysteresis = node_->get_parameter(prefix + "auto_selector_hysteresis").as_int();
   params_.auto_selector_smoothing_alpha = node_->get_parameter(prefix + "auto_selector_smoothing_alpha").as_double();
+
+  // Trajectory Library MPPI
+  params_.traj_library_enabled = node_->get_parameter(prefix + "traj_library_enabled").as_bool();
+  params_.traj_library_ratio = node_->get_parameter(prefix + "traj_library_ratio").as_double();
+  params_.traj_library_perturbation = node_->get_parameter(prefix + "traj_library_perturbation").as_double();
+  params_.traj_library_adaptive = node_->get_parameter(prefix + "traj_library_adaptive").as_bool();
+  params_.traj_library_num_per_primitive = node_->get_parameter(prefix + "traj_library_num_per_primitive").as_int();
 
   // Receding Horizon MPPI (RH-MPPI)
   params_.rh_mppi_enabled = node_->get_parameter(prefix + "rh_mppi_enabled").as_bool();

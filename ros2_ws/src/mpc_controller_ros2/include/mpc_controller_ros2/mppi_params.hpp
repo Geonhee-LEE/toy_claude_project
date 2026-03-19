@@ -198,6 +198,16 @@ struct MPPIParams
   int dial_adaptive_max_iter{10};                // 최대 반복 횟수
 
   // ============================================================================
+  // Trajectory Library MPPI 파라미터
+  // 사전 계산된 제어 시퀀스 프리미티브 라이브러리를 결정적 샘플로 주입
+  // ============================================================================
+  bool traj_library_enabled{true};             // 라이브러리 주입 활성화
+  double traj_library_ratio{0.15};             // K 중 라이브러리 비율 (0.15 = 15%)
+  double traj_library_perturbation{0.1};       // 라이브러리에 추가할 노이즈 σ 스케일
+  bool traj_library_adaptive{false};           // 적응형 비율 조정
+  int traj_library_num_per_primitive{0};       // 프리미티브당 샘플 수 (0=auto)
+
+  // ============================================================================
   // Residual Dynamics (학습 기반 잔차 동역학)
   // ============================================================================
   bool residual_enabled{false};                    // 잔차 MLP 활성화
