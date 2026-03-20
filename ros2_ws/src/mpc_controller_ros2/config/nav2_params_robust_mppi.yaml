@@ -1,0 +1,82 @@
+# ============================================================
+# nav2 파라미터 - Robust MPPI (Distributionally Robust)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=robust
+#
+# Distributionally Robust MPPI:
+#   분포 불확실성 하 worst-case 기대 비용 최소화.
+#   CVaR-like worst-case 추정 + 분산 페널티 + Wasserstein 보수성.
+#   보수적이면서도 안정적인 제어를 원하는 환경에 적합.
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- Robust MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::RobustMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # Prediction horizon
+      N: 30
+      dt: 0.1
+
+      # Sampling
+      K: 512
+      lambda: 50.0
+
+      # Noise parameters
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # Control limits
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # State tracking cost weights (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # Terminal cost weights (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # Control effort weights (R)
+      R_v: 0.1
+      R_omega: 0.1
+
+      # Control rate weights (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # Obstacle avoidance
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # Forward preference
+      prefer_forward_weight: 5.0
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+
+      # Robust MPPI 파라미터
+      robust_enabled: true
+      robust_alpha: 0.2              # worst-case 분율 (0.2 = worst 20%)
+      robust_penalty: 1.0            # 분산 페널티 가중치
+      robust_wasserstein_radius: 0.0 # Wasserstein ball 반경 (0=비활성)
+      robust_adaptive_alpha: false   # 적응형 alpha (비용 스프레드 기반)
+
+      # Visualization
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

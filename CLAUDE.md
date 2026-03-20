@@ -21,6 +21,9 @@ P1: RH-MPPI ✅ (Receding Horizon 동적 N 적응, EMA 스무딩)
 P1: Auto-Selector MPPI ✅ (런타임 컨텍스트 기반 전략 자동 전환, 5전략 프로파일)
 P1: Trajectory Library MPPI ✅ (7종 프리미티브 라이브러리 warm-start 다양성 향상)
 P1: CEM-MPPI ✅ (Cross-Entropy Method + MPPI 하이브리드, Pinneri 2021)
+P1: Robust MPPI ✅ (Distributionally Robust, worst-case CVaR + Wasserstein)
+P1: IT-MPPI ✅ (Information-Theoretic, 탐색-활용 균형 KL + diversity)
+P1: Constrained MPPI ✅ (Augmented Lagrangian, hard constraints dual update)
 ```
 
 ## 패키지 구조
@@ -93,6 +96,7 @@ mpc_controller/
 - Auto-Selector MPPI (런타임 컨텍스트 기반 전략 자동 전환, 5전략 프로파일): 완료 (PR #189)
 - Trajectory Library MPPI (7종 프리미티브 라이브러리 warm-start 다양성 향상): 완료 (PR #191)
 - CEM-MPPI (Cross-Entropy Method + MPPI 하이브리드, Pinneri 2021): 완료 (PR #193)
+- Robust MPPI + IT-MPPI + Constrained MPPI (3종 일괄): 완료 (PR #195)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

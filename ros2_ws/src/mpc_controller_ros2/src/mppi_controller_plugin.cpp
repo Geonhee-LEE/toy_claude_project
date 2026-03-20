@@ -1560,6 +1560,21 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "auto_selector_hysteresis", params_.auto_selector_hysteresis);
   node_->declare_parameter(prefix + "auto_selector_smoothing_alpha", params_.auto_selector_smoothing_alpha);
 
+  // Robust MPPI
+  node_->declare_parameter(prefix + "robust_enabled", params_.robust_enabled);
+  node_->declare_parameter(prefix + "robust_alpha", params_.robust_alpha);
+  node_->declare_parameter(prefix + "robust_penalty", params_.robust_penalty);
+  node_->declare_parameter(prefix + "robust_wasserstein_radius", params_.robust_wasserstein_radius);
+  node_->declare_parameter(prefix + "robust_adaptive_alpha", params_.robust_adaptive_alpha);
+
+  // IT-MPPI (Information-Theoretic MPPI)
+  node_->declare_parameter(prefix + "it_mppi_enabled", params_.it_mppi_enabled);
+  node_->declare_parameter(prefix + "it_exploration_weight", params_.it_exploration_weight);
+  node_->declare_parameter(prefix + "it_kl_weight", params_.it_kl_weight);
+  node_->declare_parameter(prefix + "it_diversity_threshold", params_.it_diversity_threshold);
+  node_->declare_parameter(prefix + "it_adaptive_exploration", params_.it_adaptive_exploration);
+  node_->declare_parameter(prefix + "it_exploration_decay", params_.it_exploration_decay);
+
   // CEM-MPPI
   node_->declare_parameter(prefix + "cem_enabled", params_.cem_enabled);
   node_->declare_parameter(prefix + "cem_iterations", params_.cem_iterations);
@@ -1589,6 +1604,15 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "rh_obs_dist_threshold", params_.rh_obs_dist_threshold);
   node_->declare_parameter(prefix + "rh_error_threshold", params_.rh_error_threshold);
   node_->declare_parameter(prefix + "rh_smoothing_alpha", params_.rh_smoothing_alpha);
+
+  // Constrained MPPI (Augmented Lagrangian)
+  node_->declare_parameter(prefix + "constrained_enabled", params_.constrained_enabled);
+  node_->declare_parameter(prefix + "constrained_mu_init", params_.constrained_mu_init);
+  node_->declare_parameter(prefix + "constrained_mu_growth", params_.constrained_mu_growth);
+  node_->declare_parameter(prefix + "constrained_mu_max", params_.constrained_mu_max);
+  node_->declare_parameter(prefix + "constrained_accel_max_v", params_.constrained_accel_max_v);
+  node_->declare_parameter(prefix + "constrained_accel_max_omega", params_.constrained_accel_max_omega);
+  node_->declare_parameter(prefix + "constrained_clearance_min", params_.constrained_clearance_min);
 
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
@@ -1954,6 +1978,21 @@ void MPPIControllerPlugin::loadParameters()
   params_.auto_selector_hysteresis = node_->get_parameter(prefix + "auto_selector_hysteresis").as_int();
   params_.auto_selector_smoothing_alpha = node_->get_parameter(prefix + "auto_selector_smoothing_alpha").as_double();
 
+  // Robust MPPI
+  params_.robust_enabled = node_->get_parameter(prefix + "robust_enabled").as_bool();
+  params_.robust_alpha = node_->get_parameter(prefix + "robust_alpha").as_double();
+  params_.robust_penalty = node_->get_parameter(prefix + "robust_penalty").as_double();
+  params_.robust_wasserstein_radius = node_->get_parameter(prefix + "robust_wasserstein_radius").as_double();
+  params_.robust_adaptive_alpha = node_->get_parameter(prefix + "robust_adaptive_alpha").as_bool();
+
+  // IT-MPPI (Information-Theoretic MPPI)
+  params_.it_mppi_enabled = node_->get_parameter(prefix + "it_mppi_enabled").as_bool();
+  params_.it_exploration_weight = node_->get_parameter(prefix + "it_exploration_weight").as_double();
+  params_.it_kl_weight = node_->get_parameter(prefix + "it_kl_weight").as_double();
+  params_.it_diversity_threshold = node_->get_parameter(prefix + "it_diversity_threshold").as_double();
+  params_.it_adaptive_exploration = node_->get_parameter(prefix + "it_adaptive_exploration").as_bool();
+  params_.it_exploration_decay = node_->get_parameter(prefix + "it_exploration_decay").as_double();
+
   // CEM-MPPI
   params_.cem_enabled = node_->get_parameter(prefix + "cem_enabled").as_bool();
   params_.cem_iterations = node_->get_parameter(prefix + "cem_iterations").as_int();
@@ -1983,6 +2022,15 @@ void MPPIControllerPlugin::loadParameters()
   params_.rh_obs_dist_threshold = node_->get_parameter(prefix + "rh_obs_dist_threshold").as_double();
   params_.rh_error_threshold = node_->get_parameter(prefix + "rh_error_threshold").as_double();
   params_.rh_smoothing_alpha = node_->get_parameter(prefix + "rh_smoothing_alpha").as_double();
+
+  // Constrained MPPI (Augmented Lagrangian)
+  params_.constrained_enabled = node_->get_parameter(prefix + "constrained_enabled").as_bool();
+  params_.constrained_mu_init = node_->get_parameter(prefix + "constrained_mu_init").as_double();
+  params_.constrained_mu_growth = node_->get_parameter(prefix + "constrained_mu_growth").as_double();
+  params_.constrained_mu_max = node_->get_parameter(prefix + "constrained_mu_max").as_double();
+  params_.constrained_accel_max_v = node_->get_parameter(prefix + "constrained_accel_max_v").as_double();
+  params_.constrained_accel_max_omega = node_->get_parameter(prefix + "constrained_accel_max_omega").as_double();
+  params_.constrained_clearance_min = node_->get_parameter(prefix + "constrained_clearance_min").as_double();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();

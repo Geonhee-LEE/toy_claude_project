@@ -78,6 +78,20 @@ struct MPPIInfo
   // CEM-MPPI: 반복 정보
   int cem_iterations_used{0};
   double cem_elite_mean_cost{0.0};
+
+  // Robust MPPI: worst-case 메트릭
+  double robust_worst_case_cost{0.0};
+  double robust_effective_alpha{0.0};
+
+  // IT-MPPI: 정보이론적 메트릭
+  double it_exploration_bonus{0.0};
+  double it_diversity_score{0.0};
+  double it_kl_divergence{0.0};
+
+  // Constrained MPPI: 제약 조건 메트릭
+  double constrained_total_violation{0.0};
+  double constrained_mu{0.0};
+  int constrained_num_violated{0};
 };
 
 /**
