@@ -212,6 +212,14 @@
       Velocity, acceleration, and obstacle clearance constraints with dual variable updates.
     </description>
   </class>
+  <class type="mpc_controller_ros2::ChanceConstrainedMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CC-MPPI (Chance-Constrained MPPI) controller plugin for nav2.
+      Blackmore et al. (JGCD 2011) inspired probabilistic constraint satisfaction.
+      Sample-based violation probability estimation + Bonferroni/adaptive risk allocation
+      + empirical quantile tightening. P(g(x) &lt;= 0) &gt;= 1-epsilon guarantee.
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Trajectory Library MPPI controller plugin for nav2.

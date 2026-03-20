@@ -204,6 +204,8 @@ def launch_setup(context, *args, **kwargs):
                     'IT-MPPI (Information-Theoretic exploration-exploitation balance)'),
         'constrained': ('nav2_params_constrained_mppi.yaml',
                         'Constrained MPPI (Augmented Lagrangian constraints)'),
+        'cc_mppi': ('nav2_params_cc_mppi.yaml',
+                    'CC-MPPI (Chance-Constrained probabilistic safety)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

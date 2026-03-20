@@ -468,6 +468,18 @@ struct MPPIParams
   double constrained_clearance_min{0.3};        // 최소 장애물 클리어런스 (m)
 
   // ============================================================================
+  // Chance-Constrained MPPI (CC-MPPI) 파라미터
+  // Blackmore et al. (JGCD 2011) inspired: P(g(x) ≤ 0) ≥ 1-ε
+  // K 샘플 기반 위반 확률 추정 + risk 예산 분배 + quantile tightening
+  // ============================================================================
+  bool cc_mppi_enabled{true};                    // CC-MPPI 활성화
+  double cc_risk_budget{0.05};                   // ε: 총 허용 위반 확률
+  double cc_penalty_weight{10.0};                // 제약 위반 페널티 스케일
+  bool cc_adaptive_risk{false};                  // 적응형 risk 분배 (false=Bonferroni)
+  double cc_tightening_rate{1.5};                // constraint tightening 성장률
+  double cc_quantile_smoothing{0.1};             // 경험적 quantile EMA 계수
+
+  // ============================================================================
   // 성능 최적화 파라미터
   // ============================================================================
   int num_threads{0};              // OpenMP 스레드 수 (0=auto, OMP_NUM_THREADS 사용)

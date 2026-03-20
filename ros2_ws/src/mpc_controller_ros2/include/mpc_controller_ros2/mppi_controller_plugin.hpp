@@ -92,6 +92,11 @@ struct MPPIInfo
   double constrained_total_violation{0.0};
   double constrained_mu{0.0};
   int constrained_num_violated{0};
+
+  // CC-MPPI: 확률적 제약 메트릭
+  double cc_violation_probability{0.0};  // 최대 추정 위반 확률
+  double cc_effective_risk{0.0};         // 유효 risk 예산 (분배 후)
+  int cc_num_tightened{0};               // tightening된 제약 수
 };
 
 /**
