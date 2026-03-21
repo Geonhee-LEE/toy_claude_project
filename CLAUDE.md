@@ -26,6 +26,7 @@ P1: IT-MPPI ✅ (Information-Theoretic, 탐색-활용 균형 KL + diversity)
 P1: Constrained MPPI ✅ (Augmented Lagrangian, hard constraints dual update)
 P1: CC-MPPI ✅ (Chance-Constrained, Blackmore JGCD 2011, 확률적 제약 만족)
 P0: CC-CBF-MPPI ✅ (CC + CBF barrier clearance, P(충돌)≤ε + 선택적 CBF 투영)
+P0: Composable MPPI ✅ (파이프라인 기반 9-Phase 다중 레이어 조합, YAML on/off)
 ```
 
 ## 패키지 구조
@@ -101,6 +102,7 @@ mpc_controller/
 - Robust MPPI + IT-MPPI + Constrained MPPI (3종 일괄): 완료 (PR #195)
 - CC-MPPI (Chance-Constrained MPPI, Blackmore JGCD 2011, 확률적 제약 만족): 완료 (PR #199, Issue #198)
 - CC-CBF-MPPI (CC + CBF barrier clearance, P(충돌)≤ε + 선택적 CBF 투영): 완료 (Issue #200)
+- Composable MPPI (파이프라인 기반 9-Phase 다중 레이어 조합, 36종 플러그인): 완료 (PR #202, Issue #201)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

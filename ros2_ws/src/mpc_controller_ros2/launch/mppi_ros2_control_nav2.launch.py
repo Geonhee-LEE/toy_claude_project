@@ -208,6 +208,8 @@ def launch_setup(context, *args, **kwargs):
                     'CC-MPPI (Chance-Constrained probabilistic safety)'),
         'cc_cbf_mppi': ('nav2_params_cc_cbf_mppi.yaml',
                         'CC-CBF-MPPI (Chance-Constrained + CBF barrier safety)'),
+        'composable': ('nav2_params_composable_mppi.yaml',
+                       'Composable MPPI (pipeline-based multi-layer composition)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

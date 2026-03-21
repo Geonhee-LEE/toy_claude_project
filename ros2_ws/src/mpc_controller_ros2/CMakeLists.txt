@@ -146,6 +146,7 @@ add_library(mppi_controller_plugin SHARED
   src/cc_cbf_mppi_controller_plugin.cpp
   src/trajectory_library.cpp
   src/trajectory_library_mppi_controller_plugin.cpp
+  src/composable_mppi_controller_plugin.cpp
 )
 
 target_include_directories(mppi_controller_plugin PUBLIC
@@ -501,6 +502,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_cc_cbf_mppi test/unit/test_cc_cbf_mppi.cpp)
   if(TARGET test_cc_cbf_mppi)
     target_link_libraries(test_cc_cbf_mppi mppi_controller_plugin)
+  endif()
+
+  ament_add_gtest(test_composable_mppi test/unit/test_composable_mppi.cpp)
+  if(TARGET test_composable_mppi)
+    target_link_libraries(test_composable_mppi mppi_controller_plugin)
   endif()
 endif()
 
