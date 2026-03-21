@@ -73,27 +73,30 @@ Eigen::MatrixXd ChanceConstrainedMPPIControllerPlugin::evaluateSampleViolations(
     double vel_violation = 0.0;
     double accel_violation = 0.0;
 
-    // Velocity constraint
+    // Velocity constraint — worst-step (Blackmore: horizon 독립)
     for (int t = 0; t < N; ++t) {
       double v = std::abs(ctrl(t, 0));
-      vel_violation += std::max(0.0, v - params_.v_max);
+      double step_viol = std::max(0.0, v - params_.v_max);
       if (nu >= 2) {
         double omega = std::abs(ctrl(t, 1));
-        vel_violation += std::max(0.0, omega - params_.omega_max);
+        step_viol = std::max(step_viol, std::max(0.0, omega - params_.omega_max));
       }
+      vel_violation = std::max(vel_violation, step_viol);
     }
 
-    // Acceleration constraint
+    // Acceleration constraint — worst-step
     for (int t = 1; t < N; ++t) {
       double dv = std::abs(ctrl(t, 0) - ctrl(t - 1, 0)) / dt;
-      accel_violation += std::max(0.0, dv - params_.constrained_accel_max_v);
+      double step_viol = std::max(0.0, dv - params_.constrained_accel_max_v);
       if (nu >= 2) {
         double domega = std::abs(ctrl(t, 1) - ctrl(t - 1, 1)) / dt;
-        accel_violation += std::max(0.0, domega - params_.constrained_accel_max_omega);
+        step_viol = std::max(step_viol, std::max(0.0, domega - params_.constrained_accel_max_omega));
       }
+      accel_violation = std::max(accel_violation, step_viol);
     }
 
     // Clearance constraint (costmap proxy)
+    // TODO: barrier_set_ 순회로 실제 clearance 위반 계산 (CC-CBF 통합 시)
     (void)trajectories;
     double clearance_violation = 0.0;
 
@@ -173,9 +176,15 @@ Eigen::Vector3d ChanceConstrainedMPPIControllerPlugin::allocateRisk(
     }
   }
 
-  // Ensure non-negative and total <= eps
+  // Ensure non-negative
   for (int i = 0; i < M; ++i) {
     allocated(i) = std::max(1e-8, allocated(i));
+  }
+
+  // Normalize: sum(allocated) <= eps (비례 축소)
+  double total = allocated.sum();
+  if (total > eps) {
+    allocated *= (eps / total);
   }
 
   return allocated;
@@ -292,12 +301,23 @@ std::pair<Eigen::VectorXd, MPPIInfo> ChanceConstrainedMPPIControllerPlugin::comp
   Eigen::VectorXd augmented_costs = computeChanceConstrainedCosts(
     base_costs, violations, eps_allocated);
 
-  // Update smoothed quantiles (EMA)
+  // Finite check: NaN/Inf → fallback to base + large penalty
+  for (int k = 0; k < K; ++k) {
+    if (!std::isfinite(augmented_costs(k))) {
+      augmented_costs(k) = base_costs(k) + 1e6;
+    }
+  }
+
+  // Update smoothed quantiles (EMA) + tightening_rate 적용
   for (int i = 0; i < 3; ++i) {
     Eigen::VectorXd col = violations.col(i);
     double q = empiricalQuantile(col, 1.0 - eps_allocated(i));
     double alpha = params_.cc_quantile_smoothing;
     smoothed_quantiles_(i) = alpha * q + (1.0 - alpha) * smoothed_quantiles_(i);
+    // Tightening: 위반 확률 초과 시 quantile 증폭 → 다음 iteration에서 더 강한 페널티
+    if (p_hat(i) > eps_allocated(i)) {
+      smoothed_quantiles_(i) *= params_.cc_tightening_rate;
+    }
   }
 
   // ---- STEP 6: IT-normalization -> weights ----

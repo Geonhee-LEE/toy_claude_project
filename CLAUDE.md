@@ -24,6 +24,7 @@ P1: CEM-MPPI ✅ (Cross-Entropy Method + MPPI 하이브리드, Pinneri 2021)
 P1: Robust MPPI ✅ (Distributionally Robust, worst-case CVaR + Wasserstein)
 P1: IT-MPPI ✅ (Information-Theoretic, 탐색-활용 균형 KL + diversity)
 P1: Constrained MPPI ✅ (Augmented Lagrangian, hard constraints dual update)
+P1: CC-MPPI ✅ (Chance-Constrained, Blackmore JGCD 2011, 확률적 제약 만족)
 ```
 
 ## 패키지 구조

@@ -227,8 +227,8 @@ TEST_F(CCMPPITest, RiskBudgetConserved)
   Eigen::Vector3d p_hat(0.03, 0.01, 0.0);
   Eigen::Vector3d eps = accessor_.callAllocateRisk(p_hat);
 
-  // 약간의 수치 오차 허용
-  EXPECT_LE(eps.sum(), params_.cc_risk_budget + 1e-6);
+  // 정규화 후 엄격하게 sum <= eps 보장
+  EXPECT_LE(eps.sum(), params_.cc_risk_budget + 1e-10);
   // 모든 allocation 양수
   for (int i = 0; i < 3; ++i) {
     EXPECT_GT(eps(i), 0.0);
