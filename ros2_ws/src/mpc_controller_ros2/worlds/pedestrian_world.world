@@ -1,0 +1,260 @@
+<?xml version="1.0" ?>
+<!--
+  보행자 동적 장애물 월드 (20m×20m 오픈 아레나)
+
+  레이아웃 (top-down):
+  ┌──────────────────────────────────────┐
+  │                                      │
+  │   S(0,0)        🚶 ped1(3,2)        │
+  │   (robot)        ↕ Y 0.4m/s         │
+  │                                      │
+  │      🚶 ped2(2,-1)     🚶 ped3(5,0) │
+  │       ↔ X 0.6m/s        ↕ Y 0.8m/s  │
+  │                                      │
+  │   ■static(4,3)    🚶 ped4(6,2)     │
+  │                     ↔ X 0.5m/s       │
+  │                               G(7,0) │
+  └──────────────────────────────────────┘
+
+  보행자: VelocityControl 플러그인 → 외부 노드가 cmd_vel 왕복 제어
+  사람 형태: 0.3m 반경 × 1.7m 높이 원통 (피부색)
+-->
+<sdf version="1.8">
+  <world name="pedestrian_world">
+    <physics name="4ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors"/>
+
+    <!-- Sun -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 경계 벽 (20m × 20m)                          -->
+    <!-- ============================================ -->
+    <model name="wall_px">
+      <static>true</static>
+      <pose>10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 20.0 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_mx">
+      <static>true</static>
+      <pose>-10 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 20.0 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.2 20.0 1.0</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_py">
+      <static>true</static>
+      <pose>0 10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>20.0 0.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_my">
+      <static>true</static>
+      <pose>0 -10 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>20.0 0.2 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>20.0 0.2 1.0</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 정적 장애물 (벤치 형태)                       -->
+    <!-- ============================================ -->
+    <model name="bench_1">
+      <static>true</static>
+      <pose>4 3 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>1.0 0.5 0.8</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>1.0 0.5 0.8</size></box></geometry>
+          <material><ambient>0.5 0.3 0.1 1</ambient><diffuse>0.5 0.3 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="bench_2">
+      <static>true</static>
+      <pose>-2 -2 0.4 0 0 0.785</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>1.0 0.5 0.8</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>1.0 0.5 0.8</size></box></geometry>
+          <material><ambient>0.5 0.3 0.1 1</ambient><diffuse>0.5 0.3 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================ -->
+    <!-- 보행자 (4명, 사람 형태 원통)                   -->
+    <!-- VelocityControl → 외부 스크립트가 cmd_vel     -->
+    <!-- ============================================ -->
+
+    <!-- 보행자 1: (3,2) Y방향 0.4m/s 왕복 — 파란 옷 -->
+    <model name="pedestrian_1">
+      <pose>3 2 0.85 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>70.0</mass>
+          <inertia>
+            <ixx>5.0</ixx><iyy>5.0</iyy><izz>1.0</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <!-- 몸통 -->
+        <collision name="body_col">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+        </collision>
+        <visual name="body_vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+          <material><ambient>0.2 0.3 0.8 1</ambient><diffuse>0.2 0.3 0.8 1</diffuse></material>
+        </visual>
+        <!-- 머리 -->
+        <visual name="head_vis">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material><ambient>0.9 0.7 0.6 1</ambient><diffuse>0.9 0.7 0.6 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 보행자 2: (2,-1) X방향 0.6m/s 왕복 — 빨간 옷 -->
+    <model name="pedestrian_2">
+      <pose>2 -1 0.85 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>70.0</mass>
+          <inertia>
+            <ixx>5.0</ixx><iyy>5.0</iyy><izz>1.0</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="body_col">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+        </collision>
+        <visual name="body_vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+          <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+        </visual>
+        <visual name="head_vis">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material><ambient>0.9 0.7 0.6 1</ambient><diffuse>0.9 0.7 0.6 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 보행자 3: (5,0) Y방향 0.8m/s 왕복 — 초록 옷 (빠른 보행자) -->
+    <model name="pedestrian_3">
+      <pose>5 0 0.85 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>70.0</mass>
+          <inertia>
+            <ixx>5.0</ixx><iyy>5.0</iyy><izz>1.0</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="body_col">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+        </collision>
+        <visual name="body_vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+          <material><ambient>0.2 0.7 0.3 1</ambient><diffuse>0.2 0.7 0.3 1</diffuse></material>
+        </visual>
+        <visual name="head_vis">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material><ambient>0.9 0.7 0.6 1</ambient><diffuse>0.9 0.7 0.6 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+    <!-- 보행자 4: (6,2) X방향 0.5m/s 왕복 — 노란 옷 -->
+    <model name="pedestrian_4">
+      <pose>6 2 0.85 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>70.0</mass>
+          <inertia>
+            <ixx>5.0</ixx><iyy>5.0</iyy><izz>1.0</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="body_col">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+        </collision>
+        <visual name="body_vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.5</length></cylinder></geometry>
+          <material><ambient>0.9 0.8 0.2 1</ambient><diffuse>0.9 0.8 0.2 1</diffuse></material>
+        </visual>
+        <visual name="head_vis">
+          <pose>0 0 0.9 0 0 0</pose>
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material><ambient>0.9 0.7 0.6 1</ambient><diffuse>0.9 0.7 0.6 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl"/>
+    </model>
+
+  </world>
+</sdf>

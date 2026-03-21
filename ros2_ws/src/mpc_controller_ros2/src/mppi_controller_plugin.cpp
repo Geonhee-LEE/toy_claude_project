@@ -513,23 +513,46 @@ geometry_msgs::msg::TwistStamped MPPIControllerPlugin::computeVelocityCommands(
 
 void MPPIControllerPlugin::setPlan(const nav_msgs::msg::Path& path)
 {
+  // plan 유사성 판별: goal이 바뀌었거나 첫 plan인 경우에만 리셋
+  bool should_reset = false;
+
+  if (global_plan_.poses.empty() || path.poses.empty()) {
+    should_reset = true;
+  } else {
+    // goal (마지막 포인트) 비교
+    const auto& old_goal = global_plan_.poses.back().pose.position;
+    const auto& new_goal = path.poses.back().pose.position;
+    double goal_dist = std::hypot(new_goal.x - old_goal.x, new_goal.y - old_goal.y);
+    if (goal_dist > 0.5) {
+      should_reset = true;
+    }
+  }
+
   global_plan_ = path;
   prune_start_idx_ = 0;
-  prev_cmd_valid_ = false;
-  last_delta_ = 0.0;  // 경로 리셋 시 steering angle 초기화
-  if (sg_filter_) { sg_filter_->reset(); }  // SG 필터 이력 초기화
-  if (conformal_predictor_) { conformal_predictor_->reset(); }  // Conformal 이력 초기화
-  prev_predicted_state_valid_ = false;
 
-  // Reset control sequence for new plan (warm start from zero)
-  int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
-  control_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
+  if (should_reset) {
+    prev_cmd_valid_ = false;
+    last_delta_ = 0.0;
+    if (sg_filter_) { sg_filter_->reset(); }
+    if (conformal_predictor_) { conformal_predictor_->reset(); }
+    prev_predicted_state_valid_ = false;
 
-  RCLCPP_INFO(
-    node_->get_logger(),
-    "Received new plan with %zu poses, reset control sequence",
-    path.poses.size()
-  );
+    int nu = dynamics_ ? dynamics_->model().controlDim() : 2;
+    control_sequence_ = Eigen::MatrixXd::Zero(params_.N, nu);
+
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "Received new plan with %zu poses, reset control sequence (new goal)",
+      path.poses.size()
+    );
+  } else {
+    RCLCPP_DEBUG(
+      node_->get_logger(),
+      "Received updated plan with %zu poses, keeping control sequence",
+      path.poses.size()
+    );
+  }
 
   if (path.poses.empty()) {
     RCLCPP_WARN(node_->get_logger(), "Received empty plan");
