@@ -1,0 +1,146 @@
+# ============================================================
+# nav2 파라미터 - Composable MPPI (파이프라인 기반 다중 레이어)
+# ============================================================
+# 사용법:
+#   ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=composable
+#
+# 기본 구성: Halton + LP + Shield CBF + Feedback
+# YAML에서 각 레이어의 enabled 플래그를 on/off하여 임의 조합 가능.
+#
+# 파이프라인:
+#   Phase 0: Adaptation     ── RH-MPPI + CS-MPPI
+#   Phase 1: Warm-Start     ── iLQR + TrajLib
+#   Phase 2: Sampling       ── Halton/Gaussian + CS scaling
+#   Phase 3: Pre-Filter     ── π-MPPI ADMM
+#   Phase 4: Core MPPI      ── Rollout → Cost → Weights → Update
+#   Phase 5: Post-Filter    ── LP IIR + π-MPPI ADMM
+#   Phase 6: Safety         ── Shield CBF
+#   Phase 7: Output         ── Feedback Riccati
+#   Phase 8: Restore        ── RH-MPPI N 복원
+# ============================================================
+
+controller_server:
+  ros__parameters:
+    # ---- Composable MPPI Controller ----
+    FollowPath:
+      plugin: "mpc_controller_ros2::ComposableMPPIControllerPlugin"
+      motion_model: "diff_drive"
+
+      # 예측 horizon
+      N: 30
+      dt: 0.1
+
+      # 샘플링
+      K: 512
+      lambda: 50.0
+
+      # 노이즈 파라미터
+      noise_sigma_v: 0.5
+      noise_sigma_omega: 0.5
+
+      # 제어 한계
+      v_max: 0.5
+      v_min: 0.0
+      omega_max: 1.0
+      omega_min: -1.0
+
+      # 상태 추적 비용 (Q)
+      Q_x: 10.0
+      Q_y: 10.0
+      Q_theta: 1.0
+
+      # 터미널 비용 (Qf)
+      Qf_x: 20.0
+      Qf_y: 20.0
+      Qf_theta: 2.0
+
+      # 제어 노력 비용 (R)
+      R_v: 0.1
+      R_omega: 0.1
+
+      # 제어 변화율 비용 (R_rate)
+      R_rate_v: 1.0
+      R_rate_omega: 1.0
+
+      # 장애물 회피
+      obstacle_weight: 100.0
+      safety_distance: 0.5
+
+      # 전진 선호
+      prefer_forward_weight: 5.0
+
+      # Costmap
+      use_costmap_cost: true
+      costmap_lethal_cost: 1000.0
+      costmap_critical_cost: 100.0
+
+      # ──── Phase 0: Adaptation ────
+      # RH-MPPI (동적 horizon)
+      rh_mppi_enabled: false
+      rh_N_min: 10
+      rh_N_max: 50
+      rh_speed_weight: 1.0
+      rh_obstacle_weight: 1.0
+      rh_error_weight: 0.5
+      rh_smoothing_alpha: 0.3
+
+      # CS-MPPI (공분산 스케일링)
+      cs_enabled: false
+      cs_scale_min: 0.1
+      cs_scale_max: 3.0
+
+      # ──── Phase 1: Warm-Start ────
+      # iLQR
+      ilqr_enabled: false
+      ilqr_max_iterations: 2
+      ilqr_regularization: 1.0e-6
+
+      # Trajectory Library
+      traj_library_enabled: false
+      traj_library_ratio: 0.15
+      traj_library_perturbation: 0.1
+
+      # ──── Phase 2: Sampling ────
+      # Halton 저불일치 시퀀스
+      halton_enabled: true
+      halton_beta: 2.0
+      halton_sequence_offset: 100
+
+      # ──── Phase 3/5: Filter ────
+      # π-MPPI ADMM 투영
+      pi_enabled: false
+      pi_admm_iterations: 10
+      pi_admm_rho: 1.0
+      pi_derivative_order: 2
+      pi_rate_max_v: 2.0
+      pi_rate_max_omega: 3.0
+      pi_accel_max_v: 5.0
+      pi_accel_max_omega: 8.0
+
+      # LP IIR 필터
+      lp_enabled: true
+      lp_cutoff_frequency: 10.0
+
+      # ──── Phase 6: Safety ────
+      # Shield CBF
+      cbf_enabled: true
+      cbf_gamma: 1.0
+      cbf_use_safety_filter: true
+      shield_cbf_stride: 3
+      shield_max_iterations: 10
+
+      # ──── Phase 7: Output ────
+      # Feedback Riccati
+      feedback_mppi_enabled: true
+      feedback_gain_scale: 1.0
+      feedback_recompute_interval: 1
+      feedback_regularization: 1.0e-4
+
+      # 시각화
+      visualize_samples: true
+      visualize_best: true
+      visualize_weighted_avg: true
+      visualize_reference: true
+      visualize_text_info: true
+      visualize_control_sequence: true
+      max_visualized_samples: 20

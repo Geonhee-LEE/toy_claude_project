@@ -236,4 +236,12 @@
       injected as deterministic samples for improved warm-start diversity and convergence.
     </description>
   </class>
+  <class type="mpc_controller_ros2::ComposableMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      Composable MPPI controller plugin for nav2.
+      Pipeline-based multi-layer composition: Halton, iLQR, TrajLib, CS-MPPI, pi-MPPI,
+      LP filter, Shield CBF, Feedback Riccati, RH-MPPI — all configurable via YAML on/off.
+      Enables arbitrary combinations like "Halton + iLQR + LP + Shield + Feedback".
+    </description>
+  </class>
 </library>
