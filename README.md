@@ -143,6 +143,8 @@ MotionModelFactory::create(string, params)
 └─────────────────────────────────────────────────────────┘
 + Ensemble Dynamics (불확실성) + C3BF (Collision Cone)
 + Dynamic Obstacle Tracker (clustering + EMA velocity)
++ CC-CBF-MPPI (확률적 risk budget P(충돌)≤ε + barrier 투영)
++ Constrained/CC/Robust (비용 증강 제약: Lagrangian, CVaR, Chance)
 ```
 
 ## Quick Start
@@ -358,7 +360,7 @@ ros2_ws/src/mpc_controller_ros2/     # ROS2 C++ 패키지
 │   ├── paper_benchmark_analysis.py  #   통계 분석 + LaTeX
 │   ├── stress_test.py               #   동적 장애물 스트레스
 │   └── nav2_e2e_test.py             #   E2E 네비게이션 테스트
-├── test/                            # 647+ gtest + Python 테스트
+├── test/                            # 737+ gtest + Python 테스트
 └── plugins/                         # Plugin XML 등록
 
 mpc_controller/                      # Python 패키지
@@ -406,6 +408,10 @@ mpc_controller/                      # Python 패키지
 | Trajectory Library MPPI | 완료 | 7종 프리미티브 라이브러리 warm-start | #191 |
 | 시뮬레이션 인프라 | 완료 | World physics 통일 + E2E 테스트 | #175 |
 | Paper 벤치마크 | 완료 | 다중 시행 + 통계 + LaTeX | #177 |
+| CEM-MPPI | 완료 | Cross-Entropy Method + MPPI 하이브리드 | #193 |
+| Robust + IT + Constrained | 완료 | 3종 일괄 (CVaR, KL, Lagrangian) | #195 |
+| CC-MPPI | 완료 | Chance-Constrained (Blackmore JGCD 2011) | #199 |
+| CC-CBF-MPPI | 완료 | CC + CBF barrier (P(충돌)≤ε + 투영) | — |
 
 ## Dependencies
 
@@ -419,7 +425,7 @@ mpc_controller/                      # Python 패키지
 ┌──────────────────────────────────────────────────────┐
 │  GitHub Issue → feature branch → 구현 → PR → merge  │
 │                                                      │
-│  해결 이슈: #63~#190 (36개)                           │
+│  해결 이슈: #63~#200 (42개)                           │
 │  CI: .github/workflows/ros2-ci.yml                   │
 │      (ros:jazzy Docker, colcon build+test)            │
 └──────────────────────────────────────────────────────┘
