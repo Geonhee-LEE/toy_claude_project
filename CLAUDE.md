@@ -24,6 +24,8 @@ P1: CEM-MPPI ✅ (Cross-Entropy Method + MPPI 하이브리드, Pinneri 2021)
 P1: Robust MPPI ✅ (Distributionally Robust, worst-case CVaR + Wasserstein)
 P1: IT-MPPI ✅ (Information-Theoretic, 탐색-활용 균형 KL + diversity)
 P1: Constrained MPPI ✅ (Augmented Lagrangian, hard constraints dual update)
+P1: CC-MPPI ✅ (Chance-Constrained, Blackmore JGCD 2011, 확률적 제약 만족)
+P0: CC-CBF-MPPI ✅ (CC + CBF barrier clearance, P(충돌)≤ε + 선택적 CBF 투영)
 ```
 
 ## 패키지 구조
@@ -97,6 +99,8 @@ mpc_controller/
 - Trajectory Library MPPI (7종 프리미티브 라이브러리 warm-start 다양성 향상): 완료 (PR #191)
 - CEM-MPPI (Cross-Entropy Method + MPPI 하이브리드, Pinneri 2021): 완료 (PR #193)
 - Robust MPPI + IT-MPPI + Constrained MPPI (3종 일괄): 완료 (PR #195)
+- CC-MPPI (Chance-Constrained MPPI, Blackmore JGCD 2011, 확률적 제약 만족): 완료 (PR #199, Issue #198)
+- CC-CBF-MPPI (CC + CBF barrier clearance, P(충돌)≤ε + 선택적 CBF 투영): 완료 (Issue #200)
 
 ## 핵심 인터페이스
 - 모든 컨트롤러: `compute_control(state, reference_trajectory) -> (control, info)` 시그니처 준수

@@ -1614,6 +1614,15 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "constrained_accel_max_omega", params_.constrained_accel_max_omega);
   node_->declare_parameter(prefix + "constrained_clearance_min", params_.constrained_clearance_min);
 
+  // CC-MPPI 파라미터
+  node_->declare_parameter(prefix + "cc_mppi_enabled", params_.cc_mppi_enabled);
+  node_->declare_parameter(prefix + "cc_risk_budget", params_.cc_risk_budget);
+  node_->declare_parameter(prefix + "cc_penalty_weight", params_.cc_penalty_weight);
+  node_->declare_parameter(prefix + "cc_adaptive_risk", params_.cc_adaptive_risk);
+  node_->declare_parameter(prefix + "cc_tightening_rate", params_.cc_tightening_rate);
+  node_->declare_parameter(prefix + "cc_quantile_smoothing", params_.cc_quantile_smoothing);
+  node_->declare_parameter(prefix + "cc_cbf_projection_enabled", params_.cc_cbf_projection_enabled);
+
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
   node_->declare_parameter(prefix + "costmap_eval_stride", params_.costmap_eval_stride);
@@ -2031,6 +2040,15 @@ void MPPIControllerPlugin::loadParameters()
   params_.constrained_accel_max_v = node_->get_parameter(prefix + "constrained_accel_max_v").as_double();
   params_.constrained_accel_max_omega = node_->get_parameter(prefix + "constrained_accel_max_omega").as_double();
   params_.constrained_clearance_min = node_->get_parameter(prefix + "constrained_clearance_min").as_double();
+
+  // CC-MPPI 파라미터
+  params_.cc_mppi_enabled = node_->get_parameter(prefix + "cc_mppi_enabled").as_bool();
+  params_.cc_risk_budget = node_->get_parameter(prefix + "cc_risk_budget").as_double();
+  params_.cc_penalty_weight = node_->get_parameter(prefix + "cc_penalty_weight").as_double();
+  params_.cc_adaptive_risk = node_->get_parameter(prefix + "cc_adaptive_risk").as_bool();
+  params_.cc_tightening_rate = node_->get_parameter(prefix + "cc_tightening_rate").as_double();
+  params_.cc_quantile_smoothing = node_->get_parameter(prefix + "cc_quantile_smoothing").as_double();
+  params_.cc_cbf_projection_enabled = node_->get_parameter(prefix + "cc_cbf_projection_enabled").as_bool();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();
