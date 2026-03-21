@@ -25,6 +25,7 @@ P1: Robust MPPI ✅ (Distributionally Robust, worst-case CVaR + Wasserstein)
 P1: IT-MPPI ✅ (Information-Theoretic, 탐색-활용 균형 KL + diversity)
 P1: Constrained MPPI ✅ (Augmented Lagrangian, hard constraints dual update)
 P1: CC-MPPI ✅ (Chance-Constrained, Blackmore JGCD 2011, 확률적 제약 만족)
+P0: CC-CBF-MPPI ✅ (CC + CBF barrier clearance, P(충돌)≤ε + 선택적 CBF 투영)
 ```
 
 ## 패키지 구조

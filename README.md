@@ -6,12 +6,12 @@ Mobile Robot MPC/MPPI Controller with Claude-Driven Development Workflow
 
 This project demonstrates:
 1. **MPC-based mobile robot control** - CasADi/IPOPT 기반 경로 추종 MPC
-2. **MPPI sampling-based control** - 34종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
-3. **ROS2 nav2 integration** - 34종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
+2. **MPPI sampling-based control** - 35종 C++ MPPI 플러그인 + 9종 Python MPPI + GPU 가속 (JAX)
+3. **ROS2 nav2 integration** - 35종 C++ 플러그인 + 4종 모션 모델 + 5단계 Safety Stack
 4. **Paper-Ready Benchmarking** - 다중 시행 통계 분석 + LaTeX 테이블 + 파레토 분석
 5. **Claude-driven development** - GitHub 이슈 자동 처리 워크플로우
 
-## C++ MPPI 플러그인 (34종)
+## C++ MPPI 플러그인 (35종)
 
 ### 플러그인 계층 구조
 
@@ -68,6 +68,7 @@ MPPIControllerPlugin (base, virtual computeControl)
 ├── ITMPPIControllerPlugin         ── Information-Theoretic (탐색-활용 균형)
 ├── ConstrainedMPPIControllerPlugin ── Augmented Lagrangian (hard constraints)
 ├── ChanceConstrainedMPPIControllerPlugin ── 확률적 제약 만족 (Blackmore 2011)
+├── CCCBFMPPIControllerPlugin ── CC + CBF barrier clearance (P(충돌)≤ε)
 │
 │  다중 에이전트/GPU 가속:
 ├── MultiAgentMPPIControllerPlugin ── ROS2 궤적 공유 + InterAgentCost
@@ -112,6 +113,7 @@ MPPIControllerPlugin (base, virtual computeControl)
 | 32 | IT-MPPI | Information-Theoretic 탐색-활용 균형 (KL + diversity) | All |
 | 33 | Constrained MPPI | Augmented Lagrangian hard constraints (dual update) | All |
 | 34 | CC-MPPI | Chance-Constrained 확률적 제약 (Blackmore JGCD 2011) | All |
+| 35 | CC-CBF-MPPI | CC + CBF barrier clearance + 선택적 투영 | All |
 
 ### 4종 모션 모델
 
@@ -172,6 +174,7 @@ ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=rob
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=it_mppi
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=constrained
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cc_mppi
+ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=cc_cbf_mppi
 
 # 모션 모델 분기
 ros2 launch mpc_controller_ros2 mppi_ros2_control_nav2.launch.py controller:=swerve
@@ -226,7 +229,7 @@ python3 scripts/paper_benchmark_analysis.py \
 ### 컨트롤러 벤치마크 (단일 시행)
 
 ```bash
-# 34종 자동 비교
+# 35종 자동 비교
 python3 scripts/controller_benchmark.py --group all
 
 # C++ 파이프라인 마이크로벤치마크
@@ -249,7 +252,7 @@ Pipeline: 1.88ms mean (532 Hz)
 
 ## Testing
 
-### C++ (722+ gtest, 43 스위트)
+### C++ (737+ gtest, 44 스위트)
 
 ```bash
 cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
@@ -300,6 +303,7 @@ cd ros2_ws && colcon test --packages-select mpc_controller_ros2 \
 | test_it_mppi | 15 | IT-MPPI (Information-Theoretic) |
 | test_constrained_mppi | 15 | Constrained MPPI (Augmented Lagrangian) |
 | test_cc_mppi | 15 | CC-MPPI (Chance-Constrained) |
+| test_cc_cbf_mppi | 15 | CC-CBF-MPPI (CC + CBF barrier) |
 
 ### Python
 

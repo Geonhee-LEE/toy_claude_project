@@ -220,6 +220,15 @@
       + empirical quantile tightening. P(g(x) &lt;= 0) &gt;= 1-epsilon guarantee.
     </description>
   </class>
+  <class type="mpc_controller_ros2::CCCBFMPPIControllerPlugin" base_class_type="nav2_core::Controller">
+    <description>
+      CC-CBF-MPPI (Chance-Constrained CBF-MPPI) controller plugin for nav2.
+      Combines CC-MPPI probabilistic risk budget with CBF barrier-based clearance.
+      4 constraints: velocity, acceleration, clearance (barrier h&lt;0), CBF rate (dh/dt+gamma*h).
+      Optional CBF projection on optimal control for hard safety guarantee.
+      P(collision) &lt;= epsilon via sample-based estimation.
+    </description>
+  </class>
   <class type="mpc_controller_ros2::TrajectoryLibraryMPPIControllerPlugin" base_class_type="nav2_core::Controller">
     <description>
       Trajectory Library MPPI controller plugin for nav2.

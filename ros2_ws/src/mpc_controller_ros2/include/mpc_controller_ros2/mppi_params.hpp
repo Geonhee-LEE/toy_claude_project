@@ -478,6 +478,7 @@ struct MPPIParams
   bool cc_adaptive_risk{false};                  // 적응형 risk 분배 (false=Bonferroni)
   double cc_tightening_rate{1.5};                // constraint tightening 성장률
   double cc_quantile_smoothing{0.1};             // 경험적 quantile EMA 계수
+  bool cc_cbf_projection_enabled{true};           // CC-CBF-MPPI: CBF 투영 활성화
 
   // ============================================================================
   // 성능 최적화 파라미터

@@ -206,6 +206,8 @@ def launch_setup(context, *args, **kwargs):
                         'Constrained MPPI (Augmented Lagrangian constraints)'),
         'cc_mppi': ('nav2_params_cc_mppi.yaml',
                     'CC-MPPI (Chance-Constrained probabilistic safety)'),
+        'cc_cbf_mppi': ('nav2_params_cc_cbf_mppi.yaml',
+                        'CC-CBF-MPPI (Chance-Constrained + CBF barrier safety)'),
     }
     if controller_type in controller_map:
         params_name, controller_label = controller_map[controller_type]

@@ -1621,6 +1621,7 @@ void MPPIControllerPlugin::declareParameters()
   node_->declare_parameter(prefix + "cc_adaptive_risk", params_.cc_adaptive_risk);
   node_->declare_parameter(prefix + "cc_tightening_rate", params_.cc_tightening_rate);
   node_->declare_parameter(prefix + "cc_quantile_smoothing", params_.cc_quantile_smoothing);
+  node_->declare_parameter(prefix + "cc_cbf_projection_enabled", params_.cc_cbf_projection_enabled);
 
   // 성능 최적화 파라미터
   node_->declare_parameter(prefix + "num_threads", params_.num_threads);
@@ -2047,6 +2048,7 @@ void MPPIControllerPlugin::loadParameters()
   params_.cc_adaptive_risk = node_->get_parameter(prefix + "cc_adaptive_risk").as_bool();
   params_.cc_tightening_rate = node_->get_parameter(prefix + "cc_tightening_rate").as_double();
   params_.cc_quantile_smoothing = node_->get_parameter(prefix + "cc_quantile_smoothing").as_double();
+  params_.cc_cbf_projection_enabled = node_->get_parameter(prefix + "cc_cbf_projection_enabled").as_bool();
 
   // 성능 최적화 파라미터
   params_.num_threads = node_->get_parameter(prefix + "num_threads").as_int();
