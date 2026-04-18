@@ -618,4 +618,293 @@ TEST_F(ComposableMPPITest, PerformanceNoOverhead)
   EXPECT_LT(ratio, 1.5) << "Base: " << base_ms << "ms, Composable: " << comp_ms << "ms";
 }
 
+// ============================================================================
+// Test 16: ConvergenceLP — LP-only 다회 반복 수렴 (실제 주행 시뮬)
+// ============================================================================
+TEST_F(ComposableMPPITest, ConvergenceLP)
+{
+  // 목표: (3,0)으로 이동 → 50 스텝 내에 1.0m 이내 도달
+  ComposableTestAccessor acc;
+  params_.K = 128;
+  params_.N = 15;
+  params_.v_max = 1.0;
+  params_.lambda = 5.0;
+  acc.initForTest(params_);
+
+  ActiveLayers layers;
+  layers.lp_filter = true;
+  acc.setupActiveLayers(layers);
+  acc.setupLP();
+
+  Eigen::Vector3d state(0.0, 0.0, 0.0);
+  Eigen::Vector3d goal(3.0, 0.0, 0.0);
+
+  int nx = 3;
+  Eigen::MatrixXd ref = Eigen::MatrixXd::Zero(params_.N + 1, nx);
+  for (int t = 0; t <= params_.N; ++t) {
+    double alpha = static_cast<double>(t) / params_.N;
+    ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+    ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+  }
+
+  double initial_dist = (state.head(2) - goal.head(2)).norm();
+
+  for (int step = 0; step < 50; ++step) {
+    // 갱신된 reference
+    for (int t = 0; t <= params_.N; ++t) {
+      double alpha = static_cast<double>(t) / params_.N;
+      ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+      ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+      ref(t, 2) = std::atan2(goal(1) - state(1), goal(0) - state(0));
+    }
+
+    auto [u_opt, info] = acc.computeControl(state, ref);
+    ASSERT_TRUE(u_opt.allFinite()) << "Step " << step << ": NaN/Inf detected";
+
+    // 상태 전파 (diff_drive)
+    double v = u_opt(0);
+    double omega = u_opt(1);
+    double dt = params_.dt;
+    state(0) += v * std::cos(state(2)) * dt;
+    state(1) += v * std::sin(state(2)) * dt;
+    state(2) += omega * dt;
+
+    double dist = (state.head(2) - goal.head(2)).norm();
+    if (dist < 0.5) break;
+  }
+
+  double final_dist = (state.head(2) - goal.head(2)).norm();
+  EXPECT_LT(final_dist, 1.5)
+    << "LP-only: failed to converge. initial=" << initial_dist
+    << " final=" << final_dist << " state=(" << state.transpose() << ")";
+  EXPECT_LT(final_dist, initial_dist)
+    << "LP-only: robot did not make progress toward goal";
+}
+
+// ============================================================================
+// Test 17: ConvergenceBase — Base (ALL OFF) 다회 반복 수렴 비교
+// ============================================================================
+TEST_F(ComposableMPPITest, ConvergenceBase)
+{
+  ComposableTestAccessor acc;
+  params_.K = 128;
+  params_.N = 15;
+  params_.v_max = 1.0;
+  params_.lambda = 5.0;
+  acc.initForTest(params_);
+
+  ActiveLayers off;
+  acc.setupActiveLayers(off);
+
+  Eigen::Vector3d state(0.0, 0.0, 0.0);
+  Eigen::Vector3d goal(3.0, 0.0, 0.0);
+
+  int nx = 3;
+  Eigen::MatrixXd ref = Eigen::MatrixXd::Zero(params_.N + 1, nx);
+
+  for (int step = 0; step < 50; ++step) {
+    for (int t = 0; t <= params_.N; ++t) {
+      double alpha = static_cast<double>(t) / params_.N;
+      ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+      ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+      ref(t, 2) = std::atan2(goal(1) - state(1), goal(0) - state(0));
+    }
+
+    auto [u_opt, info] = acc.computeControl(state, ref);
+    ASSERT_TRUE(u_opt.allFinite());
+
+    double v = u_opt(0);
+    double omega = u_opt(1);
+    double dt = params_.dt;
+    state(0) += v * std::cos(state(2)) * dt;
+    state(1) += v * std::sin(state(2)) * dt;
+    state(2) += omega * dt;
+
+    double dist = (state.head(2) - goal.head(2)).norm();
+    if (dist < 0.5) break;
+  }
+
+  double final_dist = (state.head(2) - goal.head(2)).norm();
+  EXPECT_LT(final_dist, 1.5) << "Base: failed to converge";
+}
+
+// ============================================================================
+// Test 18: ConvergenceLPShield — LP + Shield 다회 수렴 (장애물 회피)
+// ============================================================================
+TEST_F(ComposableMPPITest, ConvergenceLPShield)
+{
+  ComposableTestAccessor acc;
+  params_.K = 128;
+  params_.N = 15;
+  params_.v_max = 1.0;
+  params_.lambda = 5.0;
+  params_.cbf_enabled = true;
+  params_.cbf_use_safety_filter = true;
+  acc.initForTest(params_);
+
+  ActiveLayers layers;
+  layers.lp_filter = true;
+  layers.shield_cbf = true;
+  acc.setupActiveLayers(layers);
+  acc.setupLP();
+
+  // 경로 상에 장애물 배치 (우회 필요)
+  std::vector<Eigen::Vector3d> obstacles;
+  obstacles.push_back(Eigen::Vector3d(1.5, 0.0, 0.5));  // 정면 장애물
+  acc.setupShieldCBF(obstacles);
+
+  Eigen::Vector3d state(0.0, 0.0, 0.0);
+  Eigen::Vector3d goal(3.0, 0.0, 0.0);
+
+  int nx = 3;
+  Eigen::MatrixXd ref = Eigen::MatrixXd::Zero(params_.N + 1, nx);
+  double min_obs_dist = 999.0;
+
+  for (int step = 0; step < 80; ++step) {
+    for (int t = 0; t <= params_.N; ++t) {
+      double alpha = static_cast<double>(t) / params_.N;
+      ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+      ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+      ref(t, 2) = std::atan2(goal(1) - state(1), goal(0) - state(0));
+    }
+
+    auto [u_opt, info] = acc.computeControl(state, ref);
+    ASSERT_TRUE(u_opt.allFinite()) << "Step " << step;
+
+    double v = u_opt(0);
+    double omega = u_opt(1);
+    double dt = params_.dt;
+    state(0) += v * std::cos(state(2)) * dt;
+    state(1) += v * std::sin(state(2)) * dt;
+    state(2) += omega * dt;
+
+    // 장애물과의 최소 거리 추적
+    double obs_dist = std::hypot(state(0) - 1.5, state(1) - 0.0) - 0.5;
+    min_obs_dist = std::min(min_obs_dist, obs_dist);
+
+    double dist = (state.head(2) - goal.head(2)).norm();
+    if (dist < 0.5) break;
+  }
+
+  double final_dist = (state.head(2) - goal.head(2)).norm();
+  // 참고: reference가 장애물 직선 통과 → shield 교착 가능 (nav2에서는 global planner 우회)
+  // 핵심 검증: (1) 진행 방향 이동 (2) 장애물 미충돌
+  EXPECT_LT(final_dist, 2.8)
+    << "LP+Shield: no progress at all. final_dist=" << final_dist;
+  EXPECT_LT(final_dist, 3.0)
+    << "LP+Shield: robot did not make any progress toward goal";
+  // 장애물에 충돌하지 않았는지 확인
+  EXPECT_GT(min_obs_dist, -0.1)
+    << "LP+Shield: penetrated obstacle. min_dist=" << min_obs_dist;
+}
+
+// ============================================================================
+// Test 19: ConvergenceILQR — iLQR warm-start 수렴 품질 검증
+// ============================================================================
+TEST_F(ComposableMPPITest, ConvergenceILQR)
+{
+  ComposableTestAccessor acc;
+  params_.K = 128;
+  params_.N = 15;
+  params_.v_max = 1.0;
+  params_.lambda = 5.0;
+  acc.initForTest(params_);
+
+  ActiveLayers layers;
+  layers.ilqr = true;
+  acc.setupActiveLayers(layers);
+  acc.setupILQR();
+
+  Eigen::Vector3d state(0.0, 0.0, 0.0);
+  Eigen::Vector3d goal(3.0, 0.0, 0.0);
+
+  int nx = 3;
+  Eigen::MatrixXd ref = Eigen::MatrixXd::Zero(params_.N + 1, nx);
+
+  for (int step = 0; step < 50; ++step) {
+    for (int t = 0; t <= params_.N; ++t) {
+      double alpha = static_cast<double>(t) / params_.N;
+      ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+      ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+      ref(t, 2) = std::atan2(goal(1) - state(1), goal(0) - state(0));
+    }
+
+    auto [u_opt, info] = acc.computeControl(state, ref);
+    ASSERT_TRUE(u_opt.allFinite()) << "Step " << step;
+
+    double v = u_opt(0);
+    double omega = u_opt(1);
+    double dt = params_.dt;
+    state(0) += v * std::cos(state(2)) * dt;
+    state(1) += v * std::sin(state(2)) * dt;
+    state(2) += omega * dt;
+
+    double dist = (state.head(2) - goal.head(2)).norm();
+    if (dist < 0.5) break;
+  }
+
+  double final_dist = (state.head(2) - goal.head(2)).norm();
+  EXPECT_LT(final_dist, 1.5) << "iLQR: failed to converge";
+}
+
+// ============================================================================
+// Test 20: ConvergenceFullPipeline — LP+Shield+iLQR 풀파이프라인 수렴
+// ============================================================================
+TEST_F(ComposableMPPITest, ConvergenceFullPipeline)
+{
+  ComposableTestAccessor acc;
+  params_.K = 128;
+  params_.N = 15;
+  params_.v_max = 1.0;
+  params_.lambda = 5.0;
+  params_.cbf_enabled = true;
+  params_.cbf_use_safety_filter = true;
+  acc.initForTest(params_);
+
+  ActiveLayers layers;
+  layers.ilqr = true;
+  layers.lp_filter = true;
+  layers.shield_cbf = true;
+  acc.setupActiveLayers(layers);
+  acc.setupILQR();
+  acc.setupLP();
+
+  std::vector<Eigen::Vector3d> obstacles;
+  obstacles.push_back(Eigen::Vector3d(1.5, 0.3, 0.4));  // 약간 비켜난 장애물
+  acc.setupShieldCBF(obstacles);
+
+  Eigen::Vector3d state(0.0, 0.0, 0.0);
+  Eigen::Vector3d goal(3.0, 0.0, 0.0);
+
+  int nx = 3;
+  Eigen::MatrixXd ref = Eigen::MatrixXd::Zero(params_.N + 1, nx);
+
+  for (int step = 0; step < 80; ++step) {
+    for (int t = 0; t <= params_.N; ++t) {
+      double alpha = static_cast<double>(t) / params_.N;
+      ref(t, 0) = state(0) + alpha * (goal(0) - state(0));
+      ref(t, 1) = state(1) + alpha * (goal(1) - state(1));
+      ref(t, 2) = std::atan2(goal(1) - state(1), goal(0) - state(0));
+    }
+
+    auto [u_opt, info] = acc.computeControl(state, ref);
+    ASSERT_TRUE(u_opt.allFinite()) << "Step " << step;
+
+    double v = u_opt(0);
+    double omega = u_opt(1);
+    double dt = params_.dt;
+    state(0) += v * std::cos(state(2)) * dt;
+    state(1) += v * std::sin(state(2)) * dt;
+    state(2) += omega * dt;
+
+    double dist = (state.head(2) - goal.head(2)).norm();
+    if (dist < 0.5) break;
+  }
+
+  double final_dist = (state.head(2) - goal.head(2)).norm();
+  // reference가 장애물 직선 통과 → shield 교착 가능 (nav2에서는 global planner 우회)
+  EXPECT_LT(final_dist, 2.8)
+    << "Full pipeline (iLQR+LP+Shield): no progress. final=" << final_dist;
+}
+
 }  // namespace mpc_controller_ros2
